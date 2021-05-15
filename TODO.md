@@ -1,5 +1,9 @@
 # To-do's list
 
+- [ ] Functionality
+    - [ ] Request multiple times in the same execution.
+    - [ ] Change device status option to device information.
+
 - [ ] Portability
     - [ ] Create Docker image and container.
         - [ ] Flag for development.

@@ -18,7 +18,7 @@ Linux support.
 Usage
 -----
 
-```txt
+```text
 ./based-connect [options] <address>
   # address: The Bluetooth address of the device.
 
@@ -83,8 +83,8 @@ Options:
 Building
 --------
 
-Simply run `make -j` to build the program. The executable produced will be
-called `bose-connect-app-linux`.
+Simply run `make -j $(nproc)` to build the program. The executable produced
+will be called `bose-connect-app-linux`.
 
 Installing
 ----------
@@ -103,7 +103,7 @@ Details
 -------
 
 For more information about the details of how use the firmwares to found
-functionality, please review the file [details.txt][details-file].
+functionality, please review the file [DETAILS.md][details-file].
 
 
 Disclaimer
@@ -121,6 +121,6 @@ Visit the document with all the checkpoints in [TODO.md][todo.md].
 
 [Denton-L]: https://github.com/Denton-L/based-connect
 
-[details-file]: ./details.txt
+[details-file]: ./DETAILS.md
 
 [todo.md]: ./TODO.md
