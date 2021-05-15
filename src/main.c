@@ -52,7 +52,11 @@ static void usage() {
            "\t--remove-device=<address>\n"
            "\t\tRemove the device at address from the pairing list.\n"
            "\t--device-id\n"
-           "\t\tPrint the device id followed by the index revision.\n", program_name);
+           "\t\tPrint the device id followed by the index revision.\n"
+           "\t-e, --self-voice\n"
+           "\t\tChange the self voice level.\n"
+           "\t\tlevel: high, medium, low, off\n",
+           program_name);
 }
 
 static int do_set_name(int sock, const char *arg) {
@@ -60,7 +64,8 @@ static int do_set_name(int sock, const char *arg) {
     int status;
 
     if (strlen(arg) > MAX_NAME_LEN) {
-        fprintf(stderr, "Name exceeds %d character maximum. Truncating.\n", MAX_NAME_LEN);
+        fprintf(stderr, "Name exceeds %d character maximum. Truncating.\n",
+                MAX_NAME_LEN);
         status = 1;
     } else {
         strncpy(name_buffer, arg, MAX_NAME_LEN);
@@ -88,6 +93,10 @@ static int do_set_prompt_language(int sock, const char *arg) {
         pl = PL_ZH;
     } else if (strcmp(arg, "ko") == 0) {
         pl = PL_KO;
+    } else if (strcmp(arg, "pl") == 0) {
+        pl = PL_PL;
+    } else if (strcmp(arg, "ru") == 0) {
+        pl = PL_RU;
     } else if (strcmp(arg, "nl") == 0) {
         pl = PL_NL;
     } else if (strcmp(arg, "ja") == 0) {
@@ -190,7 +199,7 @@ static int do_get_device_status(int sock) {
     char *print;
     printf("Name: %s\n", name);
 
-    switch (pl | VP_MASK) {
+    switch (pl & VP_MASK) {
         case PL_EN:
             print = "en";
             break;
@@ -224,8 +233,15 @@ static int do_get_device_status(int sock) {
         case PL_SV:
             print = "sv";
             break;
+        case PL_RU:
+            print = "ru";
+            break;
+        case PL_PL:
+            print = "pl";
+            break;
         default:
-            return 1;
+            print = "unknown";
+            break;
     }
     printf("Language: %s\n", print);
     printf("Voice Prompts: %s\n", pl & VP_MASK ? "on" : "off");
@@ -272,6 +288,26 @@ static int do_set_pairing(int sock, const char *arg) {
     }
 
     return set_pairing(sock, p);
+}
+
+static int do_set_self_voice(int sock, const char *arg) {
+    enum SelfVoice p;
+
+    if (strcmp(arg, "high") == 0) {
+        p = SV_HIGH;
+    } else if (strcmp(arg, "medium") == 0) {
+        p = SV_MEDIUM;
+    } else if (strcmp(arg, "low") == 0) {
+        p = SV_LOW;
+    } else if (strcmp(arg, "off") == 0) {
+        p = SV_OFF;
+    } else {
+        fprintf(stderr, "Invalid self voice argument: %s\n", arg);
+        usage();
+        return 1;
+    }
+
+    return set_self_voice(sock, p);
 }
 
 static int do_get_firmware_version(int sock) {
@@ -344,22 +380,22 @@ static int do_get_paired_devices(int sock) {
         char address[18];
         reverse_ba2str(&device.address, address);
 
-        char status_symb;
+        char status_symbol;
         switch (device.status) {
             case DS_THIS:
-                status_symb = '!';
+                status_symbol = '!';
                 break;
             case DS_CONNECTED:
-                status_symb = '*';
+                status_symbol = '*';
                 break;
             case DS_DISCONNECTED:
-                status_symb = ' ';
+                status_symbol = ' ';
                 break;
             default:
                 return 1;
         }
 
-        printf("%c %s %s\n", status_symb, address, device.name);
+        printf("%c %s %s\n", status_symbol, address, device.name);
     }
 
     return 0;
@@ -400,26 +436,26 @@ static int do_send_packet(int sock, const char *arg) {
     uint8_t send[sizeof(arg) / 2];
     size_t i;
     for (i = 0; arg[i * 2]; ++i) {
-        if (strtobyte(&arg[i * 2], &send[i]) != 0) {
+        if (str_to_byte(&arg[i * 2], &send[i]) != 0) {
             return 1;
         }
     }
 
-    uint8_t recieved[MAX_BT_PACK_LEN];
-    int recieved_n = send_packet(sock, send, sizeof(send), recieved);
-    if (recieved_n < 0) {
-        return recieved_n;
+    uint8_t received[MAX_BT_PACK_LEN];
+    int received_n = send_packet(sock, send, sizeof(send), received);
+    if (received_n < 0) {
+        return received_n;
     }
 
-    for (i = 0; i < recieved_n; ++i) {
-        printf("%02x ", recieved[i]);
+    for (i = 0; i < received_n; ++i) {
+        printf("%02x ", received[i]);
     }
     printf("\n");
     return 0;
 }
 
 int main(int argc, char *argv[]) {
-    static const char *short_opt = "hn:l:v:o:c:dp:fsba";
+    static const char *short_opt = "hn:l:v:o:c:e:dp:fsba";
     static const struct option long_opt[] = {
             {"help",              no_argument,       NULL, 'h'},
             {"name",              required_argument, NULL, 'n'},
@@ -437,21 +473,24 @@ int main(int argc, char *argv[]) {
             {"disconnect-device", required_argument, NULL, 3},
             {"remove-device",     required_argument, NULL, 4},
             {"device-id",         no_argument,       NULL, 5},
+            {"self-voice",        required_argument, NULL, 'e'},
             {"send-packet",       required_argument, NULL, 1},
             {0, 0, 0,                                      0}
     };
 
     static const struct timeval send_timeout = {5, 0};
-    static const struct timeval recieve_timeout = {1, 0};
+    static const struct timeval receive_timeout = {1, 0};
     int sock = socket(AF_BLUETOOTH, SOCK_STREAM, BTPROTO_RFCOMM);
 
-    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout, sizeof(send_timeout)) < 0) {
+    if (setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &send_timeout,
+                   sizeof(send_timeout)) < 0) {
         perror("Could not set socket send timeout");
         return 1;
     }
 
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &recieve_timeout, sizeof(recieve_timeout)) < 0) {
-        perror("Could not set socket recieve timeout");
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout,
+                   sizeof(receive_timeout)) < 0) {
+        perror("Could not set socket receive timeout");
         return 1;
     }
 
@@ -460,7 +499,8 @@ int main(int argc, char *argv[]) {
     // Find connection address and verify options
     int opt;
     int opt_index = 0;
-    while ((opt = getopt_long(argc, argv, short_opt, long_opt, &opt_index)) > 0) {
+    while ((opt = getopt_long(argc, argv, short_opt, long_opt, &opt_index)) >
+           0) {
         switch (opt) {
             case 'h':
                 usage();
@@ -484,7 +524,10 @@ int main(int argc, char *argv[]) {
     struct sockaddr_rc address;
     address.rc_family = AF_BLUETOOTH;
     address.rc_channel = BOSE_CHANNEL;
-    str2ba(argv[optind], &address.rc_bdaddr);
+    if (str2ba(argv[optind], &address.rc_bdaddr) != 0) {
+        fprintf(stderr, "Invalid bluetooth address: %s\n", argv[optind]);
+        return 1;
+    }
 
     if (connect(sock, (struct sockaddr *) &address, sizeof(address)) != 0) {
         perror("Could not connect to Bluetooth device");
@@ -495,7 +538,8 @@ int main(int argc, char *argv[]) {
 
     opt_index = 0;
     optind = 1;
-    while ((opt = getopt_long(argc, argv, short_opt, long_opt, &opt_index)) > 0) {
+    while ((opt = getopt_long(argc, argv, short_opt, long_opt, &opt_index)) >
+           0) {
         if (status) {
             break;
         }
@@ -533,6 +577,9 @@ int main(int argc, char *argv[]) {
                 break;
             case 'a':
                 status = do_get_paired_devices(sock);
+                break;
+            case 'e':
+                status = do_set_self_voice(sock, optarg);
                 break;
             case 2:
                 status = do_connect_device(sock, optarg);

@@ -21,7 +21,8 @@ int has_noise_cancelling(unsigned int device_id) {
     }
 }
 
-static int masked_memcmp(const void *ptr1, const void *ptr2, size_t num, const void *mask) {
+static int masked_memcmp(const void *ptr1, const void *ptr2, size_t num,
+                         const void *mask) {
     while (num-- > 0) {
         uint8_t mask_byte = *(uint8_t *) mask++;
         uint8_t byte1 = *(uint8_t *) ptr1++ & mask_byte;
@@ -34,16 +35,17 @@ static int masked_memcmp(const void *ptr1, const void *ptr2, size_t num, const v
     return 0;
 }
 
-static int read_check(int sock, void *recieve, size_t recieve_n, const void *ack,
-                      const void *mask) {
-    int status = read(sock, recieve, recieve_n);
-    if (status != recieve_n) {
+static int
+read_check(int sock, void *receive, size_t receive_n, const void *ack,
+           const void *mask) {
+    int status = read(sock, receive, receive_n);
+    if (status != receive_n) {
         return status ? status : 1;
     }
 
     return abs(mask
-               ? masked_memcmp(ack, recieve, recieve_n, mask)
-               : memcmp(ack, recieve, recieve_n));
+               ? masked_memcmp(ack, receive, receive_n, mask)
+               : memcmp(ack, receive, receive_n));
 }
 
 static int write_check(int sock, const void *send, size_t send_n,
@@ -57,13 +59,14 @@ static int write_check(int sock, const void *send, size_t send_n,
     return read_check(sock, buffer, sizeof(buffer), ack, NULL);
 }
 
-int send_packet(int sock, const void *send, size_t send_n, uint8_t recieved[MAX_BT_PACK_LEN]) {
+int send_packet(int sock, const void *send, size_t send_n,
+                uint8_t received[MAX_BT_PACK_LEN]) {
     int status = write(sock, send, send_n);
     if (status != send_n) {
         return status ? status : 1;
     }
 
-    return read(sock, recieved, MAX_BT_PACK_LEN);
+    return read(sock, received, MAX_BT_PACK_LEN);
 }
 
 int init_connection(int sock) {
@@ -134,7 +137,8 @@ static int get_name(int sock, char name[MAX_NAME_LEN + 1]) {
 }
 
 int set_name(int sock, const char *name) {
-    static uint8_t send[CN_BASE_PACK_LEN + MAX_NAME_LEN] = {0x01, 0x02, 0x02, ANY};
+    static uint8_t send[
+            CN_BASE_PACK_LEN + MAX_NAME_LEN] = {0x01, 0x02, 0x02, ANY};
     size_t length = strlen(name);
 
     send[3] = length;
@@ -158,8 +162,10 @@ int set_name(int sock, const char *name) {
 static int get_prompt_language(int sock, enum PromptLanguage *language) {
     // TODO: ensure that this value is correct
     // TODO: figure out what bytes 6 and 7 are for
-    static const uint8_t ack[] = {0x01, 0x03, 0x03, 0x05, ANY, 0x00, ANY, ANY, 0xde};
-    static const uint8_t mask[] = {0xff, 0xff, 0xff, 0xff, 0x00, 0xff, 0x00, 0x00, 0xff};
+    static const uint8_t ack[] = {0x01, 0x03, 0x03, 0x05, ANY, 0x00, ANY, ANY,
+                                  0xde};
+    static const uint8_t mask[] = {0xff, 0xff, 0xff, 0xff, 0x00, 0xff, 0x00,
+                                   0x00, 0xff};
     uint8_t buffer[sizeof(ack)];
 
     int status = read_check(sock, buffer, sizeof(buffer), ack, mask);
@@ -273,7 +279,8 @@ int set_noise_cancelling(int sock, enum NoiseCancelling level) {
     return abs(level - got_level);
 }
 
-int get_device_status(int sock, char name[MAX_NAME_LEN + 1], enum PromptLanguage *language,
+int get_device_status(int sock, char name[MAX_NAME_LEN + 1],
+                      enum PromptLanguage *language,
                       enum AutoOff *minutes, enum NoiseCancelling *level) {
     unsigned int device_id;
     unsigned int index;
@@ -320,9 +327,7 @@ int get_device_status(int sock, char name[MAX_NAME_LEN + 1], enum PromptLanguage
         *level = NC_DNE;
     }
 
-    static const uint8_t ack2[] = {0x01, 0x01, 0x06, 0x00};
-    uint8_t buffer2[sizeof(ack2)];
-    return read_check(sock, buffer2, sizeof(buffer2), ack2, NULL);
+    return status;
 }
 
 int set_pairing(int sock, enum Pairing pairing) {
@@ -330,6 +335,15 @@ int set_pairing(int sock, enum Pairing pairing) {
     static uint8_t ack[] = {0x04, 0x08, 0x06, 0x01, ANY};
     send[4] = pairing;
     ack[4] = pairing;
+    return write_check(sock, send, sizeof(send), ack, sizeof(ack));
+}
+
+int set_self_voice(int sock, enum SelfVoice selfVoice) {
+    static uint8_t send[] = {0x01, 0x0b, 0x02, 0x02, 0x01, ANY, 0x38};
+    static uint8_t ack[] = {0x01, 0x0b, 0x03, 0x03, 0x01, ANY, 0x0f};
+
+    send[5] = selfVoice;
+    ack[5] = selfVoice;
     return write_check(sock, send, sizeof(send), ack, sizeof(ack));
 }
 
@@ -444,7 +458,8 @@ int get_device_info(int sock, bdaddr_t address, struct Device *device) {
     return 0;
 }
 
-int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES], size_t *num_devices,
+int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES],
+                       size_t *num_devices,
                        enum DevicesConnected *connected) {
     static const uint8_t send[] = {0x04, 0x04, 0x01, 0x00};
     static const uint8_t ack[] = {0x04, 0x04, 0x03};
