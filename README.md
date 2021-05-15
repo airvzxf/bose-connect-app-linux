@@ -99,6 +99,13 @@ Dependencies
 	* bluez-libs on Arch Linux
 	* libbluetooth-dev on Debian and Ubuntu
 
+Details
+-------
+
+For more information about the details of how use the firmwares to found
+functionality, please review the file [details.txt][details-file].
+
+
 Disclaimer
 ----------
 
@@ -124,3 +131,4 @@ details.
 
 
 [Denton-L]: https://github.com/Denton-L/based-connect
+[details-file]: ./details.txt
