@@ -6,9 +6,9 @@ Firmware Updates
 
 Here are some details on where firmware lookup details can be found:
 
-Staging firmware lists: https://downloads-test.bose.com/lookup.xml
-Beta firmware lists: https://downloads-beta.bose.com/lookup.xml
-Production firmware lists: https://downloads.bose.com/lookup.xml
+- Staging firmware lists: https://downloads-test.bose.com/lookup.xml
+- Beta firmware lists: https://downloads-beta.bose.com/lookup.xml
+- Production firmware lists: https://downloads.bose.com/lookup.xml
 
 At this point, lookup.xml can then be used to find index.xml files
 corresponding to your product. The index.xml files should give *.dfu and *.xuv

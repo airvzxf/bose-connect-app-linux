@@ -19,65 +19,54 @@ Usage
 -----
 
 ```text
-./based-connect [options] <address>
-  # address: The Bluetooth address of the device.
+Usage: bose-connect-app-linux [options] <address>
+  # address: The Bluetooth address of the Bose's device.
 
-Options:
   -h, --help
-      Print the help message.
-
-  -n <name>, --name=<name>
-      Change the name of the device.
-
-  -c <level>, --noise-cancelling=<level>
-      Change the noise cancelling level.
-      level: high, low, off
-
-  -o <minutes>, --auto-off=<minutes>
-      Change the auto-off time.
-      minutes: never, 5, 20, 40, 60, 180
-
-  -l <language>, --prompt-language=<language>
-      Change the voice-prompt language.
-      language: en, fr, it, de, es, pt, zh, ko, nl, ja, sv
-
-  -v <switch>, --voice-prompts=<switch>
-      Change whether voice-prompts are on or off.
-      switch: on, off
-
+    Print the help message.
+  -i, --info
+    Print all the device information.
   -d, --device-status
-      Print the device status information. This includes its name, language,
-      voice-prompts, auto-off and noise cancelling settings.
-
-  -p <status>, --pairing=<status>
-      Change whether the device is pairing.
-      status: on, off
-
+    Print the device status information. This includes its name, language,
+    voice-prompts, auto-off and noise cancelling settings.
   -f, --firmware-version
-      Print the firmware version on the device.
-
+    Print the firmware version on the device.
   -s, --serial-number
-      Print the serial number of the device.
-
+    Print the serial number of the device.
   -b, --battery-level
-      Print the battery level of the device as a percent.
-
+    Print the battery level of the device as a percent.
   -a, --paired-devices
-      Print the devices currently connected to the device.
-      !: indicates the current device
-      *: indicates other connected devices
-
-  --connect-device=<address>
-      Attempt to connect to the device at address.
-
-  --disconnect-device=<address>
-      Disconnect the device at address.
-
-  --remove-device=<address>
-      Remove the device at address from the pairing list.
-
+    Print the devices currently connected to the device.
+    !: indicates the current device
+    *: indicates other connected devices
   --device-id
-      Print the device id followed by the index revision.
+    Print the device id followed by the index revision.
+  -n <name>, --name=<name>
+    Change the name of the device.
+  -o <minutes>, --auto-off=<minutes>
+    Change the auto-off time.
+    minutes: never, 5, 20, 40, 60, 180
+  -c <level>, --noise-cancelling=<level>
+    Change the noise cancelling level.
+    level: high, low, off
+  -l <language>, --prompt-language=<language>
+    Change the voice-prompt language.
+    language: en, fr, it, de, es, pt, zh, ko, nl, ja, sv
+  -v <switch>, --voice-prompts=<switch>
+    Change whether voice-prompts are on or off.
+    switch: on, off
+  -p <status>, --pairing=<status>
+    Change whether the device is pairing.
+    status: on, off
+  --connect-device=<address>
+    Attempt to connect to the device at address.
+  --disconnect-device=<address>
+    Disconnect the device at address.
+  --remove-device=<address>
+    Remove the device at address from the pairing list.
+  -e, --self-voice=<level>
+    Change the self voice level.
+    level: high, medium, low, off
 ```
 
 Building
