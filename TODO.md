@@ -8,6 +8,7 @@
     - [x] Add the device information's option.
     - [ ] Added verbose mode.
     - [ ] How to handle different firmware versions?
+    - [ ] Set up the CMake list for installation.
 
 - [ ] Portability
     - [ ] Create Docker image and container.
