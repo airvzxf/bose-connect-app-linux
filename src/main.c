@@ -509,8 +509,8 @@ static int do_get_paired_devices(char *address) {
                address_converted,
                device.name);
     }
-    printf("\t[!] Symbol to mark this device.\n");
-    printf("\t[*] Connected to this device.\n");
+    printf("\t[!] Indicates the current device.\n");
+    printf("\t[*] Indicates other connected devices.\n");
 
     close(sock);
     return 0;
