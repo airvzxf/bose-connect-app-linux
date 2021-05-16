@@ -475,11 +475,8 @@ int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES],
         return status ? status : 1;
     }
 
-    // num_devices_byte = (num_devices_byte - 1) / BT_ADDR_LEN;
-    // equivalent statements but more efficient
     num_devices_byte /= BT_ADDR_LEN;
-
-    *num_devices = num_devices_byte;
+    *num_devices = num_devices_byte - 1;
 
     uint8_t num_connected_byte;
     status = read(sock, &num_connected_byte, 1);

@@ -38,8 +38,8 @@ enum PromptLanguage {
     PL_PT = 0x27,
     PL_ZH = 0x28,
     PL_KO = 0x29,
-    PL_PL = 0x2B,
-    PL_RU = 0x2A,
+    PL_RU = 0x2a,
+    PL_PL = 0x2b,
     PL_NL = 0x2e,
     PL_JA = 0x2f,
     PL_SV = 0x32

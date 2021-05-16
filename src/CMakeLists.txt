@@ -39,15 +39,15 @@ link_directories(${BLUEZ_LIBRARIES})
 # ------------------------------------------------------
 # Add the executable.
 # ------------------------------------------------------
+add_compile_definitions(PROGRAM_NAME="${PROJECT_NAME}")
 add_executable(
         ${PROJECT_NAME}
         main.c
+        main.h
         library/based.c
         library/based.h
         library/bluetooth.c
         library/bluetooth.h
         library/util.c
-        library/util.h
-)
-
+        library/util.h)
 target_link_libraries(${PROJECT_NAME} bluetooth)

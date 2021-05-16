@@ -1,8 +1,13 @@
 # To-do's list
 
 - [ ] Functionality
-    - [ ] Request multiple times in the same execution.
-    - [ ] Change device status option to device information.
+    - [ ] Add existed function "send package" as an option.
+    - [ ] Change switch structures for mapping.
+    - [x] Request multiple times in the same execution.
+        - [ ] It crashes when continues calls happen in short time.
+    - [x] Add the device information's option.
+    - [ ] Added verbose mode.
+    - [ ] How to handle different firmware versions?
 
 - [ ] Portability
     - [ ] Create Docker image and container.
