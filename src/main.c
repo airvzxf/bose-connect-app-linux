@@ -65,6 +65,10 @@ static void usage() {
             "\t\tChange whether the device is pairing.\n"
             "\t\tstatus: on, off\n"
 
+            "\t-e, --self-voice=<level>\n"
+            "\t\tChange the self voice level.\n"
+            "\t\tlevel: high, medium, low, off\n"
+
             "\t--connect-device=<address>\n"
             "\t\tAttempt to connect to the device at address.\n"
 
@@ -72,11 +76,7 @@ static void usage() {
             "\t\tDisconnect the device at address.\n"
 
             "\t--remove-device=<address>\n"
-            "\t\tRemove the device at address from the pairing list.\n"
-
-            "\t-e, --self-voice=<level>\n"
-            "\t\tChange the self voice level.\n"
-            "\t\tlevel: high, medium, low, off\n";
+            "\t\tRemove the device at address from the pairing list.\n";
 
     printf(message, PROGRAM_NAME);
 }
@@ -660,10 +660,10 @@ int main(int argc, char *argv[]) {
             {"prompt-language",   required_argument, NULL, 'l'},
             {"voice-prompts",     required_argument, NULL, 'v'},
             {"pairing",           required_argument, NULL, 'p'},
+            {"self-voice",        required_argument, NULL, 'e'},
             {"connect-device",    required_argument, NULL, 2},
             {"disconnect-device", required_argument, NULL, 3},
             {"remove-device",     required_argument, NULL, 4},
-            {"self-voice",        required_argument, NULL, 'e'},
             {"send-packet",       required_argument, NULL, 1},
             {0,                   no_argument,       NULL, 0}
     };

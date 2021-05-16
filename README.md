@@ -58,15 +58,15 @@ Usage: bose-connect-app-linux [options] <address>
   -p <status>, --pairing=<status>
     Change whether the device is pairing.
     status: on, off
+  -e, --self-voice=<level>
+    Change the self voice level.
+    level: high, medium, low, off
   --connect-device=<address>
     Attempt to connect to the device at address.
   --disconnect-device=<address>
     Disconnect the device at address.
   --remove-device=<address>
     Remove the device at address from the pairing list.
-  -e, --self-voice=<level>
-    Change the self voice level.
-    level: high, medium, low, off
 ```
 
 Building
