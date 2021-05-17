@@ -43,6 +43,10 @@ jobs:
 
       - name: Get binary's name
         run: |
+          ls -lha ${{github.workspace}}/src/
+          echo ""
+          ls -lha ${{github.workspace}}/src/build
+          echo ""
           export PROJECT_NAME=$(grep PROJECT_NAME \
             ${{github.workspace}}/src/CMakeCache.txt \
             | cut -d "=" -f2)
