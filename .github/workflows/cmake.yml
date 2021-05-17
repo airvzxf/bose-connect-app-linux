@@ -31,14 +31,17 @@ jobs:
         run: sudo yum --assumeyes install bluez
 
       - name: CMake3 - Configure
-        run: cmake3
-        -S ${{github.workspace}}/src
-        -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+        run: >
+          cmake3 \
+            -S ${{github.workspace}}/src \
+            -B ${{github.workspace}}/build \
+            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
       - name: CMake3 - Build
-        run: cmake3
-          --build ${{github.workspace}}/build
-          --config ${{env.BUILD_TYPE}}
+        run: >
+          cmake3 \
+            --build ${{github.workspace}}/build \
+            --config ${{env.BUILD_TYPE}}
 
       - name: CMake3 - Test
         working-directory: ${{github.workspace}}/build
