@@ -18,21 +18,28 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Install Cmake
-        run: sudo yum --assumeyes install cmake
+      - name: Cmake3 - Install
+        run: sudo yum --assumeyes install cmake3
 
-      - name: Install Bluez
+      - name: Cmake - Remove
+        run: sudo yum --assumeyes remove cmake.x86_64
+
+      - name: Cmake - List packages
+        run: sudo yum list cmake*
+
+      - name: Bluez - Install
         run: sudo yum --assumeyes install bluez
 
-      - name: Create build directory
-        run: mkdir -p ${{github.workspace}}/build
+      - name: CMake3 - Configure
+        run: cmake3
+        -S ${{github.workspace}}/src
+        -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
-      - name: Configure CMake
-        run: cmake -S ${{github.workspace}}/src -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      - name: CMake3 - Build
+        run: cmake3
+          --build ${{github.workspace}}/build
+          --config ${{env.BUILD_TYPE}}
 
-      - name: Build
-        run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-
-      - name: Test
+      - name: CMake3 - Test
         working-directory: ${{github.workspace}}/build
-        run: ctest -C ${{env.BUILD_TYPE}}
+        run: ctest3 -C ${{env.BUILD_TYPE}}
