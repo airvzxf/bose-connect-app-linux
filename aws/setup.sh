@@ -2,7 +2,7 @@
 set -e
 
 echo "# ----------------------------------------------------"
-echo "# Installation on RHEL -> Amazon Linux 2"
+echo "# Set up on RHEL -> Amazon Linux 2"
 echo "# ----------------------------------------------------"
 
 echo ""

@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Set up
+      - name: Set up AWS self-host
         run: ${{github.workspace}}/aws/setup.sh
 
       - name: CMake3 - Configure
@@ -37,3 +37,25 @@ jobs:
       - name: CMake3 - Test
         working-directory: ${{github.workspace}}/build
         run: ctest3 -C ${{env.BUILD_TYPE}}
+
+      - name: Print PROJECT_NAME 1
+        run: >
+          echo "PROJECT_NAME: ${PROJECT_NAME}"
+
+      - name: Get binary's name
+        run: |
+          export PROJECT_NAME=$(grep PROJECT_NAME \
+            ${{github.workspace}}/src/CMakeCache.txt \
+            | cut -d "=" -f2)
+          echo "PROJECT_NAME: ${PROJECT_NAME}"
+          echo "::set-env name=PROJECT_NAME::${PROJECT_NAME}}"
+
+      - name: Print PROJECT_NAME 2
+        run: >
+          echo "PROJECT_NAME: ${PROJECT_NAME}"
+
+#      - name: Archive binary's built
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: code-coverage-report
+#          path: ${{github.workspace}}/build/code-coverage.html
