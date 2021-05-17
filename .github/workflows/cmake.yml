@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install Cmake
+        run: sudo yum --assumeyes install cmake
+
       - name: Install Bluez
         run: sudo yum --assumeyes install bluez
 
