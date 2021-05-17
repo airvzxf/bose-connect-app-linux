@@ -48,7 +48,7 @@ jobs:
             | cut -d "=" -f2)
           echo "PROJECT_NAME: ${PROJECT_NAME}"
           echo "BINARY_NAME: ${{ env.BINARY_NAME }}"
-          expr ${PROJECT_NAME} | tee ${{ env.BINARY_NAME }}
+          echo "${PROJECT_NAME}" | tee ${{ env.BINARY_NAME }}
 
       - name: Archive binary's built
         uses: actions/upload-artifact@v2
