@@ -13,22 +13,10 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
-      - name: Who am I 1
-        run: whoami
-
       - uses: actions/checkout@v2
-
-      - name: Who am I 1
-        run: whoami
-
-#      - name: Update APT
-#        run: sudo apt --yes update
-#
-#      - name: Install CMake
-#        run: sudo apt --yes install cmake
 
       - name: Install Bluez
         run: sudo apt --yes install bluez
