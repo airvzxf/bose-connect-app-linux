@@ -26,7 +26,7 @@ endif ()
 pkg_search_module(BLUEZ REQUIRED bluez)
 
 if (NOT BLUEZ_FOUND)
-    message(FATAL_ERROR "Please install Bluez and its libraries.")
+    message(FATAL_ERROR "Please install `libbluetooth-dev`.")
 elseif (NOT BLUEZ_VERSION)
     message(FATAL_ERROR "The version of Bluez is not correct: ${BLUEZ_VERSION}.")
 endif ()
