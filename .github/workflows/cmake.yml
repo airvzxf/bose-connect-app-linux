@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  # Types: Debug, Release, RelWithDebInfo, MinSizeRel.
   BUILD_TYPE: Release
 
 jobs:
@@ -18,17 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Cmake3 - Install
-        run: sudo yum --assumeyes install cmake3
-
-      - name: Cmake - Remove
-        run: sudo yum --assumeyes remove cmake.x86_64
-
-      - name: Cmake - List packages
-        run: sudo yum list cmake*
-
-      - name: Bluez - Install
-        run: sudo yum --assumeyes install bluez
+      - name: Set up
+        run: ${{github.workspace}}/aws/setup.sh
 
       - name: CMake3 - Configure
         run: >
