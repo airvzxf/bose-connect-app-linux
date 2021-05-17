@@ -48,7 +48,7 @@ jobs:
           ls -lha ${{github.workspace}}/build
           echo ""
           export PROJECT_NAME=$(grep PROJECT_NAME \
-            ${{github.workspace}}/CMakeCache.txt \
+            ${{github.workspace}}/build/CMakeCache.txt \
             | cut -d "=" -f2)
           echo "PROJECT_NAME: ${PROJECT_NAME}"
           echo "BINARY_NAME: ${{ env.BINARY_NAME }}"
