@@ -38,24 +38,13 @@ jobs:
         working-directory: ${{github.workspace}}/build
         run: ctest3 -C ${{env.BUILD_TYPE}}
 
-      - name: Print PROJECT_NAME 1
-        run: >
-          echo "PROJECT_NAME: ${PROJECT_NAME}"
-
-      - name: Get binary's name
+      - name: Archive binary's built
+        uses: actions/upload-artifact@v2
         run: |
           export PROJECT_NAME=$(grep PROJECT_NAME \
             ${{github.workspace}}/src/CMakeCache.txt \
             | cut -d "=" -f2)
           echo "PROJECT_NAME: ${PROJECT_NAME}"
-          echo "::set-env name=PROJECT_NAME::${PROJECT_NAME}}"
-
-      - name: Print PROJECT_NAME 2
-        run: >
-          echo "PROJECT_NAME: ${PROJECT_NAME}"
-
-#      - name: Archive binary's built
-#        uses: actions/upload-artifact@v2
-#        with:
-#          name: code-coverage-report
-#          path: ${{github.workspace}}/build/code-coverage.html
+        with:
+          name: code-coverage-report
+          path: ${{github.workspace}}/build/${PROJECT_NAME}
