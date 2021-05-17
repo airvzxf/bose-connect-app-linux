@@ -24,6 +24,9 @@ jobs:
       - name: Install Bluez
         run: sudo yum --assumeyes install bluez
 
+      - name: Create build directory
+        run: mkdir -p ${{github.workspace}}/build
+
       - name: Configure CMake
         run: cmake -S ${{github.workspace}}/src -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
