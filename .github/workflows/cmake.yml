@@ -40,13 +40,14 @@ jobs:
 
       - name: Get binary's name
         run: |
-          PROJECT_NAME=$(grep PROJECT_NAME \
-            ${{github.workspace}}/build/CMakeCache.txt \
-            | cut -d "=" -f2)
+          cd ${{github.workspace}}/build
+          PROJECT_NAME=$(grep PROJECT_NAME CMakeCache.txt | cut -d "=" -f2)
           echo "BINARY_NAME=${PROJECT_NAME}" >> $GITHUB_ENV
+          tar -zcvf "${PROJECT_NAME}.tar.gz" "${PROJECT_NAME}"
+          zip "${PROJECT_NAME}.zip" "${PROJECT_NAME}"
 
       - name: Archive binary's built
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BINARY_NAME }}
-          path: ${{github.workspace}}/build/${{ env.BINARY_NAME }}
+          path: ${{github.workspace}}/build/${{ env.BINARY_NAME }}.*

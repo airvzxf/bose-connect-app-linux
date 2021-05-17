@@ -26,3 +26,21 @@ echo ""
 echo "# BlueZ - List packages"
 echo "# ----------------------------------------------------"
 sudo yum list bluez*
+
+echo ""
+echo "# Tar - Install"
+echo "# ----------------------------------------------------"
+sudo yum --assumeyes install tar.x86_64
+echo ""
+echo "# Tar - List packages"
+echo "# ----------------------------------------------------"
+sudo yum list tar*
+
+echo ""
+echo "# Zip - Install"
+echo "# ----------------------------------------------------"
+sudo yum --assumeyes install zip.x86_64
+echo ""
+echo "# Zip - List packages"
+echo "# ----------------------------------------------------"
+sudo yum list zip*
