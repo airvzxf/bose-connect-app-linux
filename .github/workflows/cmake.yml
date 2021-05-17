@@ -53,9 +53,10 @@ jobs:
           echo "PROJECT_NAME: ${PROJECT_NAME}"
           echo "BINARY_NAME: ${{ env.BINARY_NAME }}"
           echo "${PROJECT_NAME}" | tee ${{ env.BINARY_NAME }}
+          echo "ACTION_STATE_HI=yellow" >> $GITHUB_ENV
 
       - name: Archive binary's built
         uses: actions/upload-artifact@v2
         with:
           name: code-coverage-report
-          path: ${{github.workspace}}/build/${{ env.BINARY_NAME }}
+          path: ${{github.workspace}}/build/${{ env.ACTION_STATE_HI }}
