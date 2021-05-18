@@ -7,10 +7,10 @@ on:
 
 jobs:
   c-linter:
-    name: C-Linter
+    name: c-linter
     runs-on: ubuntu-latest
     steps:
-      - name: C-Linter
+      - name: c-linter
         uses: ArtificialAmateur/clang-tidy-action@master
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
