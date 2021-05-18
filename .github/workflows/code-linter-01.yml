@@ -1,0 +1,16 @@
+name: C-Linter
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  c-linter:
+    name: C-Linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: C-Linter
+        uses: ArtificialAmateur/clang-tidy-action@master
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
