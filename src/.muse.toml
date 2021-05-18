@@ -1,0 +1,8 @@
+build = "cmake"
+
+# Tools:
+# errorprone_jdk8, errorprone_jdk11, findsecbugs,
+# eslint, pyrecheck, clippy, cobra, gosec, rubocop,
+# staticcheck, golangci-lint, shellcheck, semgrep,
+# hlint, detekt, bandit, infer
+tools = ["cobra","infer","semgrep"]
