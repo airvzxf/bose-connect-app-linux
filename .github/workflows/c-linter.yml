@@ -7,7 +7,7 @@ on:
 
 jobs:
   c-linter:
-    name: Analyze C/C++ code
+    name: Analyze C/C++ source code
     runs-on: ubuntu-latest
 
     env:
