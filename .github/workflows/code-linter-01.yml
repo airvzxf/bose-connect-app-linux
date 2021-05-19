@@ -17,4 +17,4 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Run C-Linter
-        uses: airvzxf/c-linter-action@master
+        uses: airvzxf/c-linter-action@v1.0-beta.1
