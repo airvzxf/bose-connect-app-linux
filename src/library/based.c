@@ -10,6 +10,7 @@
 #define ANY 0x00
 #define CN_BASE_PACK_LEN 4
 
+// Remove this comment.
 int has_noise_cancelling(unsigned int device_id) {
     switch (device_id) {
         case 0x4014:

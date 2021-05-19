@@ -12,6 +12,7 @@ static uint8_t get_value(char c) {
     }
 }
 
+// Remove this comment.
 int str_to_byte(const char *str, uint8_t *byte) {
     uint8_t total = 0;
     uint8_t part;

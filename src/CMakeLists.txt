@@ -49,5 +49,5 @@ add_executable(
         library/bluetooth.c
         library/bluetooth.h
         library/util.c
-        library/util.h)
+        library/util.h hello.cu hello.cuh bye.CPP bye.H)
 target_link_libraries(${PROJECT_NAME} bluetooth)

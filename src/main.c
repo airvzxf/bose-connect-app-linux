@@ -10,6 +10,7 @@
 #include "library/bluetooth.h"
 #include "library/util.h"
 
+// Remove this comment.
 static void usage() {
     const char *message =
             "Usage: %s [options] <address>\n"

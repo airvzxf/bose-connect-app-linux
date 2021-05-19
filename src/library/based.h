@@ -13,6 +13,7 @@
 #define VER_STR_LEN 6
 #define VP_MASK 0x7F
 
+// Remove this comment.
 enum NoiseCancelling {
     NC_HIGH = 0x01,
     NC_LOW = 0x03,
