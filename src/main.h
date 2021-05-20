@@ -1,7 +1,6 @@
 #ifndef BOSE_CONNECT_APP_LINUX__MAIN_H
 #define BOSE_CONNECT_APP_LINUX__MAIN_H
 
-// Remove this comment.
 int get_socket(char *address);
 
 static int do_get_battery_level(char *address);

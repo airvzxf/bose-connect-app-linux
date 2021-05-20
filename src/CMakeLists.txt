@@ -37,6 +37,17 @@ link_directories(${BLUEZ_LIBRARIES})
 
 
 # ------------------------------------------------------
+# CLang Tidy.
+# ------------------------------------------------------
+SET(CMAKE_C_CLANG_TIDY
+        clang-tidy;
+        -warnings-as-errors=*;
+        -header-filter=.*;
+        -checks=*;
+        )
+
+
+# ------------------------------------------------------
 # Add the executable.
 # ------------------------------------------------------
 add_compile_definitions(PROGRAM_NAME="${PROJECT_NAME}")
@@ -49,5 +60,5 @@ add_executable(
         library/bluetooth.c
         library/bluetooth.h
         library/util.c
-        library/util.h hello.cu hello.cuh bye.CPP bye.H)
+        library/util.h)
 target_link_libraries(${PROJECT_NAME} bluetooth)
