@@ -19,3 +19,5 @@ jobs:
 
       - name: Perform the lint action
         uses: airvzxf/c-linter-action@main
+        with:
+          project_path: src
