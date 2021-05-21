@@ -13,13 +13,18 @@ env:
 
 jobs:
   build:
-    runs-on: self-hosted
+    runs-on: ubuntu:latest
 
     steps:
       - uses: actions/checkout@v2
 
-      - name: Set up AWS self-host
-        run: ${{github.workspace}}/aws/setup.sh
+      - name: Update packages
+        run: sudo apt update
+
+      - name: Install packages
+        run: >
+          sudo apt --assume-yes install \
+            curl jq cmake3 clang clang-tidy clang-format cppcheck
 
       - name: CMake3 - Configure
         run: >

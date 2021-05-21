@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-SET(PROJECT_NAME bose-connect-app-linux)
+set(PROJECT_NAME bose-connect-app-linux)
 
 # Set the project name and version.
 project(${PROJECT_NAME} VERSION 1.0)
@@ -37,15 +37,27 @@ link_directories(${BLUEZ_LIBRARIES})
 
 
 # ------------------------------------------------------
-# CLang Tidy.
+# Code quality and security tools.
 # ------------------------------------------------------
-SET(CMAKE_C_CLANG_TIDY
-        clang-tidy;
-        -warnings-as-errors=*;
-        -header-filter=.*;
-        -checks=*;
-        )
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+#set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
+#set(CMAKE_C_CPPCHECK
+#        cppcheck;
+#        --language=c;
+#        --std=c11;
+#        --platform=unix64;
+#        --library=boost.cfg;
+#        --library=cppcheck-lib.cfg;
+#        --library=cppunit.cfg;
+#        --library=gnu.cfg;
+#        --library=libcerror.cfg;
+#        --library=posix.cfg;
+#        --library=std.cfg;
+#        --enable=all;
+#        --inconclusive;
+#        --force;
+#        --max-ctu-depth=1000000;
+#        --project=${PROJECT_BINARY_DIR}/compile_commands.json;)
 
 # ------------------------------------------------------
 # Add the executable.
