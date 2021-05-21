@@ -27,7 +27,8 @@ jobs:
       - name: Install packages
         run: >
           sudo apt --assume-yes install \
-            curl jq cmake clang clang-tidy clang-format cppcheck
+            curl jq cmake clang clang-tidy clang-format cppcheck \
+            libbluetooth-dev
 
       - name: CMake - Configure
         run: >
