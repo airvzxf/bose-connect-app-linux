@@ -13,6 +13,7 @@ env:
 
 jobs:
   build:
+    name: Build the application
     runs-on: ubuntu-latest
 
     steps:
@@ -20,9 +21,6 @@ jobs:
 
       - name: Update packages
         run: sudo apt update
-
-      - name: Search cmake package
-        run: sudo apt search cmake*
 
       - name: Install packages
         run: >
