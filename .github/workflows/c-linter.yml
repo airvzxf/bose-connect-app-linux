@@ -1,21 +1,21 @@
-#name: C-Linter
-#
-#on:
-#  push:
-#  pull_request:
-#  workflow_dispatch:
-#
-#jobs:
-#  c-linter:
-#    name: Analyze C/C++ source code
-#    runs-on: ubuntu-latest
-#
-#    env:
-#      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#
-#    steps:
-#      - name: Checkout repository
-#        uses: actions/checkout@v2
-#
-#      - name: Run C-Linter
-#        uses: airvzxf/c-linter-action@main
+name: C-Linter
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  c-linter:
+    name: Analyze C/C++ source code
+    runs-on: ubuntu-latest
+
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Perform the lint action
+        uses: airvzxf/c-linter-action@main
