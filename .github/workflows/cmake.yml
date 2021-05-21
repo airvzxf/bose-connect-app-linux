@@ -21,10 +21,13 @@ jobs:
       - name: Update packages
         run: sudo apt update
 
+      - name: Search cmake package
+        run: sudo apt search cmake*
+
       - name: Install packages
         run: >
           sudo apt --assume-yes install \
-            curl jq cmake3 clang clang-tidy clang-format cppcheck
+            curl jq cmake clang clang-tidy clang-format cppcheck
 
       - name: CMake3 - Configure
         run: >
