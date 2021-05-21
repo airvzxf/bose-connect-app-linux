@@ -40,6 +40,7 @@ link_directories(${BLUEZ_LIBRARIES})
 # Code quality and security tools.
 # ------------------------------------------------------
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# TODO: Uncomment these lines and fix all the problems in local.
 #set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
 #set(CMAKE_C_CPPCHECK
 #        cppcheck;
