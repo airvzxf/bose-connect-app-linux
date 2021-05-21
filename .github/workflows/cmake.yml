@@ -29,22 +29,22 @@ jobs:
           sudo apt --assume-yes install \
             curl jq cmake clang clang-tidy clang-format cppcheck
 
-      - name: CMake3 - Configure
+      - name: CMake - Configure
         run: >
-          cmake3 \
+          cmake \
             -S ${{github.workspace}}/src \
             -B ${{github.workspace}}/build \
             -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
-      - name: CMake3 - Build
+      - name: CMake - Build
         run: >
-          cmake3 \
+          cmake \
             --build ${{github.workspace}}/build \
             --config ${{env.BUILD_TYPE}}
 
-      - name: CMake3 - Test
+      - name: CMake - Test
         working-directory: ${{github.workspace}}/build
-        run: ctest3 -C ${{env.BUILD_TYPE}}
+        run: ctest -C ${{env.BUILD_TYPE}}
 
       - name: Get binary's name
         run: |
