@@ -1,4 +1,4 @@
-name: "CodeQL"
+name: CodeQL
 
 on:
   push:
@@ -46,7 +46,7 @@ jobs:
         #   make bootstrap
         #   make release
 
-      - name: Perform CodeQL Analysis
+      - name: Perform analysis
         uses: github/codeql-action/analyze@v1
         with:
           add-snippets: true

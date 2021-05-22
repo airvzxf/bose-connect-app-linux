@@ -1,4 +1,4 @@
-name: Codacy Security Scan
+name: Codacy
 
 on:
   push:
@@ -11,13 +11,13 @@ on:
 
 jobs:
   codacy-security-scan:
-    name: Codacy Security Scan
+    name: Security Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Run Codacy Analysis CLI
+      - name: Analysis CLI
         uses: codacy/codacy-analysis-cli-action@1.1.0
         with:
           verbose: true
