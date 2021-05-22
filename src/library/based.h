@@ -69,9 +69,9 @@ enum SelfVoice {
 };
 
 struct Device {
-    bdaddr_t address;
-    enum DeviceStatus status;
-    char name[MAX_NAME_LEN + 1];
+  bdaddr_t          address;
+  enum DeviceStatus status;
+  char              name[MAX_NAME_LEN + 1];
 };
 
 int has_noise_cancelling(unsigned int device_id);
@@ -110,8 +110,7 @@ int get_battery_level(int sock, unsigned int *level);
 int get_device_info(int sock, bdaddr_t address, struct Device *device);
 
 int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES],
-                       size_t *num_devices,
-                       enum DevicesConnected *connected);
+                       size_t *num_devices, enum DevicesConnected *connected);
 
 int connect_device(int sock, bdaddr_t address);
 

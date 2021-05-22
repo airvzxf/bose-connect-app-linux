@@ -98,7 +98,7 @@ static int do_set_name(char *address, const char *arg) {
         return 1;
     }
     char name_buffer[MAX_NAME_LEN + 1] = {0};
-    int status;
+    int  status                        = 0;
 
     if (strlen(arg) > MAX_NAME_LEN) {
         fprintf(stderr, "Name exceeds %d character maximum. Truncating.\n",
@@ -118,7 +118,7 @@ static int do_set_prompt_language(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum PromptLanguage pl;
+    enum PromptLanguage pl = 0;
 
     if (strcmp(arg, "en") == 0) {
         pl = PL_EN;
@@ -161,7 +161,7 @@ static int do_set_voice_prompts(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    int on;
+    int on = 0;
 
     if (strcmp(arg, "on") == 0) {
         on = 1;
@@ -182,7 +182,7 @@ static int do_set_auto_off(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum AutoOff ao;
+    enum AutoOff ao = 0;
 
     int parsed = atoi(arg);
 
@@ -213,31 +213,31 @@ static int do_set_noise_cancelling(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum NoiseCancelling nc;
+    enum NoiseCancelling nc = 0;
 
     if (strcmp(arg, "high") == 0) {
         nc = NC_HIGH;
     } else if (strcmp(arg, "low") == 0) {
-        nc = NC_LOW;
+      nc = NC_LOW;
     } else if (strcmp(arg, "off") == 0) {
-        nc = NC_OFF;
+      nc = NC_OFF;
     } else {
-        fprintf(stderr, "Invalid noise cancelling argument: %s\n", arg);
-        usage();
-        return 1;
+      fprintf(stderr, "Invalid noise cancelling argument: %s\n", arg);
+      usage();
+      return 1;
     }
 
-    unsigned int device_id;
-    unsigned int index;
-    int status = get_device_id(sock, &device_id, &index);
+    unsigned int device_id = 0;
+    unsigned int index     = 0;
+    int          status    = get_device_id(sock, &device_id, &index);
     if (status) {
-        return status;
+      return status;
     }
 
     if (!has_noise_cancelling(device_id)) {
-        fprintf(stderr, "This device does not have noise cancelling.\n");
-        usage();
-        return 1;
+      fprintf(stderr, "This device does not have noise cancelling.\n");
+      usage();
+      return 1;
     }
 
     close(sock);
@@ -245,26 +245,26 @@ static int do_set_noise_cancelling(char *address, const char *arg) {
 }
 
 static int do_get_device_status(char *address) {
-    int sock = get_socket(address);
-    if (sock == -1) {
-        return 1;
-    }
-    printf("Status:\n");
-    char name[MAX_NAME_LEN + 1];
-    enum PromptLanguage promptLanguage;
-    enum AutoOff autoOff;
-    enum NoiseCancelling noiseCancelling;
+  int sock = get_socket(address);
+  if (sock == -1) {
+    return 1;
+  }
+  printf("Status:\n");
+  char                 name[MAX_NAME_LEN + 1];
+  enum PromptLanguage  promptLanguage  = 0;
+  enum AutoOff         autoOff         = 0;
+  enum NoiseCancelling noiseCancelling = 0;
 
-    int status = get_device_status(sock, name, &promptLanguage, &autoOff,
-                                   &noiseCancelling);
-    if (status) {
-        return status;
-    }
-    printf("\tName: %s\n", name);
+  int status = get_device_status(sock, name, &promptLanguage, &autoOff,
+                                 &noiseCancelling);
+  if (status) {
+    return status;
+  }
+  printf("\tName: %s\n", name);
 
-    char *language = NULL;
-    char unknown_language[15];
-    switch (promptLanguage & VP_MASK) {
+  char *language = NULL;
+  char  unknown_language[15];
+  switch (promptLanguage & VP_MASK) {
         case PL_EN:
             language = "en";
             break;
@@ -320,7 +320,7 @@ static int do_get_device_status(char *address) {
     }
     printf("\n");
 
-    char *cancellingLevel;
+    char *cancellingLevel = NULL;
     if (noiseCancelling != NC_DNE) {
         switch (noiseCancelling) {
             case NC_HIGH:
@@ -347,7 +347,7 @@ static int do_set_pairing(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum Pairing p;
+    enum Pairing p = 0;
 
     if (strcmp(arg, "on") == 0) {
         p = P_ON;
@@ -368,7 +368,7 @@ static int do_set_self_voice(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum SelfVoice p;
+    enum SelfVoice p = 0;
 
     if (strcmp(arg, "high") == 0) {
         p = SV_HIGH;
@@ -432,8 +432,8 @@ static int do_get_battery_level(char *address) {
         return 1;
     }
     printf("Battery level: ");
-    unsigned int level;
-    int status = get_battery_level(sock, &level);
+    unsigned int level  = 0;
+    int          status = get_battery_level(sock, &level);
 
     if (status) {
         return status;
@@ -446,25 +446,25 @@ static int do_get_battery_level(char *address) {
 }
 
 static int do_get_paired_devices(char *address) {
-    int sock = get_socket(address);
-    if (sock == -1) {
-        return 1;
-    }
-    printf("Paired devices: ");
-    bdaddr_t devices[MAX_NUM_DEVICES];
-    size_t num_devices;
-    enum DevicesConnected connected;
+  int sock = get_socket(address);
+  if (sock == -1) {
+    return 1;
+  }
+  printf("Paired devices: ");
+  bdaddr_t              devices[MAX_NUM_DEVICES];
+  size_t                num_devices = 0;
+  enum DevicesConnected connected   = 0;
 
-    int status = get_paired_devices(sock, devices, &num_devices, &connected);
-    if (status) {
-        return status;
-    }
+  int status = get_paired_devices(sock, devices, &num_devices, &connected);
+  if (status) {
+    return status;
+  }
 
-    unsigned int num_connected;
-    switch (connected) {
-        case DC_ONE:
-            num_connected = 1;
-            break;
+  unsigned int num_connected = 0;
+  switch (connected) {
+  case DC_ONE:
+    num_connected = 1;
+    break;
         case DC_TWO:
             num_connected = 2;
             break;
@@ -479,7 +479,7 @@ static int do_get_paired_devices(char *address) {
     printf("%lu\n", num_devices);
     printf("\tConnected: %d\n", num_connected);
 
-    size_t i;
+    size_t i = 0;
     for (i = 0; i < num_devices; ++i) {
         struct Device device;
         status = get_device_info(sock, devices[i], &device);
@@ -490,7 +490,7 @@ static int do_get_paired_devices(char *address) {
         char address_converted[18];
         reverse_ba2str(&device.address, address_converted);
 
-        char status_symbol;
+        char status_symbol = 0;
         switch (device.status) {
             case DS_THIS:
                 status_symbol = '!';
@@ -556,23 +556,23 @@ static int do_remove_device(char *address, const char *arg) {
 }
 
 static int do_get_device_id(char *address) {
-    int sock = get_socket(address);
-    if (sock == -1) {
-        return 1;
-    }
-    printf("Device ID: ");
-    unsigned int device_id;
-    unsigned int index;
-    int status = get_device_id(sock, &device_id, &index);
+  int sock = get_socket(address);
+  if (sock == -1) {
+    return 1;
+  }
+  printf("Device ID: ");
+  unsigned int device_id = 0;
+  unsigned int index     = 0;
+  int          status    = get_device_id(sock, &device_id, &index);
 
-    if (status) {
-        return status;
-    }
+  if (status) {
+    return status;
+  }
 
-    printf("0x%04x | Index: %d\n", device_id, index);
+  printf("0x%04x | Index: %d\n", device_id, index);
 
-    close(sock);
-    return 0;
+  close(sock);
+  return 0;
 }
 
 static int do_send_packet(char *address, const char *arg) {
@@ -581,7 +581,7 @@ static int do_send_packet(char *address, const char *arg) {
         return 1;
     }
     uint8_t send[sizeof(arg) / 2];
-    size_t i;
+    size_t  i = 0;
     for (i = 0; arg[i * 2]; ++i) {
         if (str_to_byte(&arg[i * 2], &send[i]) != 0) {
             return 1;
@@ -669,7 +669,7 @@ int main(int argc, char *argv[]) {
     };
 
     // Find connection address and verify options
-    int opt;
+    int opt       = 0;
     int opt_index = 0;
     while ((opt = getopt_long(argc, argv, short_opt, long_opt, &opt_index)) >
            0) {
