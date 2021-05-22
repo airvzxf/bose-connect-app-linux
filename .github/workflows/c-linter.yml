@@ -23,3 +23,9 @@ jobs:
           project_path: src
           c_extensions: \.c$|\.h$
           install_packages: libbluetooth-dev
+
+      - name: Archive QA reports
+        uses: actions/upload-artifact@v2
+        with:
+          name: quality-assurance-report
+          path: ${{github.workspace}}/*-report.txt
