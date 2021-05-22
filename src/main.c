@@ -9,7 +9,7 @@
 #include "library/based.h"
 #include "library/bluetooth.h"
 #include "library/util.h"
-// Added commit #1 v1.0.1
+
 static void usage() {
     const char *message =
             "Usage: %s [options] <address>\n"

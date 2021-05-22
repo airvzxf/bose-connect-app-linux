@@ -6,7 +6,7 @@
 /*
  * Based on code taken from the BlueZ library.
  */
-// Added commit #3 v1.0.1
+
 int reverse_ba2str(const bdaddr_t *ba, char *str) {
     return sprintf(str, "%2.2X:%2.2X:%2.2X:%2.2X:%2.2X:%2.2X",
                    ba->b[0], ba->b[1], ba->b[2], ba->b[3], ba->b[4], ba->b[5]);

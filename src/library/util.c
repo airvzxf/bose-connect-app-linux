@@ -1,5 +1,5 @@
 #include <stdint.h>
-// Added commit #4 v1.0.1
+
 static uint8_t get_value(char c) {
     if ('0' <= c && c <= '9') {
         return c - '0';
