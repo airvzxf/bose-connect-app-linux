@@ -1,6 +1,6 @@
 # To-do's list
 
-- [ ] Functionality
+- [ ] Functionality.
     - [ ] Add existed function "send package" as an option.
     - [ ] Change switch structures for mapping.
     - [x] Request multiple times in the same execution.
@@ -10,21 +10,29 @@
     - [ ] How to handle different firmware versions?
     - [ ] Set up the CMake list for installation.
 
-- [ ] Portability
+- [ ] Portability.
     - [ ] Create Docker image and container.
         - [ ] Flag for development.
         - [ ] Flag for production.
 
-- [ ] QA
+- [ ] QA - Quality assurance.
     - [ ] Unit test: Create unit test for every file, and function.
-    - [ ] Code coverage scanner.
-    - [ ] Code quality scanner.
-    - [ ] Security scanner.
-        - [ ] DAST.
-        - [ ] SAST.
-        - [ ] IAST.
+    - [ ] Scanners.
+        - [ ] Code coverage scanner.
+        - [x] Code quality scanner.
+        - [ ] Security scanner.
+            - [ ] DAST.
+            - [x] SAST.
+            - [ ] IAST.
+    - [ ] Fix alerts.
+        - [ ] Code coverage scanner.
+        - [ ] Code quality scanner.
+        - [ ] Security scanner.
+            - [ ] DAST.
+            - [ ] SAST.
+            - [ ] IAST.
 
-- [ ] CI/CD
+- [ ] CI/CD - Make similar to GitLab.
     - [ ] Stage for Build.
     - [ ] Stage for QA.
     - [ ] Stage for Deploy.
@@ -32,10 +40,10 @@
         - [ ] Release to AUR Arch Linux.
         - [ ] Release to Debian or others.
 
-- [ ] Original list
-    - [ ] Implement “getters” for current headphone state
-        - [ ] Current status of all setters currently implemented
-        - [ ] Date of manufacturing
-    - [ ] Get/set volume
-    - [ ] Port to macOS (and maybe Windows)
+- [ ] Original list.
+    - [ ] Implement “getters” for current headphone state.
+        - [ ] Current status of all setters currently implemented.
+        - [ ] Date of manufacturing.
+    - [ ] Get/set volume.
+    - [ ] Port to macOS (and maybe Windows).
     - [ ] Firmware updates?
