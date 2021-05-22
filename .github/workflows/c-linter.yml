@@ -21,5 +21,5 @@ jobs:
         uses: airvzxf/c-linter-action@main
         with:
           project_path: src
-          c_extensions: .c$|.h$
+          c_extensions: \.c$|\.h$
           install_packages: libbluetooth-dev
