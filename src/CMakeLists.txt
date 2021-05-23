@@ -37,33 +37,9 @@ link_directories(${BLUEZ_LIBRARIES})
 
 
 # ------------------------------------------------------
-# Code quality and security tools.
-# ------------------------------------------------------
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# TODO: Uncomment these lines and fix all the problems in local.
-#set(CMAKE_C_CLANG_TIDY clang-tidy;)
-#set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
-set(CMAKE_C_CPPCHECK
-        cppcheck;
-        --language=c;
-        --std=c11;
-        --platform=unix64;
-        --library=boost.cfg;
-        --library=cppcheck-lib.cfg;
-        --library=cppunit.cfg;
-        --library=gnu.cfg;
-        --library=libcerror.cfg;
-        --library=posix.cfg;
-        --library=std.cfg;
-        --enable=all;
-        --inconclusive;
-        --force;
-        --max-ctu-depth=1000000;
-        --project=${PROJECT_BINARY_DIR}/compile_commands.json;)
-
-# ------------------------------------------------------
 # Add the executable.
 # ------------------------------------------------------
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_definitions(PROGRAM_NAME="${PROJECT_NAME}")
 add_executable(
         ${PROJECT_NAME}
@@ -76,3 +52,27 @@ add_executable(
         library/util.c
         library/util.h)
 target_link_libraries(${PROJECT_NAME} bluetooth)
+
+
+# ------------------------------------------------------
+# Code quality and security tools.
+# ------------------------------------------------------
+# TODO: Uncomment these lines and fix all the problems in local.
+#set(CMAKE_C_CLANG_TIDY clang-tidy;)
+#set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
+set(CMAKE_C_CPPCHECK
+        cppcheck;
+        --language=c;
+        --std=c11;
+        --platform=unix64;
+        --enable=all;
+        --inconclusive;
+        --force;
+        --max-ctu-depth=1000000;
+        --library=boost.cfg;
+        --library=cppcheck-lib.cfg;
+        --library=cppunit.cfg;
+        --library=gnu.cfg;
+        --library=libcerror.cfg;
+        --library=posix.cfg;
+        --library=std.cfg;)

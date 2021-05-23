@@ -592,11 +592,14 @@ static int do_get_device_id(char *address) {
 }
 
 static int do_send_packet(char *address, const char *arg) {
-  int sock = get_socket(address);
+  int char_type_pointer_size = sizeof(char *);
+  int sock                   = get_socket(address);
+
   if (sock == -1) {
     return 1;
   }
-  uint8_t send[sizeof(arg) / 2];
+
+  uint8_t send[char_type_pointer_size / 2];
   for (size_t i = 0; arg[i * 2]; ++i) {
     if (str_to_byte(&arg[i * 2], &send[i]) != 0) {
       return 1;

@@ -20,8 +20,8 @@ int has_noise_cancelling(unsigned int device_id) {
   }
 }
 
-static int masked_memory_cmp(const void *ptr1, const void *ptr2, size_t num,
-                             const void *mask) {
+static int masked_memory_cmp(const uint8_t *ptr1, uint8_t *ptr2, size_t num,
+                             const uint8_t *mask) {
   while (num-- > 0) {
     uint8_t mask_byte = *(uint8_t *)mask++;
     uint8_t byte1     = *(uint8_t *)ptr1++ & mask_byte;
@@ -35,8 +35,8 @@ static int masked_memory_cmp(const void *ptr1, const void *ptr2, size_t num,
   return 0;
 }
 
-static int read_check(int sock, void *receive, size_t receive_n,
-                      const void *ack, const void *mask) {
+static int read_check(int sock, uint8_t *receive, size_t receive_n,
+                      const uint8_t *ack, const uint8_t *mask) {
   int status = read(sock, receive, receive_n);
   if (status != receive_n) {
     return status ? status : 1;
