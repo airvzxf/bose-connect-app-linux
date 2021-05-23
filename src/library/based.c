@@ -5,7 +5,6 @@
 #include <unistd.h>
 
 #include "based.h"
-#include "bluetooth.h"
 
 #define ANY 0x00
 #define CN_BASE_PACK_LEN 4
@@ -398,8 +397,9 @@ int get_battery_level(int sock, unsigned int *level) {
     }
 
     uint8_t level_byte = 0;
-    status = read(sock, &level_byte, 1);
+    read(sock, &level_byte, 1);
     *level = level_byte;
+
     return 0;
 }
 

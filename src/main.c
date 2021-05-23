@@ -2,13 +2,11 @@
 #include <bluetooth/rfcomm.h>
 #include <getopt.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
-#include "main.h"
 #include "library/based.h"
-#include "library/bluetooth.h"
 #include "library/util.h"
+#include "main.h"
 
 static void usage() {
     const char *message =
@@ -98,7 +96,7 @@ static int do_set_name(char *address, const char *arg) {
         return 1;
     }
     char name_buffer[MAX_NAME_LEN + 1] = {0};
-    int  status                        = 0;
+    int  status;
 
     if (strlen(arg) > MAX_NAME_LEN) {
         fprintf(stderr, "Name exceeds %d character maximum. Truncating.\n",
@@ -118,7 +116,7 @@ static int do_set_prompt_language(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum PromptLanguage pl = 0;
+    enum PromptLanguage pl;
 
     if (strcmp(arg, "en") == 0) {
         pl = PL_EN;
@@ -161,7 +159,7 @@ static int do_set_voice_prompts(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    int on = 0;
+    int on;
 
     if (strcmp(arg, "on") == 0) {
         on = 1;
@@ -182,7 +180,7 @@ static int do_set_auto_off(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum AutoOff ao = 0;
+    enum AutoOff ao;
 
     int parsed = atoi(arg);
 
@@ -213,7 +211,7 @@ static int do_set_noise_cancelling(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum NoiseCancelling nc = 0;
+    enum NoiseCancelling nc;
 
     if (strcmp(arg, "high") == 0) {
         nc = NC_HIGH;
@@ -262,19 +260,20 @@ static int do_get_device_status(char *address) {
   }
   printf("\tName: %s\n", name);
 
-  char *language = NULL;
-  char  unknown_language[15];
+  char *    language             = NULL;
+  const int max_unknown_language = 15;
+  char      unknown_language[max_unknown_language];
   switch (promptLanguage & VP_MASK) {
-        case PL_EN:
-            language = "en";
-            break;
-        case PL_FR:
-            language = "fr";
-            break;
-        case PL_IT:
-            language = "it";
-            break;
-        case PL_DE:
+  case PL_EN:
+    language = "en";
+    break;
+  case PL_FR:
+    language = "fr";
+    break;
+  case PL_IT:
+    language = "it";
+    break;
+  case PL_DE:
             language = "de";
             break;
         case PL_ES:
@@ -347,7 +346,7 @@ static int do_set_pairing(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum Pairing p = 0;
+    enum Pairing p;
 
     if (strcmp(arg, "on") == 0) {
         p = P_ON;
@@ -368,7 +367,7 @@ static int do_set_self_voice(char *address, const char *arg) {
     if (sock == -1) {
         return 1;
     }
-    enum SelfVoice p = 0;
+    enum SelfVoice p;
 
     if (strcmp(arg, "high") == 0) {
         p = SV_HIGH;
@@ -413,8 +412,8 @@ static int do_get_serial_number(char *address) {
         return 1;
     }
     printf("Serial number: ");
-    char serial[0x100];
-    int status = get_serial_number(sock, serial);
+    char serial[MAX_SERIAL_SIZE];
+    int  status = get_serial_number(sock, serial);
 
     if (status) {
         return status;
@@ -460,7 +459,7 @@ static int do_get_paired_devices(char *address) {
     return status;
   }
 
-  unsigned int num_connected = 0;
+  unsigned int num_connected;
   switch (connected) {
   case DC_ONE:
     num_connected = 1;
@@ -479,26 +478,27 @@ static int do_get_paired_devices(char *address) {
     printf("%lu\n", num_devices);
     printf("\tConnected: %d\n", num_connected);
 
-    size_t i = 0;
+    size_t i;
     for (i = 0; i < num_devices; ++i) {
-        struct Device device;
-        status = get_device_info(sock, devices[i], &device);
-        if (status) {
-            return status;
-        }
+      struct Device device;
+      status = get_device_info(sock, devices[i], &device);
+      if (status) {
+        return status;
+      }
 
-        char address_converted[18];
-        reverse_ba2str(&device.address, address_converted);
+      const int max_address_convert = 18;
+      char      address_converted[max_address_convert];
+      reverse_ba2str(&device.address, address_converted);
 
-        char status_symbol = 0;
-        switch (device.status) {
-            case DS_THIS:
-                status_symbol = '!';
-                break;
-            case DS_CONNECTED:
-                status_symbol = '*';
-                break;
-            case DS_DISCONNECTED:
+      char status_symbol;
+      switch (device.status) {
+      case DS_THIS:
+        status_symbol = '!';
+        break;
+      case DS_CONNECTED:
+        status_symbol = '*';
+        break;
+      case DS_DISCONNECTED:
                 status_symbol = ' ';
                 break;
             default:
@@ -581,11 +581,10 @@ static int do_send_packet(char *address, const char *arg) {
         return 1;
     }
     uint8_t send[sizeof(arg) / 2];
-    size_t  i = 0;
-    for (i = 0; arg[i * 2]; ++i) {
-        if (str_to_byte(&arg[i * 2], &send[i]) != 0) {
-            return 1;
-        }
+    for (size_t i = 0; arg[i * 2]; ++i) {
+      if (str_to_byte(&arg[i * 2], &send[i]) != 0) {
+        return 1;
+      }
     }
 
     uint8_t received[MAX_BT_PACK_LEN];
@@ -595,8 +594,8 @@ static int do_send_packet(char *address, const char *arg) {
     }
 
     printf("Received package:\n\t");
-    for (i = 0; i < received_n; ++i) {
-        printf("%02x ", received[i]);
+    for (size_t i = 0; i < received_n; ++i) {
+      printf("%02x ", received[i]);
     }
     printf("\n");
 
@@ -669,7 +668,7 @@ int main(int argc, char *argv[]) {
     };
 
     // Find connection address and verify options
-    int opt       = 0;
+    int opt;
     int opt_index = 0;
     while ((opt = getopt_long(argc, argv, short_opt, long_opt, &opt_index)) >
            0) {
