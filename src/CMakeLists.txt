@@ -43,23 +43,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # TODO: Uncomment these lines and fix all the problems in local.
 #set(CMAKE_C_CLANG_TIDY clang-tidy;)
 #set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
-#set(CMAKE_C_CPPCHECK
-#        cppcheck;
-#        --language=c;
-#        --std=c11;
-#        --platform=unix64;
-#        --library=boost.cfg;
-#        --library=cppcheck-lib.cfg;
-#        --library=cppunit.cfg;
-#        --library=gnu.cfg;
-#        --library=libcerror.cfg;
-#        --library=posix.cfg;
-#        --library=std.cfg;
-#        --enable=all;
-#        --inconclusive;
-#        --force;
-#        --max-ctu-depth=1000000;
-#        --project=${PROJECT_BINARY_DIR}/compile_commands.json;)
+set(CMAKE_C_CPPCHECK
+        cppcheck;
+        --language=c;
+        --std=c11;
+        --platform=unix64;
+        --library=boost.cfg;
+        --library=cppcheck-lib.cfg;
+        --library=cppunit.cfg;
+        --library=gnu.cfg;
+        --library=libcerror.cfg;
+        --library=posix.cfg;
+        --library=std.cfg;
+        --enable=all;
+        --inconclusive;
+        --force;
+        --max-ctu-depth=1000000;
+        --project=${PROJECT_BINARY_DIR}/compile_commands.json;)
 
 # ------------------------------------------------------
 # Add the executable.

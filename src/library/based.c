@@ -31,6 +31,7 @@ static int masked_memory_cmp(const void *ptr1, const void *ptr2, size_t num,
       return byte1 - byte2;
     }
   }
+
   return 0;
 }
 
