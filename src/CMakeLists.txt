@@ -52,35 +52,43 @@ add_executable(
         library/util.c
         library/util.h)
 target_link_libraries(${PROJECT_NAME} bluetooth)
+get_target_property(PROJECT_SOURCES ${PROJECT_NAME} SOURCES)
 
-
-# ------------------------------------------------------
-# Code quality and security tools.
-# ------------------------------------------------------
-# TODO: Uncomment these lines and fix all the problems in local.
-#set(CMAKE_C_CLANG_TIDY clang-tidy;)
-#set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
 
 # ------------------------------------------------------
 # CLang Format
 # ------------------------------------------------------
-get_target_property(PROJECT_SOURCES ${PROJECT_NAME} SOURCES)
+add_custom_command(
+        COMMENT "Scanning: CLang Format\n\n"
+        TARGET ${PROJECT_NAME}
+        PRE_BUILD
+        COMMAND
+        cd .. &&
+        clang-format
+        "--verbose"
+        "--Werror"
+        "-i"
+        ${PROJECT_SOURCES}
+        VERBATIM
+)
 
-#add_custom_command(
-#        COMMENT "Scanning: CLang Format\n\n"
-#        TARGET ${PROJECT_NAME}
-#        PRE_BUILD
-#        COMMAND
-#        cd .. &&
-#        clang-format
-#        "--style=LLVM"
-#        "--sort-includes"
-#        "--Werror"
-#        "--dry-run"
-#        "--verbose"
-#        ${PROJECT_SOURCES}
-#        VERBATIM
-#)
+
+# ------------------------------------------------------
+# CLang Tidy
+# ------------------------------------------------------
+# clang-tidy -fix -fix-errors
+add_custom_command(
+        COMMENT "Scanning: CLang Tidy\n\n"
+        TARGET ${PROJECT_NAME}
+        PRE_BUILD
+        COMMAND
+        cd .. &&
+        clang-tidy
+        -p ${CMAKE_BINARY_DIR}
+        ${PROJECT_SOURCES}
+        VERBATIM
+)
+
 
 # ------------------------------------------------------
 # CPP Check
