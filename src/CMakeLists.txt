@@ -60,19 +60,69 @@ target_link_libraries(${PROJECT_NAME} bluetooth)
 # TODO: Uncomment these lines and fix all the problems in local.
 #set(CMAKE_C_CLANG_TIDY clang-tidy;)
 #set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
-set(CMAKE_C_CPPCHECK
-        cppcheck;
-        --language=c;
-        --std=c11;
-        --platform=unix64;
-        --enable=all;
-        --inconclusive;
-        --force;
-        --max-ctu-depth=1000000;
-        --library=boost.cfg;
-        --library=cppcheck-lib.cfg;
-        --library=cppunit.cfg;
-        --library=gnu.cfg;
-        --library=libcerror.cfg;
-        --library=posix.cfg;
-        --library=std.cfg;)
+
+# ------------------------------------------------------
+# CLang Format
+# ------------------------------------------------------
+get_target_property(PROJECT_SOURCES ${PROJECT_NAME} SOURCES)
+
+#add_custom_command(
+#        COMMENT "Scanning: CLang Format\n\n"
+#        TARGET ${PROJECT_NAME}
+#        PRE_BUILD
+#        COMMAND
+#        cd .. &&
+#        clang-format
+#        "--style=LLVM"
+#        "--sort-includes"
+#        "--Werror"
+#        "--dry-run"
+#        "--verbose"
+#        ${PROJECT_SOURCES}
+#        VERBATIM
+#)
+
+# ------------------------------------------------------
+# CPP Check
+# ------------------------------------------------------
+set(CPPCHECK_TEMPLATE "")
+string(APPEND CPPCHECK_TEMPLATE "{file}:{line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE "  Message: {message}\\n")
+string(APPEND CPPCHECK_TEMPLATE "    Check: CWE-{cwe}\\n")
+string(APPEND CPPCHECK_TEMPLATE "     Type: {severity} -> {id}\\n")
+string(APPEND CPPCHECK_TEMPLATE "     Line: {line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE "    Stack: {callstack}\\n")
+string(APPEND CPPCHECK_TEMPLATE "{code}\\n")
+
+set(CPPCHECK_TEMPLATE_LOCATION "")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "{file}:{line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "   Note: {info}\\n")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "   Line: {line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "{code}\\n")
+
+add_custom_command(
+        COMMENT "Scanning: CPP Check\n\n"
+        TARGET ${PROJECT_NAME}
+        PRE_BUILD
+        COMMAND cppcheck
+        "--language=c"
+        "--std=c11"
+        "--platform=unix64"
+        "--suppress=missingIncludeSystem"
+        "--enable=all"
+        "--inconclusive"
+        "--force"
+        "--max-ctu-depth=1000000"
+        "--library=boost.cfg"
+        "--library=cppcheck-lib.cfg"
+        "--library=cppunit.cfg"
+        "--library=gnu.cfg"
+        "--library=libcerror.cfg"
+        "--library=posix.cfg"
+        "--library=std.cfg"
+        "--template=${CPPCHECK_TEMPLATE}"
+        "--template-location=${CPPCHECK_TEMPLATE_LOCATION}"
+        "--project=${CMAKE_BINARY_DIR}/compile_commands.json"
+        "--error-exitcode=1"
+        VERBATIM
+)
