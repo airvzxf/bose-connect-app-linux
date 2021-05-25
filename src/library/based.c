@@ -267,7 +267,7 @@ int set_prompt_language(int sock, enum PromptLanguage language) {
     return status ? status : 1;
   }
 
-  enum PromptLanguage got_language = 0;
+  enum PromptLanguage got_language = 0x0;
   status                           = get_prompt_language(sock, &got_language);
   if (status) {
     return status;
@@ -278,9 +278,9 @@ int set_prompt_language(int sock, enum PromptLanguage language) {
 
 int set_voice_prompts(int sock, int on) {
   char                 name[MAX_NAME_LEN + 1];
-  enum PromptLanguage  pl = 0;
-  enum AutoOff         ao = 0;
-  enum NoiseCancelling nc = 0;
+  enum PromptLanguage  pl = 0x0;
+  enum AutoOff         ao = 0x0;
+  enum NoiseCancelling nc = 0x0;
 
   int status = get_device_status(sock, name, &pl, &ao, &nc);
   if (status) {

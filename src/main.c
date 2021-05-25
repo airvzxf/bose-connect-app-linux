@@ -8,6 +8,12 @@
 #include "library/util.h"
 #include "main.h"
 
+#define OPTION_DEVICE_ID         5
+#define OPTION_CONNECT_DEVICE    2
+#define OPTION_DISCONNECT_DEVICE 3
+#define OPTION_REMOVE_DEVICE     4
+#define OPTION_SEND_PACKET       1
+
 static void usage() {
   const char *message =
       "Usage: %s [options] <address>\n"
@@ -107,12 +113,11 @@ static int do_set_name(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  int status;
-
+  // TODO(Wolf): Convert to map and return -1 if not match
+  int status = 1;
   if (strlen(arg) > MAX_NAME_LEN) {
     fprintf(stderr, "Name exceeds %d character maximum. Truncating.\n",
             MAX_NAME_LEN);
-    status = 1;
   } else {
     char name_buffer[MAX_NAME_LEN + 1] = {0};
     strncpy(name_buffer, arg, MAX_NAME_LEN);
@@ -128,10 +133,11 @@ static int do_set_prompt_language(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  enum PromptLanguage pl;
+
+  // TODO(Wolf): Convert to map and return -1 if not match
+  enum PromptLanguage pl = PL_EN;
 
   if (strcmp(arg, "en") == 0) {
-    pl = PL_EN;
   } else if (strcmp(arg, "fr") == 0) {
     pl = PL_FR;
   } else if (strcmp(arg, "it") == 0) {
@@ -172,10 +178,10 @@ static int do_set_voice_prompts(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  int on;
 
+  // TODO(Wolf): Convert to map and return -1 if not match
+  int on = 1;
   if (strcmp(arg, "on") == 0) {
-    on = 1;
   } else if (strcmp(arg, "off") == 0) {
     on = 0;
   } else {
@@ -194,10 +200,11 @@ static int do_set_auto_off(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  enum AutoOff ao;
 
   int parsed = atoi(arg);
 
+  // TODO(Wolf): Convert to map and return -1 if not match
+  enum AutoOff ao = AO_NEVER;
   switch (parsed) {
   case AO_5_MIN:
   case AO_20_MIN:
@@ -208,7 +215,6 @@ static int do_set_auto_off(char *address, const char *arg) {
     break;
   default:
     if (strcmp(arg, "never") == 0) {
-      ao = AO_NEVER;
     } else {
       fprintf(stderr, "Invalid auto-off argument: %s\n", arg);
       usage();
@@ -225,10 +231,10 @@ static int do_set_noise_cancelling(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  enum NoiseCancelling nc;
+  enum NoiseCancelling nc = NC_HIGH;
 
+  // TODO(Wolf): Convert to map and return -1 if not match
   if (strcmp(arg, "high") == 0) {
-    nc = NC_HIGH;
   } else if (strcmp(arg, "low") == 0) {
     nc = NC_LOW;
   } else if (strcmp(arg, "off") == 0) {
@@ -264,9 +270,9 @@ static int do_get_device_status(char *address) {
   }
   printf("Status:\n");
   char                 name[MAX_NAME_LEN + 1];
-  enum PromptLanguage  promptLanguage  = 0;
-  enum AutoOff         autoOff         = 0;
-  enum NoiseCancelling noiseCancelling = 0;
+  enum PromptLanguage  promptLanguage  = 0x0;
+  enum AutoOff         autoOff         = 0x0;
+  enum NoiseCancelling noiseCancelling = 0x0;
 
   int status = get_device_status(sock, name, &promptLanguage, &autoOff,
                                  &noiseCancelling);
@@ -324,7 +330,7 @@ static int do_get_device_status(char *address) {
     break;
   }
   printf("\tLanguage: %s\n", language);
-  printf("\tVoice Prompts: %s\n", promptLanguage & VP_MASK ? "on" : "off");
+  printf("\tVoice Prompts: %s\n", (promptLanguage & VP_MASK) ? "on" : "off");
 
   printf("\tAuto-Off: ");
   if (autoOff) {
@@ -361,10 +367,10 @@ static int do_set_pairing(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  enum Pairing p;
+  enum Pairing p = P_ON;
 
+  // TODO(Wolf): Convert to map and return -1 if not match
   if (strcmp(arg, "on") == 0) {
-    p = P_ON;
   } else if (strcmp(arg, "off") == 0) {
     p = P_OFF;
   } else {
@@ -383,10 +389,10 @@ static int do_set_self_voice(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  enum SelfVoice p;
+  enum SelfVoice p = SV_HIGH;
 
+  // TODO(Wolf): Convert to map and return -1 if not match
   if (strcmp(arg, "high") == 0) {
-    p = SV_HIGH;
   } else if (strcmp(arg, "medium") == 0) {
     p = SV_MEDIUM;
   } else if (strcmp(arg, "low") == 0) {
@@ -476,10 +482,10 @@ static int do_get_paired_devices(char *address) {
     return status;
   }
 
-  unsigned int num_connected;
+  // TODO(Wolf): Convert to map and return -1 if not match
+  unsigned int num_connected = 1;
   switch (connected) {
   case DC_ONE:
-    num_connected = 1;
     break;
   case DC_TWO:
     num_connected = 2;
@@ -506,10 +512,10 @@ static int do_get_paired_devices(char *address) {
     char      address_converted[max_address_convert];
     reverse_ba2str(&device.address, address_converted);
 
-    char status_symbol;
+    // TODO(Wolf): Convert to map and return -1 if not match
+    char status_symbol = '!';
     switch (device.status) {
     case DS_THIS:
-      status_symbol = '!';
       break;
     case DS_CONNECTED:
       status_symbol = '*';
@@ -689,19 +695,17 @@ int main(int argc, char *argv[]) {
       {0, no_argument, NULL, 0}};
 
   // Find connection address and verify options
-  int opt;
   int opt_index = 0;
-  while ((opt = getopt_long(argc, argv, short_opt, long_opt, &opt_index)) > 0) {
-    switch (opt) {
-    case 'h':
-      usage();
-      return 0;
-    case '?':
-      usage();
-      return 1;
-    default:
-      break;
-    }
+  int opt       = getopt_long(argc, argv, short_opt, long_opt, &opt_index);
+  switch (opt) {
+  case 'h':
+    usage();
+    return 0;
+  case '?':
+    usage();
+    return 1;
+  default:
+    break;
   }
 
   if (argc - 1 != optind) {
@@ -740,7 +744,7 @@ int main(int argc, char *argv[]) {
     case 'a':
       status = do_get_paired_devices(address);
       break;
-    case 5:
+    case OPTION_DEVICE_ID:
       status = do_get_device_id(address);
       break;
     case 'n':
@@ -761,19 +765,19 @@ int main(int argc, char *argv[]) {
     case 'p':
       status = do_set_pairing(address, optarg);
       break;
-    case 2:
+    case OPTION_CONNECT_DEVICE:
       status = do_connect_device(address, optarg);
       break;
-    case 3:
+    case OPTION_DISCONNECT_DEVICE:
       status = do_disconnect_device(address, optarg);
       break;
-    case 4:
+    case OPTION_REMOVE_DEVICE:
       status = do_remove_device(address, optarg);
       break;
     case 'e':
       status = do_set_self_voice(address, optarg);
       break;
-    case 1:
+    case OPTION_SEND_PACKET:
       status = do_send_packet(address, optarg);
       break;
     default:

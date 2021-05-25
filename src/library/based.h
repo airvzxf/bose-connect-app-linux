@@ -11,7 +11,7 @@
 #define MAX_NUM_DEVICES 8
 #define MAX_BT_PACK_LEN 0x1000
 #define VER_STR_LEN     6
-#define VP_MASK         0x7F
+#define VP_MASK         0x7Fu
 #define MAX_SERIAL_SIZE 0x100
 
 enum NoiseCancelling {
