@@ -495,8 +495,7 @@ static int do_get_paired_devices(char *address) {
   printf("%zu\n", num_devices);
   printf("\tConnected: %u\n", num_connected);
 
-  size_t i;
-  for (i = 0; i < num_devices; ++i) {
+  for (size_t i = 0; i < num_devices; ++i) {
     struct Device device;
     status = get_device_info(sock, devices[i], &device);
     if (status) {

@@ -4,6 +4,7 @@ WarningsAsErrors: '*'
 HeaderFilterRegex: '.*'
 AnalyzeTemporaryDtors: false
 FormatStyle: llvm
+User: wolf
 CheckOptions:
   - key: abseil-string-find-startswith.AbseilStringsMatchHeader
     value: 'absl/strings/match.h'
@@ -326,7 +327,7 @@ CheckOptions:
   - key: llvm-qualified-auto.AddConstToQualified
     value: 'false'
   - key: llvmlibc-restrict-system-libc-headers.Includes
-    value: '-*'
+    value: '-*,stdlib.h,string.h,unistd.h,getopt.h,bluetooth/*.h'
   - key: misc-definitions-in-headers.HeaderFileExtensions
     value: ';h;hh;hpp;hxx'
   - key: misc-definitions-in-headers.UseHeaderFileExtension
