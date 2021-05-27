@@ -3,4 +3,6 @@
 
 int str_to_byte(const char *str, uint8_t *byte);
 
+void str_copy(char *to, const char *from, int size);
+
 #endif

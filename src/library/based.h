@@ -7,7 +7,7 @@
 #include "bluetooth.h"
 
 #define BOSE_CHANNEL    8
-#define MAX_NAME_LEN    0x1f
+#define MAX_NAME_LEN    0x20
 #define MAX_NUM_DEVICES 8
 #define MAX_BT_PACK_LEN 0x1000
 #define VER_STR_LEN     6
@@ -77,7 +77,7 @@ enum SelfVoice {
 struct Device {
   bdaddr_t          address;
   enum DeviceStatus status;
-  char              name[MAX_NAME_LEN + 1];
+  char              name[MAX_NAME_LEN];
 };
 
 int has_noise_cancelling(unsigned int device_id);
@@ -101,7 +101,7 @@ int set_auto_off(int sock, enum AutoOff minutes);
 
 int set_noise_cancelling(int sock, enum NoiseCancelling level);
 
-int get_device_status(int sock, char name[MAX_NAME_LEN + 1],
+int get_device_status(int sock, char name[MAX_NAME_LEN],
                       enum PromptLanguage *language, enum AutoOff *minutes,
                       enum NoiseCancelling *level);
 

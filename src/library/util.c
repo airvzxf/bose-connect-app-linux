@@ -34,9 +34,28 @@ int str_to_byte(const char *str, uint8_t *byte) {
   if (part > max_hexadecimal_unit) {
     return 1;
   }
-  total += part;
 
+  total += part;
   *byte = total;
 
   return 0;
+}
+
+void str_copy(char *to, const char *from, int size) {
+  const int ascii_null_character  = 0;
+  const int ascii_space_character = 32;
+  to[size]                        = 0;
+
+  for (unsigned int position = 0; position < size; position++) {
+
+    if (from[position] == ascii_null_character) {
+      to[position] = from[position];
+      return;
+    }
+
+    if (from[position] > ascii_space_character ||
+        from[position] < ascii_null_character) {
+      to[position] = from[position];
+    }
+  }
 }

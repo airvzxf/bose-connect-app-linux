@@ -114,13 +114,14 @@ static int do_set_name(char *address, const char *arg) {
     return 1;
   }
 
-  int status = 1;
-  if (strlen(arg) > MAX_NAME_LEN) {
-    fprintf(stderr, "Name exceeds %d character maximum. Truncating.\n",
-            MAX_NAME_LEN);
+  int    status      = 1;
+  size_t name_length = strlen(arg);
+  if (name_length >= MAX_NAME_LEN) {
+    fprintf(stderr, "Name exceeds %d character maximum. Actual size is %zu.\n",
+            MAX_NAME_LEN - 1, name_length);
   } else {
-    char name_buffer[MAX_NAME_LEN + 1] = {0};
-    strncpy(name_buffer, arg, MAX_NAME_LEN);
+    char name_buffer[MAX_NAME_LEN] = {0};
+    str_copy(name_buffer, arg, MAX_NAME_LEN);
     status = set_name(sock, name_buffer);
   }
 
@@ -317,7 +318,7 @@ static int do_get_device_status(char *address) {
   }
 
   printf("Status:\n");
-  char                 name[MAX_NAME_LEN + 1];
+  char                 name[MAX_NAME_LEN];
   enum PromptLanguage  promptLanguage  = 0x0;
   enum AutoOff         autoOff         = 0x0;
   enum NoiseCancelling noiseCancelling = 0x0;
