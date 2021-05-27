@@ -1,5 +1,5 @@
-#ifndef BASED_H
-#define BASED_H
+#ifndef HOME_WOLF_WORKSPACE_PROJECTS_BOSE_CONNECT_APP_LINUX_SRC_LIBRARY_BASED_H
+#define HOME_WOLF_WORKSPACE_PROJECTS_BOSE_CONNECT_APP_LINUX_SRC_LIBRARY_BASED_H
 
 #include <bluetooth/bluetooth.h>
 #include <stddef.h>
@@ -11,14 +11,15 @@
 #define MAX_NUM_DEVICES 8
 #define MAX_BT_PACK_LEN 0x1000
 #define VER_STR_LEN     6
-#define VP_MASK         0x7Fu
+#define VP_MASK         0x7fu
 #define MAX_SERIAL_SIZE 0x100
 
 enum NoiseCancelling {
   NC_HIGH = 0x01,
   NC_LOW  = 0x03,
   NC_OFF  = 0x00,
-  NC_DNE  = 0xff
+  NC_DNE  = 0xff,
+  NC_UNKNOWN,
 };
 
 enum AutoOff {
@@ -27,7 +28,7 @@ enum AutoOff {
   AO_20_MIN  = 20,
   AO_40_MIN  = 40,
   AO_60_MIN  = 60,
-  AO_180_MIN = 180
+  AO_180_MIN = 180,
 };
 
 enum PromptLanguage {
@@ -43,24 +44,34 @@ enum PromptLanguage {
   PL_PL = 0x2b,
   PL_NL = 0x2e,
   PL_JA = 0x2f,
-  PL_SV = 0x32
+  PL_SV = 0x32,
+  PL_UNKNOWN,
 };
 
-enum Pairing { P_ON = 0x01, P_OFF = 0x00 };
+enum Pairing {
+  P_ON  = 0x01,
+  P_OFF = 0x00,
+  P_UNKNOWN,
+};
 
 enum DeviceStatus {
   DS_THIS         = 0x03,
   DS_CONNECTED    = 0x01,
-  DS_DISCONNECTED = 0x00
+  DS_DISCONNECTED = 0x00,
 };
 
-enum DevicesConnected { DC_ONE = 0x01, DC_TWO = 0x03 };
+enum DevicesConnected {
+  DC_ONE = 0x01,
+  DC_TWO = 0x03,
+  DC_UNKNOWN,
+};
 
 enum SelfVoice {
   SV_OFF    = 0x0,
   SV_HIGH   = 0x1,
   SV_MEDIUM = 0x2,
   SV_LOW    = 0x3,
+  SV_UNKNOWN,
 };
 
 struct Device {
@@ -79,6 +90,8 @@ int send_packet(int sock, const void *send, size_t send_n,
 int get_device_id(int sock, unsigned int *device_id, unsigned int *index);
 
 int set_name(int sock, const char *name);
+
+enum PromptLanguage get_language(const char *language);
 
 int set_prompt_language(int sock, enum PromptLanguage language);
 

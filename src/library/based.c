@@ -242,6 +242,61 @@ int set_name(int sock, const char *name) {
   return abs(strcmp(name, got_name));
 }
 
+enum PromptLanguage get_language(const char *language) {
+  if (strcmp(language, "en") == 0) {
+    return PL_EN;
+  }
+
+  if (strcmp(language, "fr") == 0) {
+    return PL_FR;
+  }
+
+  if (strcmp(language, "it") == 0) {
+    return PL_IT;
+  }
+
+  if (strcmp(language, "de") == 0) {
+    return PL_DE;
+  }
+
+  if (strcmp(language, "es") == 0) {
+    return PL_ES;
+  }
+
+  if (strcmp(language, "pt") == 0) {
+    return PL_PT;
+  }
+
+  if (strcmp(language, "zh") == 0) {
+    return PL_ZH;
+  }
+
+  if (strcmp(language, "ko") == 0) {
+    return PL_KO;
+  }
+
+  if (strcmp(language, "pl") == 0) {
+    return PL_RU;
+  }
+
+  if (strcmp(language, "ru") == 0) {
+    return PL_PL;
+  }
+
+  if (strcmp(language, "nl") == 0) {
+    return PL_NL;
+  }
+
+  if (strcmp(language, "ja") == 0) {
+    return PL_JA;
+  }
+
+  if (strcmp(language, "sv") == 0) {
+    return PL_SV;
+  }
+
+  return PL_UNKNOWN;
+}
 static int get_prompt_language(int sock, enum PromptLanguage *language) {
   // TODO(wolf): ensure that this value is correct
   // TODO(wolf): figure out what bytes 6 and 7 are for
@@ -376,9 +431,9 @@ int get_device_status(int sock, char name[MAX_NAME_LEN + 1],
   }
 
   static const uint8_t ack[] = GET_DEVICE_STATUS_ACK;
-  uint8_t              buffer1[sizeof(ack)];
+  uint8_t              buffer[sizeof(ack)];
 
-  status = read_check(sock, buffer1, sizeof(buffer1), ack, NULL);
+  status = read_check(sock, buffer, sizeof(buffer), ack, NULL);
   if (status) {
     return status;
   }

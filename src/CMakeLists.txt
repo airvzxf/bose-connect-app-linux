@@ -59,7 +59,7 @@ get_target_property(PROJECT_SOURCES ${PROJECT_NAME} SOURCES)
 # CLang Format
 # ------------------------------------------------------
 add_custom_command(
-        COMMENT "Scanning: CLang Format\n\n"
+        COMMENT "\n\nScanning: CLang Format\n"
         TARGET ${PROJECT_NAME}
         PRE_BUILD
         COMMAND
@@ -78,7 +78,7 @@ add_custom_command(
 # ------------------------------------------------------
 # clang-tidy -fix -fix-errors
 add_custom_command(
-        COMMENT "Scanning: CLang Tidy\n\n"
+        COMMENT "\n\nScanning: CLang Tidy\n"
         TARGET ${PROJECT_NAME}
         PRE_BUILD
         COMMAND
@@ -109,7 +109,7 @@ string(APPEND CPPCHECK_TEMPLATE_LOCATION "   Line: {line}:{column}\\n")
 string(APPEND CPPCHECK_TEMPLATE_LOCATION "{code}\\n")
 
 add_custom_command(
-        COMMENT "Scanning: CPP Check\n\n"
+        COMMENT "\n\nScanning: CPP Check\n"
         TARGET ${PROJECT_NAME}
         PRE_BUILD
         COMMAND cppcheck

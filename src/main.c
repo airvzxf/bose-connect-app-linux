@@ -113,7 +113,7 @@ static int do_set_name(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
-  // TODO(Wolf): Convert to map and return -1 if not match
+
   int status = 1;
   if (strlen(arg) > MAX_NAME_LEN) {
     fprintf(stderr, "Name exceeds %d character maximum. Truncating.\n",
@@ -134,35 +134,9 @@ static int do_set_prompt_language(char *address, const char *arg) {
     return 1;
   }
 
-  // TODO(Wolf): Convert to map and return -1 if not match
-  enum PromptLanguage pl = PL_EN;
+  enum PromptLanguage pl = get_language(arg);
 
-  if (strcmp(arg, "en") == 0) {
-  } else if (strcmp(arg, "fr") == 0) {
-    pl = PL_FR;
-  } else if (strcmp(arg, "it") == 0) {
-    pl = PL_IT;
-  } else if (strcmp(arg, "de") == 0) {
-    pl = PL_DE;
-  } else if (strcmp(arg, "es") == 0) {
-    pl = PL_ES;
-  } else if (strcmp(arg, "pt") == 0) {
-    pl = PL_PT;
-  } else if (strcmp(arg, "zh") == 0) {
-    pl = PL_ZH;
-  } else if (strcmp(arg, "ko") == 0) {
-    pl = PL_KO;
-  } else if (strcmp(arg, "pl") == 0) {
-    pl = PL_PL;
-  } else if (strcmp(arg, "ru") == 0) {
-    pl = PL_RU;
-  } else if (strcmp(arg, "nl") == 0) {
-    pl = PL_NL;
-  } else if (strcmp(arg, "ja") == 0) {
-    pl = PL_JA;
-  } else if (strcmp(arg, "sv") == 0) {
-    pl = PL_SV;
-  } else {
+  if (pl == PL_UNKNOWN) {
     fprintf(stderr, "Invalid prompt language argument: %s\n", arg);
     usage();
     return 1;
@@ -173,24 +147,33 @@ static int do_set_prompt_language(char *address, const char *arg) {
   return status;
 }
 
+int get_voice_status(const char *arg) {
+  if (strcmp(arg, "on") == 0) {
+    return 1;
+  }
+
+  if (strcmp(arg, "off") == 0) {
+    return 0;
+  }
+
+  return -1;
+}
+
 static int do_set_voice_prompts(char *address, const char *arg) {
   int sock = get_socket(address);
   if (sock == -1) {
     return 1;
   }
 
-  // TODO(Wolf): Convert to map and return -1 if not match
-  int on = 1;
-  if (strcmp(arg, "on") == 0) {
-  } else if (strcmp(arg, "off") == 0) {
-    on = 0;
-  } else {
+  int voice_status = get_voice_status(arg);
+
+  if (voice_status == -1) {
     fprintf(stderr, "Invalid voice prompt argument: %s\n", arg);
     usage();
     return 1;
   }
 
-  const int status = set_voice_prompts(sock, on);
+  const int status = set_voice_prompts(sock, voice_status);
   close(sock);
   return status;
 }
@@ -203,7 +186,6 @@ static int do_set_auto_off(char *address, const char *arg) {
 
   int parsed = atoi(arg);
 
-  // TODO(Wolf): Convert to map and return -1 if not match
   enum AutoOff ao = AO_NEVER;
   switch (parsed) {
   case AO_5_MIN:
@@ -214,8 +196,7 @@ static int do_set_auto_off(char *address, const char *arg) {
     ao = parsed;
     break;
   default:
-    if (strcmp(arg, "never") == 0) {
-    } else {
+    if (strcmp(arg, "never") != 0) {
       fprintf(stderr, "Invalid auto-off argument: %s\n", arg);
       usage();
       return 1;
@@ -226,20 +207,30 @@ static int do_set_auto_off(char *address, const char *arg) {
   return set_auto_off(sock, ao);
 }
 
+int get_noise_cancelling(const char *arg) {
+  if (strcmp(arg, "high") == 0) {
+    return NC_HIGH;
+  }
+
+  if (strcmp(arg, "low") == 0) {
+    return NC_LOW;
+  }
+
+  if (strcmp(arg, "off") == 0) {
+    return NC_OFF;
+  }
+
+  return NC_UNKNOWN;
+}
+
 static int do_set_noise_cancelling(char *address, const char *arg) {
   int sock = get_socket(address);
   if (sock == -1) {
     return 1;
   }
-  enum NoiseCancelling nc = NC_HIGH;
+  enum NoiseCancelling nc = get_noise_cancelling(arg);
 
-  // TODO(Wolf): Convert to map and return -1 if not match
-  if (strcmp(arg, "high") == 0) {
-  } else if (strcmp(arg, "low") == 0) {
-    nc = NC_LOW;
-  } else if (strcmp(arg, "off") == 0) {
-    nc = NC_OFF;
-  } else {
+  if (nc == NC_UNKNOWN) {
     fprintf(stderr, "Invalid noise cancelling argument: %s\n", arg);
     usage();
     return 1;
@@ -263,11 +254,68 @@ static int do_set_noise_cancelling(char *address, const char *arg) {
   return status;
 }
 
+char *get_language_string(enum PromptLanguage language) {
+  if (language == PL_EN) {
+    return "EN";
+  }
+
+  if (language == PL_FR) {
+    return "FR";
+  }
+
+  if (language == PL_IT) {
+    return "IT";
+  }
+
+  if (language == PL_DE) {
+    return "DE";
+  }
+
+  if (language == PL_ES) {
+    return "ES";
+  }
+
+  if (language == PL_PT) {
+    return "PT";
+  }
+
+  if (language == PL_ZH) {
+    return "ZH";
+  }
+
+  if (language == PL_KO) {
+    return "KO";
+  }
+
+  if (language == PL_NL) {
+    return "NL";
+  }
+
+  if (language == PL_JA) {
+    return "JA";
+  }
+
+  if (language == PL_SV) {
+    return "SV";
+  }
+
+  if (language == PL_RU) {
+    return "RU";
+  }
+
+  if (language == PL_PL) {
+    return "PL";
+  }
+
+  return "";
+}
+
 static int do_get_device_status(char *address) {
   int sock = get_socket(address);
   if (sock == -1) {
     return 1;
   }
+
   printf("Status:\n");
   char                 name[MAX_NAME_LEN + 1];
   enum PromptLanguage  promptLanguage  = 0x0;
@@ -279,56 +327,20 @@ static int do_get_device_status(char *address) {
   if (status) {
     return status;
   }
+
   printf("\tName: %s\n", name);
 
   char *    language             = NULL;
   const int max_unknown_language = 15;
   char      unknown_language[max_unknown_language];
-  switch (promptLanguage & VP_MASK) {
-  case PL_EN:
-    language = "en";
-    break;
-  case PL_FR:
-    language = "fr";
-    break;
-  case PL_IT:
-    language = "it";
-    break;
-  case PL_DE:
-    language = "de";
-    break;
-  case PL_ES:
-    language = "es";
-    break;
-  case PL_PT:
-    language = "pt";
-    break;
-  case PL_ZH:
-    language = "zh";
-    break;
-  case PL_KO:
-    language = "ko";
-    break;
-  case PL_NL:
-    language = "nl";
-    break;
-  case PL_JA:
-    language = "ja";
-    break;
-  case PL_SV:
-    language = "sv";
-    break;
-  case PL_RU:
-    language = "ru";
-    break;
-  case PL_PL:
-    language = "pl";
-    break;
-  default:
+
+  language = get_language_string((promptLanguage & VP_MASK));
+
+  if (strcmp("", language) == 0) {
     sprintf(unknown_language, "Unknown [0x%02X]", promptLanguage);
     language = unknown_language;
-    break;
   }
+
   printf("\tLanguage: %s\n", language);
   printf("\tVoice Prompts: %s\n", (promptLanguage & VP_MASK) ? "on" : "off");
 
@@ -362,18 +374,26 @@ static int do_get_device_status(char *address) {
   return 0;
 }
 
+int get_paring_status(const char *arg) {
+  if (strcmp(arg, "on") == 0) {
+    return P_ON;
+  }
+
+  if (strcmp(arg, "off") == 0) {
+    return P_OFF;
+  }
+
+  return P_UNKNOWN;
+}
+
 static int do_set_pairing(char *address, const char *arg) {
   int sock = get_socket(address);
   if (sock == -1) {
     return 1;
   }
-  enum Pairing p = P_ON;
+  enum Pairing p = get_paring_status(arg);
 
-  // TODO(Wolf): Convert to map and return -1 if not match
-  if (strcmp(arg, "on") == 0) {
-  } else if (strcmp(arg, "off") == 0) {
-    p = P_OFF;
-  } else {
+  if (p == P_UNKNOWN) {
     fprintf(stderr, "Invalid pairing argument: %s\n", arg);
     usage();
     return 1;
@@ -384,22 +404,34 @@ static int do_set_pairing(char *address, const char *arg) {
   return status;
 }
 
+int get_self_voice_status(const char *arg) {
+  if (strcmp(arg, "high") == 0) {
+    return SV_HIGH;
+  }
+
+  if (strcmp(arg, "medium") == 0) {
+    return SV_MEDIUM;
+  }
+
+  if (strcmp(arg, "low") == 0) {
+    return SV_LOW;
+  }
+
+  if (strcmp(arg, "off") == 0) {
+    return SV_OFF;
+  }
+
+  return SV_UNKNOWN;
+}
+
 static int do_set_self_voice(char *address, const char *arg) {
   int sock = get_socket(address);
   if (sock == -1) {
     return 1;
   }
-  enum SelfVoice p = SV_HIGH;
+  enum SelfVoice p = get_self_voice_status(arg);
 
-  // TODO(Wolf): Convert to map and return -1 if not match
-  if (strcmp(arg, "high") == 0) {
-  } else if (strcmp(arg, "medium") == 0) {
-    p = SV_MEDIUM;
-  } else if (strcmp(arg, "low") == 0) {
-    p = SV_LOW;
-  } else if (strcmp(arg, "off") == 0) {
-    p = SV_OFF;
-  } else {
+  if (p == SV_UNKNOWN) {
     fprintf(stderr, "Invalid self voice argument: %s\n", arg);
     usage();
     return 1;
@@ -467,11 +499,38 @@ static int do_get_battery_level(char *address) {
   return 0;
 }
 
+int get_paired_devices_connected(enum DevicesConnected connected) {
+  if (connected == DC_ONE) {
+    return 1;
+  }
+  if (connected == DC_TWO) {
+    return 2;
+  }
+
+  return -1;
+}
+
+char get_paired_device_status(enum DeviceStatus status) {
+  if (status == DS_THIS) {
+    return '!';
+  }
+
+  if (status == DS_CONNECTED) {
+    return '*';
+  }
+
+  if (status == DS_DISCONNECTED) {
+    return ' ';
+  }
+
+  return ':';
+}
 static int do_get_paired_devices(char *address) {
   int sock = get_socket(address);
   if (sock == -1) {
     return 1;
   }
+
   printf("Paired devices: ");
   bdaddr_t              devices[MAX_NUM_DEVICES];
   size_t                num_devices = 0;
@@ -482,15 +541,7 @@ static int do_get_paired_devices(char *address) {
     return status;
   }
 
-  // TODO(Wolf): Convert to map and return -1 if not match
-  unsigned int num_connected = 1;
-  switch (connected) {
-  case DC_ONE:
-    break;
-  case DC_TWO:
-    num_connected = 2;
-    break;
-  default:
+  if (connected == DC_UNKNOWN) {
     printf("\n\t"
            "Error: 0x%02X connected devices. Outside of the range "
            "(0x01 and 0x03)."
@@ -498,6 +549,9 @@ static int do_get_paired_devices(char *address) {
            connected);
     return 1;
   }
+
+  unsigned int num_connected = get_paired_devices_connected(connected);
+
   printf("%zu\n", num_devices);
   printf("\tConnected: %u\n", num_connected);
 
@@ -512,24 +566,16 @@ static int do_get_paired_devices(char *address) {
     char      address_converted[max_address_convert];
     reverse_ba2str(&device.address, address_converted);
 
-    // TODO(Wolf): Convert to map and return -1 if not match
-    char status_symbol = '!';
-    switch (device.status) {
-    case DS_THIS:
-      break;
-    case DS_CONNECTED:
-      status_symbol = '*';
-      break;
-    case DS_DISCONNECTED:
-      status_symbol = ' ';
-      break;
-    default:
+    char status_symbol = get_paired_device_status(device.status);
+
+    if (status_symbol == ':') {
       return 1;
     }
 
     printf("\tDevice: %c | %s | %s\n", status_symbol, address_converted,
            device.name);
   }
+
   printf("\t[!] Indicates the current device.\n");
   printf("\t[*] Indicates other connected devices.\n");
 
@@ -542,6 +588,7 @@ static int do_connect_device(char *address, const char *arg) {
   if (sock == -1) {
     return 1;
   }
+
   bdaddr_t bd_address;
   reverse_str2ba(arg, &bd_address);
   int connection = connect_device(sock, bd_address);

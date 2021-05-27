@@ -1,4 +1,5 @@
-#ifndef _HOME_WOLF_WORKSPACE_PROJECTS_BOSE_CONNECT_APP_LINUX_SRC_MAIN_H
+#ifndef HOME_WOLF_WORKSPACE_PROJECTS_BOSE_CONNECT_APP_LINUX_SRC_MAIN_H
+#define HOME_WOLF_WORKSPACE_PROJECTS_BOSE_CONNECT_APP_LINUX_SRC_MAIN_H
 
 int get_socket(char *address);
 
@@ -14,4 +15,4 @@ static int do_get_paired_devices(char *address);
 
 static int do_get_serial_number(char *address);
 
-#endif // _HOME_WOLF_WORKSPACE_PROJECTS_BOSE_CONNECT_APP_LINUX_SRC_MAIN_H
+#endif
