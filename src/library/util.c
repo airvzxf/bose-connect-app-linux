@@ -1,5 +1,7 @@
 #include "util.h"
 
+#define CHAR_BIT 1
+
 static uint8_t get_value(char c) {
   const int max_decimal_unit   = 10;
   const int ten_in_hexadecimal = 16;
@@ -70,4 +72,43 @@ void memory_set(bdaddr_t *target, uint8_t constant_byte, size_t size) {
   for (unsigned int position = 0; position < size; position++) {
     target->b[position] = constant_byte;
   }
+}
+
+void unit_to_hex_string(int number, char *dest) {
+  const int dest_size = 3;
+
+  if (dest == NULL) {
+    return;
+  }
+
+  if (number < MAX_HEXADECIMAL_UNIT) {
+    dest[0] = (char)'0';
+    if (number < MAX_DECIMAL_UNIT) {
+      dest[1] = (char)(ASCII_NUMBER_ZERO + number);
+    } else {
+      dest[1] = (char)(ASCII_LETTER_A + number - MAX_DECIMAL_UNIT);
+    }
+    return;
+  }
+
+  char  buffer[sizeof number * CHAR_BIT + 2];
+  char *p = &buffer[sizeof buffer - 1];
+
+  int neg_num = number < 0 ? number : -number;
+
+  *p = '\0';
+  do {
+    *--p = "0123456789ABCDEF"[-(neg_num % MAX_HEXADECIMAL_UNIT)];
+    neg_num /= MAX_HEXADECIMAL_UNIT;
+  } while (neg_num);
+  if (number < 0) {
+    *--p = '-';
+  }
+
+  int src_size = (int)(&buffer[sizeof buffer] - p);
+  if (src_size - 1 > dest_size) {
+    return;
+  }
+
+  str_copy(dest, p, src_size);
 }

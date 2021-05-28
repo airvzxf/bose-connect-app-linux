@@ -5,8 +5,8 @@
 
 #define BT_ADDR_LEN 6
 
-int reverse_ba2str(const bdaddr_t *ba, char *str);
+void reverse_ba2str(const bdaddr_t *ba, char *str);
 
-int reverse_str2ba(const char *str, bdaddr_t *ba);
+void reverse_str2ba(const char *str, bdaddr_t *ba);
 
 #endif

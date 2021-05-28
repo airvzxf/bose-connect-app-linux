@@ -331,15 +331,18 @@ static int do_get_device_status(char *address) {
 
   printf("\tName: %s\n", name);
 
-  char *    language             = NULL;
-  const int max_unknown_language = 15;
-  char      unknown_language[max_unknown_language];
-
-  language = get_language_string((promptLanguage & VP_MASK));
+  char *language = get_language_string((promptLanguage & VP_MASK));
 
   if (strcmp("", language) == 0) {
-    sprintf(unknown_language, "Unknown [0x%02X]", promptLanguage);
-    language = unknown_language;
+    char      unknown_language[] = "Unknown [0x00]";
+    char      language_value[4]  = "";
+    const int position_hex_value = 11;
+
+    unit_to_hex_string(promptLanguage, &language_value[0]);
+
+    unknown_language[position_hex_value]     = language_value[0];
+    unknown_language[position_hex_value + 1] = language_value[1];
+    language                                 = unknown_language;
   }
 
   printf("\tLanguage: %s\n", language);
