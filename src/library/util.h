@@ -7,4 +7,6 @@ void str_copy(char *to, const char *from, int size);
 
 void memory_copy(uint8_t *to, uint8_t *from, int size);
 
+void memory_set(bdaddr_t *target, uint8_t constant_byte, size_t size);
+
 #endif

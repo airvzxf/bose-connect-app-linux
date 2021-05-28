@@ -1,5 +1,7 @@
-#include "bluetooth.h"
 #include <stdlib.h>
+
+#include "bluetooth.h"
+#include "util.h"
 
 int reverse_ba2str(const bdaddr_t *ba, char *str) {
   return sprintf(str, "%2.2X:%2.2X:%2.2X:%2.2X:%2.2X:%2.2X", ba->b[0], ba->b[1],
@@ -8,7 +10,7 @@ int reverse_ba2str(const bdaddr_t *ba, char *str) {
 
 int reverse_str2ba(const char *str, bdaddr_t *ba) {
   if (bachk(str) < 0) {
-    memset(ba, 0, sizeof(*ba));
+    memory_set(ba, 0, sizeof(*ba));
     return -1;
   }
 

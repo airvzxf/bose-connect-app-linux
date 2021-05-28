@@ -1,3 +1,4 @@
+#include <bluetooth/bluetooth.h>
 #include <stdint.h>
 
 static uint8_t get_value(char c) {
@@ -63,5 +64,11 @@ void str_copy(char *to, const char *from, int size) {
 void memory_copy(uint8_t *to, uint8_t *from, int size) {
   for (unsigned int position = 0; position < size; position++) {
     to[position] = from[position];
+  }
+}
+
+void memory_set(bdaddr_t *target, uint8_t constant_byte, size_t size) {
+  for (unsigned int position = 0; position < size; position++) {
+    target->b[position] = constant_byte;
   }
 }
