@@ -81,7 +81,7 @@ void unit_to_hex_string(int number, char *dest) {
     return;
   }
 
-  if (number < MAX_HEXADECIMAL_UNIT) {
+  if (number >= 0 && number < MAX_HEXADECIMAL_UNIT) {
     dest[0] = (char)'0';
     if (number < MAX_DECIMAL_UNIT) {
       dest[1] = (char)(ASCII_NUMBER_ZERO + number);

@@ -344,10 +344,10 @@ static int do_get_device_status(char *address) {
 
   printf("\tName: %s\n", name);
 
-  char *language = get_language_string((promptLanguage & VP_MASK));
+  char  unknown_language[] = "Unknown [0x00]";
+  char *language           = get_language_string((promptLanguage & VP_MASK));
 
   if (strcmp("", language) == 0) {
-    char      unknown_language[] = "Unknown [0x00]";
     char      language_value[4]  = "";
     const int position_hex_value = 11;
 
