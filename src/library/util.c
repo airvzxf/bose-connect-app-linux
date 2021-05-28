@@ -1,5 +1,4 @@
-#include <bluetooth/bluetooth.h>
-#include <stdint.h>
+#include "util.h"
 
 static uint8_t get_value(char c) {
   const int max_decimal_unit   = 10;
