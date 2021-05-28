@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "library/based.h"
@@ -87,23 +88,37 @@ static void usage() {
 }
 
 int do_get_information(char *address) {
+  enum { SECS_TO_SLEEP = 6, NANO_TO_SLEEP = 0 };
+  struct timespec remaining;
+  struct timespec request = {SECS_TO_SLEEP, NANO_TO_SLEEP};
+
   while (do_get_device_id(address)) {
-    sleep(4);
+    nanosleep(&request, &remaining);
   }
+  nanosleep(&request, &remaining);
+
   while (do_get_serial_number(address)) {
-    sleep(4);
+    nanosleep(&request, &remaining);
   }
+  nanosleep(&request, &remaining);
+
   while (do_get_firmware_version(address)) {
-    sleep(4);
+    nanosleep(&request, &remaining);
   }
+  nanosleep(&request, &remaining);
+
   while (do_get_battery_level(address)) {
-    sleep(4);
+    nanosleep(&request, &remaining);
   }
+  nanosleep(&request, &remaining);
+
   while (do_get_device_status(address)) {
-    sleep(4);
+    nanosleep(&request, &remaining);
   }
+  nanosleep(&request, &remaining);
+
   while (do_get_paired_devices(address)) {
-    sleep(4);
+    nanosleep(&request, &remaining);
   }
 
   return 0;

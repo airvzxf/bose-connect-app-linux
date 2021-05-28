@@ -327,7 +327,8 @@ CheckOptions:
   - key: llvm-qualified-auto.AddConstToQualified
     value: 'false'
   - key: llvmlibc-restrict-system-libc-headers.Includes
-    value: '-*,stdlib.h,string.h,unistd.h,getopt.h,errno.h,bluetooth/*.h'
+    value: '-*,stdlib.h,string.h,unistd.h,getopt.h,errno.h,time.h,
+    bluetooth/*.h'
   - key: misc-definitions-in-headers.HeaderFileExtensions
     value: ';h;hh;hpp;hxx'
   - key: misc-definitions-in-headers.UseHeaderFileExtension
