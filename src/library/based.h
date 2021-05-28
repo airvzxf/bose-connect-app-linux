@@ -6,13 +6,14 @@
 
 #include "bluetooth.h"
 
-#define BOSE_CHANNEL    8
-#define MAX_NAME_LEN    0x20
-#define MAX_NUM_DEVICES 8
-#define MAX_BT_PACK_LEN 0x1000
-#define VER_STR_LEN     6
-#define VP_MASK         0x7fu
-#define MAX_SERIAL_SIZE 0x100
+#define BOSE_CHANNEL         8
+#define MAX_NAME_LEN         0x20
+#define MAX_NUM_DEVICES      8
+#define MAX_BT_PACK_LEN      0x1000
+#define VER_STR_LEN          6
+#define VP_MASK              0x7fu
+#define MAX_SERIAL_SIZE      0x100
+#define DEVICE_ALIGNED_BYTES 64
 
 enum NoiseCancelling {
   NC_HIGH = 0x01,
@@ -79,7 +80,7 @@ struct Device {
   bdaddr_t          address;
   enum DeviceStatus status;
   char              name[MAX_NAME_LEN];
-};
+} __attribute__((aligned(DEVICE_ALIGNED_BYTES))) __attribute__((packed));
 
 int has_noise_cancelling(unsigned int device_id);
 
