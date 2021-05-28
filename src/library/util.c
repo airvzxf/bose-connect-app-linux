@@ -7,15 +7,15 @@ static uint8_t get_value(char c) {
   const int ten_in_hexadecimal = 16;
 
   if ('0' <= c && c <= '9') {
-    return c - '0';
+    return (uint8_t)(c - '0');
   }
 
   if ('A' <= c && c <= 'F') {
-    return c - 'A' + max_decimal_unit;
+    return (uint8_t)(c - 'A' + max_decimal_unit);
   }
 
   if ('a' <= c && c <= 'f') {
-    return c - 'a' + max_decimal_unit;
+    return (uint8_t)(c - 'a' + max_decimal_unit);
   }
 
   return ten_in_hexadecimal;

@@ -29,6 +29,7 @@ enum AutoOff {
   AO_40_MIN  = 40,
   AO_60_MIN  = 60,
   AO_180_MIN = 180,
+  AO_UNKNOWN,
 };
 
 enum PromptLanguage {

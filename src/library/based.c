@@ -124,7 +124,7 @@ static int masked_memory_cmp(const uint8_t *ptr1, uint8_t *ptr2, size_t num,
 
 static int read_check(int sock, uint8_t *receive, size_t receive_n,
                       const uint8_t *ack, const uint8_t *mask) {
-  int status = read(sock, receive, receive_n);
+  int status = (int)read(sock, receive, receive_n);
   if (status != receive_n) {
     return status ? status : 1;
   }
@@ -137,7 +137,7 @@ static int write_check(int sock, const void *send, size_t send_n,
                        const void *ack, size_t ack_n) {
   uint8_t buffer[ack_n];
 
-  int status = write(sock, send, send_n);
+  int status = (int)write(sock, send, send_n);
   if (status != send_n) {
     return status ? status : 1;
   }
@@ -146,12 +146,12 @@ static int write_check(int sock, const void *send, size_t send_n,
 
 int send_packet(int sock, const void *send, size_t send_n,
                 uint8_t received[MAX_BT_PACK_LEN]) {
-  int status = write(sock, send, send_n);
+  int status = (int)write(sock, send, send_n);
   if (status != send_n) {
     return status ? status : 1;
   }
 
-  return read(sock, received, MAX_BT_PACK_LEN);
+  return (int)read(sock, received, MAX_BT_PACK_LEN);
 }
 
 int init_connection(int sock) {
@@ -165,7 +165,7 @@ int init_connection(int sock) {
 
   // Throw away the initial firmware version
   uint8_t garbage[BYTES_POSITION_5];
-  status = read(sock, garbage, sizeof(garbage));
+  status = (int)read(sock, garbage, sizeof(garbage));
 
   if (status != sizeof(garbage)) {
     return status ? status : 1;
@@ -184,7 +184,7 @@ int get_device_id(int sock, unsigned int *device_id, unsigned int *index) {
   }
 
   uint16_t device_id_half_word = 0;
-  status = read(sock, &device_id_half_word, sizeof(device_id_half_word));
+  status = (int)read(sock, &device_id_half_word, sizeof(device_id_half_word));
   if (status != sizeof(device_id_half_word)) {
     return status ? status : 1;
   }
@@ -192,7 +192,7 @@ int get_device_id(int sock, unsigned int *device_id, unsigned int *index) {
   *device_id = bswap_16(device_id_half_word);
 
   uint8_t index_byte = 0;
-  status             = read(sock, &index_byte, 1);
+  status             = (int)read(sock, &index_byte, 1);
   if (status != 1) {
     return status ? status : 1;
   }
@@ -211,8 +211,8 @@ static int get_name(int sock, char name[MAX_NAME_LEN]) {
     return status;
   }
 
-  size_t length = buffer[BYTES_POSITION_3] - 1;
-  status        = read(sock, name, length);
+  size_t length = (size_t)(buffer[BYTES_POSITION_3] - 1);
+  status        = (int)read(sock, name, length);
   if (status != length) {
     return status ? status : 1;
   }
@@ -225,11 +225,11 @@ int set_name(int sock, const char *name) {
   static uint8_t send[MAX_NAME_PACKAGE] = SET_NAME_SEND;
   size_t         length                 = strlen(name);
 
-  send[BYTES_POSITION_3] = length;
+  send[BYTES_POSITION_3] = (uint8_t)length;
   str_copy((char *)&send[CN_BASE_PACK_LEN], name, MAX_NAME_LEN);
 
   size_t send_size = CN_BASE_PACK_LEN + length;
-  int    status    = write(sock, send, send_size);
+  int    status    = (int)write(sock, send, send_size);
   if (status != send_size) {
     return status ? status : 1;
   }
@@ -310,7 +310,7 @@ static int get_prompt_language(int sock, enum PromptLanguage *language) {
     return status;
   }
 
-  *language = buffer[BYTES_POSITION_4];
+  *language = (enum PromptLanguage)buffer[BYTES_POSITION_4];
   return 0;
 }
 
@@ -318,12 +318,12 @@ int set_prompt_language(int sock, enum PromptLanguage language) {
   static uint8_t send[]  = SET_PROMPT_LANGUAGE_SEND;
   send[BYTES_POSITION_4] = language;
 
-  int status = write(sock, send, sizeof(send));
+  int status = (int)write(sock, send, sizeof(send));
   if (status != sizeof(send)) {
     return status ? status : 1;
   }
 
-  enum PromptLanguage got_language = 0x0;
+  enum PromptLanguage got_language = PL_UNKNOWN;
   status                           = get_prompt_language(sock, &got_language);
   if (status) {
     return status;
@@ -334,9 +334,9 @@ int set_prompt_language(int sock, enum PromptLanguage language) {
 
 int set_voice_prompts(int sock, int on) {
   char                 name[MAX_NAME_LEN];
-  enum PromptLanguage  pl = 0x0;
-  enum AutoOff         ao = 0x0;
-  enum NoiseCancelling nc = 0x0;
+  enum PromptLanguage  pl = PL_UNKNOWN;
+  enum AutoOff         ao = AO_UNKNOWN;
+  enum NoiseCancelling nc = NC_UNKNOWN;
 
   int status = get_device_status(sock, name, &pl, &ao, &nc);
   if (status) {
@@ -362,7 +362,7 @@ static int get_auto_off(int sock, enum AutoOff *minutes) {
     return status;
   }
 
-  *minutes = buffer[BYTES_POSITION_4];
+  *minutes = (enum AutoOff)buffer[BYTES_POSITION_4];
   return 0;
 }
 
@@ -370,12 +370,12 @@ int set_auto_off(int sock, enum AutoOff minutes) {
   static uint8_t send[]  = SET_AUTO_OFF_SEND;
   send[BYTES_POSITION_4] = minutes;
 
-  int status = write(sock, send, sizeof(send));
+  int status = (int)write(sock, send, sizeof(send));
   if (status != sizeof(send)) {
     return status ? status : 1;
   }
 
-  enum AutoOff got_minutes = 0;
+  enum AutoOff got_minutes = AO_UNKNOWN;
   status                   = get_auto_off(sock, &got_minutes);
   if (status) {
     return status;
@@ -394,7 +394,7 @@ static int get_noise_cancelling(int sock, enum NoiseCancelling *level) {
     return status;
   }
 
-  *level = buffer[BYTES_POSITION_4];
+  *level = (enum NoiseCancelling)buffer[BYTES_POSITION_4];
   return 0;
 }
 
@@ -402,12 +402,12 @@ int set_noise_cancelling(int sock, enum NoiseCancelling level) {
   static uint8_t send[]  = SET_NOISE_CANCELLING_SEND;
   send[BYTES_POSITION_4] = level;
 
-  int status = write(sock, send, sizeof(send));
+  int status = (int)write(sock, send, sizeof(send));
   if (status != sizeof(send)) {
     return status ? status : 1;
   }
 
-  enum NoiseCancelling got_level = 0;
+  enum NoiseCancelling got_level = NC_UNKNOWN;
   status                         = get_noise_cancelling(sock, &got_level);
   if (status) {
     return status;
@@ -426,7 +426,7 @@ int get_device_status(int sock, char name[MAX_NAME_LEN],
     return status;
   }
   static const uint8_t send[] = GET_DEVICE_STATUS_SEND;
-  status                      = write(sock, send, sizeof(send));
+  status                      = (int)write(sock, send, sizeof(send));
   if (status != sizeof(send)) {
     return status ? status : 1;
   }
@@ -492,7 +492,7 @@ int get_firmware_version(int sock, char version[VER_STR_LEN]) {
     return status;
   }
 
-  status = read(sock, version, VER_STR_LEN - 1);
+  status = (int)read(sock, version, VER_STR_LEN - 1);
   if (status != VER_STR_LEN - 1) {
     return status ? status : 1;
   }
@@ -511,12 +511,12 @@ int get_serial_number(int sock, char serial[MAX_SERIAL_SIZE]) {
   }
 
   uint8_t length = 0;
-  status         = read(sock, &length, 1);
+  status         = (int)read(sock, &length, 1);
   if (status != 1) {
     return status ? status : 1;
   }
 
-  status = read(sock, serial, length);
+  status = (int)read(sock, serial, length);
   if (status != length) {
     return status ? status : 1;
   }
@@ -553,12 +553,12 @@ int get_device_info(int sock, bdaddr_t address, struct Device *device) {
   }
 
   uint8_t length = 0;
-  status         = read(sock, &length, 1);
+  status         = (int)read(sock, &length, 1);
   if (status != 1) {
     return status ? status : 1;
   }
 
-  status = read(sock, &device->address.b, BT_ADDR_LEN);
+  status = (int)read(sock, &device->address.b, BT_ADDR_LEN);
   if (status != BT_ADDR_LEN) {
     return status ? status : 1;
   }
@@ -570,23 +570,23 @@ int get_device_info(int sock, bdaddr_t address, struct Device *device) {
   }
 
   uint8_t status_byte = 0;
-  status              = read(sock, &status_byte, 1);
+  status              = (int)read(sock, &status_byte, 1);
   if (status != 1) {
     return status ? status : 1;
   }
   length -= 1;
 
-  device->status = status_byte;
+  device->status = (enum DeviceStatus)status_byte;
 
   // TODO(wolf): figure out what the first byte of garbage is for
   uint8_t garbage[BYTES_POSITION_2];
-  status = read(sock, &garbage, sizeof(garbage));
+  status = (int)read(sock, &garbage, sizeof(garbage));
   if (status != sizeof(garbage)) {
     return status ? status : 1;
   }
   length -= sizeof(garbage);
 
-  status = read(sock, device->name, length);
+  status = (int)read(sock, device->name, length);
   if (status != length) {
     return status ? status : 1;
   }
@@ -606,23 +606,23 @@ int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES],
   }
 
   uint8_t num_devices_byte = 0;
-  status                   = read(sock, &num_devices_byte, 1);
+  status                   = (int)read(sock, &num_devices_byte, 1);
   if (status != 1) {
     return status ? status : 1;
   }
 
   num_devices_byte /= BT_ADDR_LEN;
-  *num_devices = num_devices_byte - 1;
+  *num_devices = (size_t)(num_devices_byte - 1);
 
   uint8_t num_connected_byte = 0;
-  status                     = read(sock, &num_connected_byte, 1);
+  status                     = (int)read(sock, &num_connected_byte, 1);
   if (status != 1) {
     return status ? status : 1;
   }
-  *connected = num_connected_byte;
+  *connected = (enum DevicesConnected)num_connected_byte;
 
   for (size_t i = 0; i < num_devices_byte; ++i) {
-    status = read(sock, &addresses[i].b, BT_ADDR_LEN);
+    status = (int)read(sock, &addresses[i].b, BT_ADDR_LEN);
     if (status != BT_ADDR_LEN) {
       return status ? status : 1;
     }

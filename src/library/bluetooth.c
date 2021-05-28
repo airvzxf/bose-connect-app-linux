@@ -24,6 +24,6 @@ void reverse_str2ba(const char *str, bdaddr_t *ba) {
   const int max_ba       = 6;
   const int numeric_base = 16;
   for (int i = 0; i < max_ba; i++, str += 3) {
-    ba->b[i] = strtol(str, NULL, numeric_base);
+    ba->b[i] = (uint8_t)strtol(str, NULL, numeric_base);
   }
 }

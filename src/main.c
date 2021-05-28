@@ -207,7 +207,7 @@ static int do_set_auto_off(char *address, const char *arg) {
   case AO_40_MIN:
   case AO_60_MIN:
   case AO_180_MIN:
-    ao = parsed;
+    ao = (enum AutoOff)parsed;
     break;
   default:
     if (strcmp(arg, "never") != 0) {
@@ -221,7 +221,7 @@ static int do_set_auto_off(char *address, const char *arg) {
   return set_auto_off(sock, ao);
 }
 
-int get_noise_cancelling(const char *arg) {
+enum NoiseCancelling get_noise_cancelling(const char *arg) {
   if (strcmp(arg, "high") == 0) {
     return NC_HIGH;
   }
@@ -332,9 +332,9 @@ static int do_get_device_status(char *address) {
 
   printf("Status:\n");
   char                 name[MAX_NAME_LEN];
-  enum PromptLanguage  promptLanguage  = 0x0;
-  enum AutoOff         autoOff         = 0x0;
-  enum NoiseCancelling noiseCancelling = 0x0;
+  enum PromptLanguage  promptLanguage  = PL_UNKNOWN;
+  enum AutoOff         autoOff         = AO_UNKNOWN;
+  enum NoiseCancelling noiseCancelling = NC_UNKNOWN;
 
   int status = get_device_status(sock, name, &promptLanguage, &autoOff,
                                  &noiseCancelling);
@@ -391,7 +391,7 @@ static int do_get_device_status(char *address) {
   return 0;
 }
 
-int get_paring_status(const char *arg) {
+enum Pairing get_paring_status(const char *arg) {
   if (strcmp(arg, "on") == 0) {
     return P_ON;
   }
@@ -421,7 +421,7 @@ static int do_set_pairing(char *address, const char *arg) {
   return status;
 }
 
-int get_self_voice_status(const char *arg) {
+enum SelfVoice get_self_voice_status(const char *arg) {
   if (strcmp(arg, "high") == 0) {
     return SV_HIGH;
   }
@@ -551,7 +551,7 @@ static int do_get_paired_devices(char *address) {
   printf("Paired devices: ");
   bdaddr_t              devices[MAX_NUM_DEVICES];
   size_t                num_devices = 0;
-  enum DevicesConnected connected   = 0;
+  enum DevicesConnected connected   = DC_UNKNOWN;
 
   int status = get_paired_devices(sock, devices, &num_devices, &connected);
   if (status) {
@@ -567,10 +567,10 @@ static int do_get_paired_devices(char *address) {
     return 1;
   }
 
-  unsigned int num_connected = get_paired_devices_connected(connected);
+  int num_connected = get_paired_devices_connected(connected);
 
   printf("%zu\n", num_devices);
-  printf("\tConnected: %u\n", num_connected);
+  printf("\tConnected: %d\n", num_connected);
 
   for (size_t i = 0; i < num_devices; ++i) {
     struct Device device;
