@@ -59,3 +59,9 @@ void str_copy(char *to, const char *from, int size) {
     }
   }
 }
+
+void memory_copy(uint8_t *to, uint8_t *from, int size) {
+  for (unsigned int position = 0; position < size; position++) {
+    to[position] = from[position];
+  }
+}

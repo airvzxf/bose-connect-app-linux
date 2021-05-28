@@ -545,7 +545,7 @@ int get_device_info(int sock, bdaddr_t address, struct Device *device) {
   static uint8_t       send[BYTES_POSITION_10] = GET_DEVICE_INFO_SEND_PACKAGE;
   static const uint8_t ack[]                   = GET_DEVICE_INFO_ACK_PACKAGE;
 
-  memcpy(&send[BYTES_POSITION_4], &address.b, BT_ADDR_LEN);
+  memory_copy(&send[BYTES_POSITION_4], address.b, BT_ADDR_LEN);
 
   int status = write_check(sock, send, sizeof(send), ack, sizeof(ack));
   if (status) {
@@ -634,23 +634,23 @@ int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES],
 int connect_device(int sock, bdaddr_t address) {
   static uint8_t send[BYTES_POSITION_11] = CONNECT_DEVICE_SEND;
   static uint8_t ack[BYTES_POSITION_10]  = CONNECT_DEVICE_ACK;
-  memcpy(&send[BYTES_POSITION_5], &address.b, BT_ADDR_LEN);
-  memcpy(&ack[BYTES_POSITION_4], &address.b, BT_ADDR_LEN);
+  memory_copy(&send[BYTES_POSITION_5], address.b, BT_ADDR_LEN);
+  memory_copy(&ack[BYTES_POSITION_4], address.b, BT_ADDR_LEN);
   return write_check(sock, send, sizeof(send), ack, sizeof(ack));
 }
 
 int disconnect_device(int sock, bdaddr_t address) {
   static uint8_t send[BYTES_POSITION_10] = DISCONNECT_DEVICE_SEND;
   static uint8_t ack[BYTES_POSITION_10]  = DISCONNECT_DEVICE_ACK;
-  memcpy(&send[BYTES_POSITION_4], &address.b, BT_ADDR_LEN);
-  memcpy(&ack[BYTES_POSITION_4], &address.b, BT_ADDR_LEN);
+  memory_copy(&send[BYTES_POSITION_4], address.b, BT_ADDR_LEN);
+  memory_copy(&ack[BYTES_POSITION_4], address.b, BT_ADDR_LEN);
   return write_check(sock, send, sizeof(send), ack, sizeof(ack));
 }
 
 int remove_device(int sock, bdaddr_t address) {
   static uint8_t send[BYTES_POSITION_10] = REMOVE_DEVICE_SEND;
   static uint8_t ack[BYTES_POSITION_10]  = REMOVE_DEVICE_ACK;
-  memcpy(&send[BYTES_POSITION_4], &address.b, BT_ADDR_LEN);
-  memcpy(&ack[BYTES_POSITION_4], &address.b, BT_ADDR_LEN);
+  memory_copy(&send[BYTES_POSITION_4], address.b, BT_ADDR_LEN);
+  memory_copy(&ack[BYTES_POSITION_4], address.b, BT_ADDR_LEN);
   return write_check(sock, send, sizeof(send), ack, sizeof(ack));
 }
