@@ -1,5 +1,6 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/rfcomm.h>
+#include <errno.h>
 #include <getopt.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -185,7 +186,19 @@ static int do_set_auto_off(char *address, const char *arg) {
     return 1;
   }
 
-  int parsed = atoi(arg);
+  char *end_pointer = NULL;
+  errno             = 0;
+  long parsed       = strtol(arg, &end_pointer, MAX_DECIMAL_UNIT);
+
+  if (errno != 0) {
+    perror("Error trying to set auto off.\n");
+    return 1;
+  }
+
+  if (end_pointer == arg) {
+    fprintf(stderr, "No digits were found.\n");
+    return 1;
+  }
 
   enum AutoOff ao = AO_NEVER;
   switch (parsed) {
