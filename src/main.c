@@ -778,11 +778,9 @@ int main(int argc, char *argv[]) {
   int opt       = getopt_long(argc, argv, short_opt, long_opt, &opt_index);
   switch (opt) {
   case 'h':
-    usage();
-    return 0;
   case '?':
     usage();
-    return 1;
+    return 0;
   default:
     break;
   }
