@@ -38,11 +38,11 @@ jobs:
           languages: ${{ matrix.language }}
 
       - name: Check project
-        - run: |
-            - ls -lha /home/runner/work/bose-connect-app-linux/bose-connect-app-linux/src/ || true
-            - ls -lha /home/runner/work/bose-connect-app-linux/bose-connect-app-linux/src/_lgtm_build_dir || true
-            - find / -iname *clang-tidy* || true
-            - whereis clang-tidy || true
+        run: |
+          ls -lha /home/runner/work/bose-connect-app-linux/bose-connect-app-linux/src/ || true
+          ls -lha /home/runner/work/bose-connect-app-linux/bose-connect-app-linux/src/_lgtm_build_dir || true
+          find / -iname *clang-tidy* || true
+          whereis clang-tidy || true
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v1
