@@ -27,15 +27,16 @@ jobs:
           sudo apt --assume-yes install \
             cmake libbluetooth-dev
 
-      - name: CMake - Configure
-        run: >
-          cmake \
-            -S ${{github.workspace}}/src \
-            -B ${{github.workspace}}/build \
-            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+#      - name: CMake - Configure
+#        run: >
+#          cmake \
+#            -S ${{github.workspace}}/src \
+#            -B ${{github.workspace}}/build \
+#            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
       - name: CMake - Build
         run: >
+          cd ${{github.workspace}}/src
           cmake \
             --build ${{github.workspace}}/build \
             --config ${{env.BUILD_TYPE}}
