@@ -20,7 +20,9 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Update packages
-        run: sudo apt update
+        run: |
+          # sudo sed -i "s/focal/hirsute/" /etc/apt/sources.list
+          sudo apt update
 
       - name: Install packages
         run: |
@@ -37,13 +39,14 @@ jobs:
           sudo apt update
           echo "--------------------------------------------------------------"
           sudo apt --assume-yes install \
-            clang-tidy-11 || true
-          echo "--------------------------------------------------------------"
-          sudo apt-get install -f
-          echo "--------------------------------------------------------------"
-          sudo apt --assume-yes install \
-            cppcheck \
+            clang-tidy-11 cppcheck \
             libbluetooth-dev
+          echo "--------------------------------------------------------------"
+          cd /usr/bin
+          ls -lha .
+          echo "--------------------------------------------------------------"
+          ln -s ../lib/llvm-11/bin/clang-tidy /usr/bin/clang-tidy
+          ls -lha .
           echo "--------------------------------------------------------------"
           sudo apt show cmake || true
           sudo apt show clang-tidy || true
