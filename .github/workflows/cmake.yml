@@ -38,8 +38,7 @@ jobs:
       - name: CMake - Build
         run: |
           cmake --version
-          cmake --help
-          cmake
+          cmake --help-full
           cmake \
             -j $(nproc) \
             --build ${{github.workspace}}/build
