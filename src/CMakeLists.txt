@@ -63,7 +63,7 @@ add_custom_command(
         TARGET ${PROJECT_NAME}
         PRE_BUILD
         COMMAND
-        cd .. &&
+        cd ${CMAKE_SOURCE_DIR} &&
         clang-format
         "--verbose"
         "--Werror"
@@ -82,7 +82,7 @@ add_custom_command(
         TARGET ${PROJECT_NAME}
         PRE_BUILD
         COMMAND
-        cd .. &&
+        cd ${CMAKE_SOURCE_DIR} &&
         clang-tidy
         -p ${CMAKE_BINARY_DIR}
         ${PROJECT_SOURCES}

@@ -43,17 +43,12 @@ jobs:
           languages: ${{ matrix.language }}
 
       - name: Autobuild
-        # uses: github/codeql-action/autobuild@v1
+        uses: github/codeql-action/autobuild@v1
         # ✏️ If the Autobuild fails above, remove it and uncomment the
         #    following three lines and modify them (or add more) to build
         #    your code if your project uses a compiled language.
-        run: |
-          cd ${{github.workspace}}/src
-          mkdir -p ${{github.workspace}}/build
-          cmake \
-            --build ${{github.workspace}}/build \
-            --config ${{env.BUILD_TYPE}}
-          cd ${{github.workspace}}
+        # run: |
+        #   cmake .
 
       - name: Perform analysis
         uses: github/codeql-action/analyze@v1
