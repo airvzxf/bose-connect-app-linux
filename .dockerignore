@@ -1,0 +1,7 @@
+src/.idea
+src/cmake-build-debug
+src/cmake-build-debug-coverage
+src/cmake-build-default
+src/cmake-build-minsizerel
+src/cmake-build-release
+src/cmake-build-relwithdebinfo

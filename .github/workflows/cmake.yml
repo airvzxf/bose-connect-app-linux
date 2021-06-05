@@ -2,14 +2,10 @@ name: CMake
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, quality-assurance-code ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-
-env:
-  # Types: Debug, Release, RelWithDebInfo, MinSizeRel.
-  BUILD_TYPE: Release
 
 jobs:
   build:
@@ -19,44 +15,35 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Update package's server
-        run: |
-          sudo sed -i "s/focal/hirsute/" /etc/apt/sources.list
-          sudo apt update
-
-      - name: Install packages
-        run: |
-          sudo apt --assume-yes install \
-            clang-tidy-11 cppcheck \
-            libbluetooth-dev
-          echo "--------------------------------------------------------------"
-          cd /usr/bin
-          sudo ln -s ../lib/llvm-11/bin/clang-tidy /usr/bin/clang-tidy
-          echo "--------------------------------------------------------------"
-          cmake --version || true
-          clang-tidy --version || true
-          cppcheck --version || true
-          echo "--------------------------------------------------------------"
-          whereis cmake || true
-          whereis clang-tidy || true
-          whereis cppcheck || true
-          echo "--------------------------------------------------------------"
-
-      - name: CMake - Configure
+      - name: Build the Docker image
         run: >
-          cmake \
-            -S ${{github.workspace}}/src \
-            -B ${{github.workspace}}/build \
-            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          docker build \
+            . \
+            --file Dockerfile \
+            --tag bose-connect-app-linux:latest
 
-      - name: CMake - Build
+      - name: Run the Docker image into container
         run: >
-          cmake \
-            --build ${{github.workspace}}/build
+          docker run \
+            --rm \
+            --detach \
+            --interactive \
+            --tty \
+            --name bose-connect-app-linux \
+            bose-connect-app-linux:latest \
+            /bin/bash
 
-      - name: CMake - Test
-        working-directory: ${{github.workspace}}/build
-        run: ctest -C ${{env.BUILD_TYPE}}
+      - name: Copy the build folder from the Docker container
+        run: >
+          docker cp \
+            bose-connect-app-linux:/root/bose-connect-app-linux/build \
+            $(pwd)
+
+      - name: Stop Docker container
+        run: >
+          docker cp \
+            bose-connect-app-linux:/root/bose-connect-app-linux/build \
+            $(pwd)
 
       - name: Get binary's name
         run: |
