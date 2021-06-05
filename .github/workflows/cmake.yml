@@ -39,8 +39,7 @@ jobs:
         run: >
           cmake \
             -j $(nproc) \
-            --build ${{github.workspace}}/build \
-            --config ${{env.BUILD_TYPE}}
+            --build ${{github.workspace}}/build
 
       - name: CMake - Test
         working-directory: ${{github.workspace}}/build
