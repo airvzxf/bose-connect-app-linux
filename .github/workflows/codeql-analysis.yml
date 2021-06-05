@@ -30,7 +30,7 @@ jobs:
       - name: Install packages
         run: >
           sudo apt --assume-yes install \
-            cmake libbluetooth-dev clang-tidy
+            cmake libbluetooth-dev clang-tidy cppcheck
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v1
