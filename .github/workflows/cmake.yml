@@ -2,7 +2,7 @@ name: CMake
 
 on:
   push:
-    branches: [ main, quality-assurance-code ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
