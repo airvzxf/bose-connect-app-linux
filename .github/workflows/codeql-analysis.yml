@@ -31,34 +31,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Install packages
-        run: >
-          sudo apt --assume-yes install \
-            cmake clang-tidy cppcheck \
-            libbluetooth-dev
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v1
         with:
           languages: ${{ matrix.language }}
 
-      - name: Copy QA config files
-        run: |
-          mkdir -p ${{github.workspace}}/src/_lgtm_build_dir
-          cp \
-            ${{github.workspace}}/src/.clang-format \
-            ${{github.workspace}}/src/_lgtm_build_dir
-          cp \
-            ${{github.workspace}}/src/.clang-tidy \
-            ${{github.workspace}}/src/_lgtm_build_dir
-
-#      - name: Autobuild
-#        uses: github/codeql-action/autobuild@v1
-#        # ✏️ If the Autobuild fails above, remove it and uncomment the
-#        #    following three lines and modify them (or add more) to build
-#        #    your code if your project uses a compiled language.
-#        # run: |
-#        #   cmake .
+        # - name: Autobuild
+        #   uses: github/codeql-action/autobuild@v1
+        #   ✏️ If the Autobuild fails above, remove it and uncomment the
+        #      following three lines and modify them (or add more) to build
+        #      your code if your project uses a compiled language.
+        #   run: |
+        #     cmake .
 
       - name: Build the Docker image
         run: >
@@ -78,11 +62,15 @@ jobs:
             bose-connect-app-linux:latest \
             /bin/bash
 
+      - name: Create build folder
+        run: >
+          mkdir -p ${{github.workspace}}/src/_lgtm_build_dir
+
       - name: Copy the build folder from the Docker container
         run: >
           docker cp \
             bose-connect-app-linux:/root/bose-connect-app-linux/build \
-            $(pwd)
+            ${{github.workspace}}/src/_lgtm_build_dir
 
       - name: Stop Docker container
         run: >
