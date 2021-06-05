@@ -43,10 +43,12 @@ jobs:
             libbluetooth-dev
           echo "--------------------------------------------------------------"
           cd /usr/bin
-          ls -lha .
+          ls -lha clang-*
+          echo "--------------------------------------------------------------"
+          ls -lha ../lib/llvm*
           echo "--------------------------------------------------------------"
           ln -s ../lib/llvm-11/bin/clang-tidy /usr/bin/clang-tidy
-          ls -lha .
+          ls -lha clang-*
           echo "--------------------------------------------------------------"
           sudo apt show cmake || true
           sudo apt show clang-tidy || true
