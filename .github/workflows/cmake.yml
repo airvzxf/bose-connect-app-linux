@@ -44,7 +44,13 @@ jobs:
           sudo apt show cppcheck || true
           echo "--------------------------------------------------------------"
           sudo apt --assume-yes install \
-            cmake clang-tidy cppcheck \
+            clang-tidy
+          echo "--------------------------------------------------------------"
+          sudo apt-get install -f
+          echo "--------------------------------------------------------------"
+
+          sudo apt --assume-yes install \
+            cppcheck \
             libbluetooth-dev
 
       - name: CMake - Configure
