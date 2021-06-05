@@ -36,14 +36,6 @@ jobs:
         with:
           languages: ${{ matrix.language }}
 
-        # - name: Autobuild
-        #   uses: github/codeql-action/autobuild@v1
-        #   ✏️ If the Autobuild fails above, remove it and uncomment the
-        #      following three lines and modify them (or add more) to build
-        #      your code if your project uses a compiled language.
-        #   run: |
-        #     cmake .
-
       - name: Build the Docker image
         run: >
           docker build \
@@ -76,6 +68,14 @@ jobs:
         run: >
           docker container stop \
             bose-connect-app-linux
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v1
+        # ✏️ If the Autobuild fails above, remove it and uncomment the
+        #    following three lines and modify them (or add more) to build
+        #    your code if your project uses a compiled language.
+        run: >
+          cmake ./src || true
 
       - name: Perform analysis
         uses: github/codeql-action/analyze@v1
