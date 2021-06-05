@@ -30,10 +30,6 @@ jobs:
           clang-tidy --version || true
           cppcheck --version || true
           echo "--------------------------------------------------------------"
-          sudo apt show cmake || true
-          sudo apt show clang-tidy || true
-          sudo apt show cppcheck || true
-          echo "--------------------------------------------------------------"
           sudo sed -i "s/focal/hirsute/" /etc/apt/sources.list
           echo "--------------------------------------------------------------"
           sudo apt update
@@ -44,11 +40,15 @@ jobs:
           echo "--------------------------------------------------------------"
           cd /usr/bin
           sudo ln -s ../lib/llvm-11/bin/clang-tidy /usr/bin/clang-tidy
-          ls -lha clang-tidy*
+          ls -lha cppc* || true
           echo "--------------------------------------------------------------"
           cmake --version || true
           clang-tidy --version || true
           cppcheck --version || true
+          echo "--------------------------------------------------------------"
+          whereis cmake || true
+          whereis clang-tidy || true
+          whereis cppcheck || true
           echo "--------------------------------------------------------------"
 
       - name: CMake - Configure
