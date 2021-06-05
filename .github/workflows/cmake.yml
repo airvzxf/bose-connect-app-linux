@@ -46,9 +46,9 @@ jobs:
           sudo ln -s ../lib/llvm-11/bin/clang-tidy /usr/bin/clang-tidy
           ls -lha clang-tidy*
           echo "--------------------------------------------------------------"
-          sudo apt show cmake || true
-          sudo apt show clang-tidy || true
-          sudo apt show cppcheck || true
+          cmake --version || true
+          clang-tidy --version || true
+          cppcheck --version || true
           echo "--------------------------------------------------------------"
 
       - name: CMake - Configure
