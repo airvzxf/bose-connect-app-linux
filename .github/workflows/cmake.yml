@@ -23,7 +23,26 @@ jobs:
         run: sudo apt update
 
       - name: Install packages
-        run: >
+        run: |
+          cmake --version || true
+          clang-tidy --version || true
+          cppcheck --version || true
+          echo "--------------------------------------------------------------"
+          sudo apt show cmake || true
+          sudo apt show clang-tidy || true
+          sudo apt show cppcheck || true
+          echo "--------------------------------------------------------------"
+          sudo cat /etc/apt/sources.list
+          echo "--------------------------------------------------------------"
+          sudo sed -i "s/focal/hirsute/" /etc/apt/sources.list
+          sudo cat /etc/apt/sources.list
+          echo "--------------------------------------------------------------"
+          sudo apt update
+          echo "--------------------------------------------------------------"
+          sudo apt show cmake || true
+          sudo apt show clang-tidy || true
+          sudo apt show cppcheck || true
+          echo "--------------------------------------------------------------"
           sudo apt --assume-yes install \
             cmake clang-tidy cppcheck \
             libbluetooth-dev
@@ -36,10 +55,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
       - name: CMake - Build
-        run: |
-          cmake --version
-          clang-tidy --version
-          cppcheck --version
+        run: >
           cmake \
             --build ${{github.workspace}}/build
 
