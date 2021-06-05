@@ -535,7 +535,7 @@ int get_battery_level(int sock, unsigned int *level) {
   }
 
   uint8_t level_byte = 0;
-  read(sock, &level_byte, 1);
+  (void)read(sock, &level_byte, 1);
   *level = level_byte;
 
   return 0;
