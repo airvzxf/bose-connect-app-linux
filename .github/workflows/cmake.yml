@@ -38,6 +38,7 @@ jobs:
       - name: CMake - Build
         run: >
           cmake \
+            -j $(nproc) \
             --build ${{github.workspace}}/build \
             --config ${{env.BUILD_TYPE}}
 

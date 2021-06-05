@@ -42,6 +42,16 @@ jobs:
         with:
           languages: ${{ matrix.language }}
 
+      - name: Copy QA config files
+        run: |
+          mkdir -p ${{github.workspace}}/src/_lgtm_build_dir
+          cp \
+            ${{github.workspace}}/src/.clang-format \
+            ${{github.workspace}}/src/_lgtm_build_dir
+          cp \
+            ${{github.workspace}}/src/.clang-tidy \
+            ${{github.workspace}}/src/_lgtm_build_dir
+
       - name: Autobuild
         uses: github/codeql-action/autobuild@v1
         # ✏️ If the Autobuild fails above, remove it and uncomment the
