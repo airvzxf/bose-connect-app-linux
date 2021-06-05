@@ -32,26 +32,23 @@ jobs:
           sudo apt show clang-tidy || true
           sudo apt show cppcheck || true
           echo "--------------------------------------------------------------"
-          sudo cat /etc/apt/sources.list
-          echo "--------------------------------------------------------------"
           sudo sed -i "s/focal/hirsute/" /etc/apt/sources.list
-          sudo cat /etc/apt/sources.list
           echo "--------------------------------------------------------------"
           sudo apt update
+          echo "--------------------------------------------------------------"
+          sudo apt --assume-yes install \
+            clang-tidy-11 || true
+          echo "--------------------------------------------------------------"
+          sudo apt-get install -f
+          echo "--------------------------------------------------------------"
+          sudo apt --assume-yes install \
+            cppcheck \
+            libbluetooth-dev
           echo "--------------------------------------------------------------"
           sudo apt show cmake || true
           sudo apt show clang-tidy || true
           sudo apt show cppcheck || true
           echo "--------------------------------------------------------------"
-          sudo apt --assume-yes install \
-            clang-tidy || true
-          echo "--------------------------------------------------------------"
-          sudo apt-get install -f
-          echo "--------------------------------------------------------------"
-
-          sudo apt --assume-yes install \
-            cppcheck \
-            libbluetooth-dev
 
       - name: CMake - Configure
         run: >
