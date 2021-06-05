@@ -28,7 +28,8 @@ WORKDIR /root/bose-connect-app-linux
 RUN cmake \
         -S . \
         -B ./build \
-        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_BUILD_TYPE=Release \
+        -DVALIDATE_QA=True # Optional: It could remove.
 RUN cmake \
       --build ./build \
       --parallel $(nproc)
