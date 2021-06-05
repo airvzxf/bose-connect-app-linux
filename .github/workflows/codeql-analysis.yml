@@ -39,10 +39,8 @@ jobs:
 
       - name: Check project
         run: |
-          ls -lha /home/runner/work/bose-connect-app-linux/bose-connect-app-linux/src/ || true
-          ls -lha /home/runner/work/bose-connect-app-linux/bose-connect-app-linux/src/_lgtm_build_dir || true
-          find / -iname *clang-tidy* || true
-          whereis clang-tidy || true
+          find / -iname *cppcheck* 2> /dev/null || true
+          whereis cppcheck || true
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v1
