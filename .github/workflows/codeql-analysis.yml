@@ -42,11 +42,6 @@ jobs:
         with:
           languages: ${{ matrix.language }}
 
-      - name: Check project
-        run: |
-          find / -iname *cppcheck* 2> /dev/null || true
-          whereis cppcheck || true
-
       - name: Autobuild
         # uses: github/codeql-action/autobuild@v1
         # ℹ️ Command-line programs to run using the OS shell.
