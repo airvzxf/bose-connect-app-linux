@@ -9,10 +9,6 @@ on:
     - cron: '32 14 * * 1'
   workflow_dispatch:
 
-env:
-  # Types: Debug, Release, RelWithDebInfo, MinSizeRel.
-  BUILD_TYPE: Release
-
 jobs:
   analyze:
     name: Analyze
@@ -31,51 +27,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
+      - name: Install packages
+        run: >
+          sudo apt --assume-yes install \
+            libbluetooth-dev
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v1
         with:
           languages: ${{ matrix.language }}
 
-      - name: Build the Docker image
-        run: >
-          docker build \
-            . \
-            --file Dockerfile \
-            --tag bose-connect-app-linux:latest
-
-      - name: Run the Docker image into container
-        run: >
-          docker run \
-            --rm \
-            --detach \
-            --interactive \
-            --tty \
-            --name bose-connect-app-linux \
-            bose-connect-app-linux:latest \
-            /bin/bash
-
-      - name: Create build folder
-        run: >
-          mkdir -p ${{github.workspace}}/src/_lgtm_build_dir
-
-      - name: Copy the build folder from the Docker container
-        run: >
-          docker cp \
-            bose-connect-app-linux:/root/bose-connect-app-linux/build \
-            ${{github.workspace}}/src/_lgtm_build_dir
-
-      - name: Stop Docker container
-        run: >
-          docker container stop \
-            bose-connect-app-linux
-
       - name: Autobuild
-        #uses: github/codeql-action/autobuild@v1
+        uses: github/codeql-action/autobuild@v1
         # ✏️ If the Autobuild fails above, remove it and uncomment the
         #    following three lines and modify them (or add more) to build
         #    your code if your project uses a compiled language.
-        run: >
-          cmake ./src || true
+        #run: >
+        #  cmake ./src || true
 
       - name: Perform analysis
         uses: github/codeql-action/analyze@v1
