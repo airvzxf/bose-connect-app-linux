@@ -36,7 +36,10 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
       - name: CMake - Build
-        run: >
+        run: |
+          cmake --version
+          clang-tidy --version
+          cppcheck --version
           cmake \
             --build ${{github.workspace}}/build
 
