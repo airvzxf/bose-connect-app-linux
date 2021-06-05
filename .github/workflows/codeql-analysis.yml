@@ -49,7 +49,7 @@ jobs:
         #    your code if your project uses a compiled language.
         run: |
           cd ${{github.workspace}}/src
-          # mkdir -p ${{github.workspace}}/build
+          mkdir -p ${{github.workspace}}/build
           cmake \
             --build ${{github.workspace}}/build \
             --config ${{env.BUILD_TYPE}}
