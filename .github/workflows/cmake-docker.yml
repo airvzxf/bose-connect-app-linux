@@ -2,7 +2,7 @@ name: CMake with Docker
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, quality-assurance-code ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
