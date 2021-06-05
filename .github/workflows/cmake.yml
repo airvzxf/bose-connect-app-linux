@@ -41,16 +41,15 @@ jobs:
 
       - name: Stop Docker container
         run: >
-          docker cp \
-            bose-connect-app-linux:/root/bose-connect-app-linux/build \
-            $(pwd)
+          docker container stop \
+            bose-connect-app-linux
 
       - name: Get binary's name
         run: |
           cd ${{github.workspace}}/build
           PROJECT_NAME=$(grep PROJECT_NAME CMakeCache.txt | cut -d "=" -f2)
           echo "BINARY_NAME=${PROJECT_NAME}" >> $GITHUB_ENV
-          tar -zcvf "${PROJECT_NAME}.tar.gz" "${PROJECT_NAME}"
+          # tar -zcvf "${PROJECT_NAME}.tar.gz" "${PROJECT_NAME}"
           zip "${PROJECT_NAME}.zip" "${PROJECT_NAME}"
 
       - name: Archive binary's built
