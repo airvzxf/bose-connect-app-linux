@@ -44,7 +44,7 @@ jobs:
           sudo apt show cppcheck || true
           echo "--------------------------------------------------------------"
           sudo apt --assume-yes install \
-            clang-tidy
+            clang-tidy || true
           echo "--------------------------------------------------------------"
           sudo apt-get install -f
           echo "--------------------------------------------------------------"
