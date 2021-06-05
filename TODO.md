@@ -26,10 +26,10 @@
             - [ ] IAST.
     - [ ] Fix alerts.
         - [ ] Code coverage scanner.
-        - [ ] Code quality scanner.
+        - [x] Code quality scanner.
         - [ ] Security scanner.
             - [ ] DAST.
-            - [ ] SAST.
+            - [x] SAST.
             - [ ] IAST.
 
 - [ ] CI/CD - Make similar to GitLab.

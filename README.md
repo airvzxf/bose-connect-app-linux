@@ -2,21 +2,15 @@
 
 --- Not Official App ---
 
-Based on [Denton-L project][Denton-L] because it is not maintained anymore.
-Also, it has some interesting Merge Request. I created a copy to have an active
-repository. The original license is GPL-3.0 License as the original repository
-shown, I keep this license.
-
-
-Connect App for Linux
-=====================
+Based on [Denton-L project][Denton-L], looks like it is not maintained. I
+created a copy to have an active repository. This project keeps the original
+license GPL-3.0.
 
 If you own a Bose device, you'll know that `Bose Connect` is not available on
 Linux. This program attempts to reverse engineer that app to give the device
 Linux support.
 
-Usage
------
+### Usage
 
 ```text
 Usage: bose-connect-app-linux [options] <address>
@@ -69,43 +63,99 @@ Usage: bose-connect-app-linux [options] <address>
     Remove the device at address from the pairing list.
 ```
 
-Building
---------
+## Build and Installation
 
-Simply run `make -j $(nproc)` to build the program. The executable produced
-will be called `bose-connect-app-linux`.
-
-Installing
-----------
-
-Run `make install` to install the program. The `PREFIX` and `DESTDIR` variables
-are assignable and have the traditional meaning.
-
-Dependencies
-------------
+### Dependencies
 
 * BlueZ
     * `bluez-libs` on Arch Linux
     * `libbluetooth-dev` on Debian and Ubuntu
 
-Details
--------
+### Docker
+
+Follow the next steps:
+
+```bash
+# Build the Docker image
+docker build \
+  . \
+  --file Dockerfile \
+  --tag bose-connect-app-linux:latest
+
+# Run the Docker image into container
+docker run \
+  --rm \
+  --detach \
+  --interactive \
+  --tty \
+  --name bose-connect-app-linux \
+  bose-connect-app-linux:latest \
+  /bin/bash
+
+# Copy the build folder from the Docker container
+docker cp \
+  bose-connect-app-linux:/root/bose-connect-app-linux/build \
+  $(pwd)
+
+# Stop Docker container
+docker container stop \
+  bose-connect-app-linux
+
+# Enjoy
+./build/bose-connect-app-linux
+```
+
+The executable produced will be called `./build/bose-connect-app-linux`.
+
+*Note: I created this in `Arch Linux`. It should be crash in `Ubuntu` because
+the library of bluetooth is different, if it fails some fixes will come soon.*
+
+### Local
+
+The local build require the installation of the follow packages: `make`,
+`cmake`, `pkgconf`, and (`bluez-libs` or `libbluetooth-dev`).
+
+```bash
+# Configure CMake
+cmake \
+  -S ./src \
+  -B ./build \
+  -DCMAKE_BUILD_TYPE=Release
+
+# Build
+cmake \
+  --build ./build \
+  --parallel $(nproc)
+
+# Enjoy
+./build/bose-connect-app-linux
+```
+
+The executable produced will be called `./build/bose-connect-app-linux`.
+
+### Install
+
+Pending... ~~Run `make install` to install the program. The `PREFIX` and
+`DESTDIR` variables are assignable and have the traditional meaning.~~
+
+## Contribute
+
+Pending...
+
+## To-Do's List
+
+Visit the document with all the checkpoints in [TODO.md][todo.md].
+
+## Details
 
 For more information about the details of how use the firmwares to found
 functionality, please review the file [DETAILS.md][details-file].
 
-
-Disclaimer
-----------
+## Disclaimer
 
 This has only been tested on Bose `QuietComfort 35's` with firmware 1.3.2,
 1.2.9, 1.06 and `SoundLink II's` with firmware 2.1.1. I cannot ensure that this
 program works on any other devices.
-
-To-do
------
-
-Visit the document with all the checkpoints in [TODO.md][todo.md].
 
 
 [Denton-L]: https://github.com/Denton-L/based-connect
