@@ -27,7 +27,8 @@ jobs:
           docker-compose --project-directory ./src up --detach --build
 
       - name: Build the application
-        run: >
+        run: |
+          export USER_ID="$(id -u ${USER})"
           docker exec \
             --user ${USER_ID} \
             -it bose-connect-app-linux \
