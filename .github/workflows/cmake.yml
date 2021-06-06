@@ -27,11 +27,6 @@ jobs:
         run: >
           echo "GROUP_ID=$(id -g ${USER})" >> .env
 
-      - name: Check exportations
-        run: |
-          cat .env
-          exit 123
-
       - name: Start the docker compose
         run: >
           docker-compose --project-directory ./src up --detach --build
