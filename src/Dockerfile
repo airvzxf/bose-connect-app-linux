@@ -24,8 +24,8 @@ FROM archlinux
 # Add new user with the same ID's as the host
 ARG USER_ID
 ARG GROUP_ID
-RUN "USER_ID:  ${USER_ID}"
-RUN "GROUP_ID: ${GROUP_ID}"
+RUN echo "USER_ID:  ${USER_ID}"
+RUN echo "GROUP_ID: ${GROUP_ID}"
 RUN groupadd \
     --non-unique \
     --force \
