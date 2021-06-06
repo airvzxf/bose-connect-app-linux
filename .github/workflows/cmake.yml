@@ -29,6 +29,7 @@ jobs:
 
       - name: Start the docker compose
         run: |
+          set -evx
           export USER_ID="$(id -u ${USER})"
           export GROUP_ID="$(id -g ${USER})"
           docker-compose --project-directory ./src up --detach --build
