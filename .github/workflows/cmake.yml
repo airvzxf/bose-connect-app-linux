@@ -31,7 +31,7 @@ jobs:
           export USER_ID="$(id -u ${USER})"
           docker exec \
             --user ${USER_ID} \
-            -it bose-connect-app-linux \
+            bose-connect-app-linux \
             /root/bose-connect-app-linux/script/build-prod.bash
 
       - name: Get binary's name

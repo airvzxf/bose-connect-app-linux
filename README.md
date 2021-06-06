@@ -91,8 +91,10 @@ docker-compose --project-directory ./src up --detach --build
 # Build the application.
 docker exec \
   --user ${USER_ID} \
-  -it bose-connect-app-linux \
-   /root/bose-connect-app-linux/script/build-prod.bash
+  --interactive \
+  --tty \
+  bose-connect-app-linux \
+  /root/bose-connect-app-linux/script/build-prod.bash
 
 # Enjoy.
 ./src/build/bose-connect-app-linux
