@@ -27,6 +27,14 @@ jobs:
         run: >
           export GROUP_ID=$(id -g ${USER})
 
+      - name: Check exportations
+        run: |
+          echo "USER: ${USER}" || true
+          echo $(id -u ${USER}) || true
+          echo "USER_ID: ${USER_ID}" || true
+          printenv || true
+          exit 123
+
       - name: Start the docker compose
         run: >
           docker-compose --project-directory ./src up --detach --build
