@@ -21,18 +21,15 @@ jobs:
 
       - name: Export USER_ID
         run: >
-          export USER_ID=$(id -u ${USER})
+          echo "USER_ID=$(id -u ${USER})" >> .env
 
       - name: Export GROUP_ID
         run: >
-          export GROUP_ID=$(id -g ${USER})
+          echo "GROUP_ID=$(id -g ${USER})" >> .env
 
       - name: Check exportations
         run: |
-          echo "USER: ${USER}" || true
-          echo $(id -u ${USER}) || true
-          echo "USER_ID: ${USER_ID}" || true
-          printenv || true
+          cat .env
           exit 123
 
       - name: Start the docker compose
