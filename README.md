@@ -80,17 +80,27 @@ The executable produced by the build will be
 Follow the next steps:
 
 ```bash
+# Set up the host's user ID and group.
+echo "USER_ID=$(id -u "${USER}")" >./src/.env-user
+echo "GROUP_ID=$(id -g "${USER}")" >>./src/.env-user
+
 # Clean previous docker composes.
-docker-compose --project-directory ./src down
+docker-compose \
+  --project-directory ./src \
+  --env-file ./src/.env-user \
+  down
 
 # Start the docker compose.
-export USER_ID=$(id -u ${USER})
-export GROUP_ID=$(id -g ${USER})
-docker-compose --project-directory ./src up --detach --build
+docker-compose \
+  --project-directory ./src \
+  --env-file ./src/.env-user \
+  up \
+  --detach \
+  --build
 
 # Build the application.
 docker exec \
-  --user ${USER_ID} \
+  --user $(id -u "${USER}") \
   --interactive \
   --tty \
   bose-connect-app-linux \

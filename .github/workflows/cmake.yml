@@ -15,22 +15,31 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Store user in environment file for Docker composer
+        run: |
+          echo "USER_ID=$(id -u "${USER}")" >./src/.env-user
+          echo "GROUP_ID=$(id -g "${USER}")" >>./src/.env-user
+
       - name: Clean previous docker composes
         run: >
-          docker-compose --project-directory ./src down
+          docker-compose \
+            --project-directory ./src \
+            --env-file ./src/.env-user \
+            down
 
       - name: Start the docker compose
-        run: |
-          set -evx
-          export USER_ID="$(id -u ${USER})"
-          export GROUP_ID="$(id -g ${USER})"
-          docker-compose --project-directory ./src up --detach --build
+        run: >
+          docker-compose \
+            --project-directory ./src \
+            --env-file ./src/.env-user \
+            up \
+            --detach \
+            --build
 
       - name: Build the application
-        run: |
-          export USER_ID="$(id -u ${USER})"
+        run: >
           docker exec \
-            --user ${USER_ID} \
+            --user $(id -u "${USER}") \
             bose-connect-app-linux \
             /root/bose-connect-app-linux/script/build-prod.bash
 

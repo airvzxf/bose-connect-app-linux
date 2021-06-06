@@ -63,22 +63,32 @@ again the commands: `docker-compose down` and
 `docker-compose up --detach --build`.*
 
 ```bash
+# Set up the host's user ID and group.
+echo "USER_ID=$(id -u "${USER}")" >./src/.env-user
+echo "GROUP_ID=$(id -g "${USER}")" >>./src/.env-user
+
 # Clean previous docker composes.
 # Execute only one time.
-docker-compose --project-directory ./src down
+docker-compose \
+  --project-directory ./src \
+  --env-file ./src/.env-user \
+  down
 
 # Start the docker compose.
 # If you did changes on the Dockerfile you need to run again this command.
 # Execute only one time.
-export USER_ID=$(id -u ${USER})
-export GROUP_ID=$(id -g ${USER})
-docker-compose --project-directory ./src up --detach --build
+docker-compose \
+  --project-directory ./src \
+  --env-file ./src/.env-user \
+  up \
+  --detach \
+  --build
 
 # Make modification to your source.
 # After it, you can build the application with your changes.
 # Execute at any time.
 docker exec \
-  --user ${USER_ID} \
+  --user $(id -u "${USER}") \
   --interactive \
   --tty \
   bose-connect-app-linux \
