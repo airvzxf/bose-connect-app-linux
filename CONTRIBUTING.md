@@ -110,4 +110,4 @@ scanners.
 
 [contribute-github]: https://docs.github.com/en/github/collaborating-with-pull-requests
 
-[development-notes]: https://github.com/airvzxf/bose-connect-app-linux/blob/main/DEVELOPMENT.md
+[development-notes]: ./DEVELOPMENT.md

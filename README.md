@@ -148,6 +148,6 @@ program works on any other devices.
 
 [todo.md]: ./TODO.md
 
-[contributing]: https://github.com/airvzxf/bose-connect-app-linux/blob/main/DEVELOPMENT.md
+[contributing]: ./CONTRIBUTING.md
 
 [cmake-install]: https://cmake.org/cmake/help/latest/manual/cmake.1.html#install-a-project
