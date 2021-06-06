@@ -53,6 +53,7 @@ add_executable(
         library/util.h)
 target_link_libraries(${PROJECT_NAME} bluetooth)
 get_target_property(PROJECT_SOURCES ${PROJECT_NAME} SOURCES)
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 
 
 # ------------------------------------------------------

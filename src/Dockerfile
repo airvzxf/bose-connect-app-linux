@@ -13,6 +13,7 @@ RUN pacman -Syyu --noconfirm
 # Install packages
 RUN pacman -S --noconfirm \
         screenfetch \
+        gcc \
         make \
         cmake \
         pkgconf \
@@ -20,19 +21,19 @@ RUN pacman -S --noconfirm \
         cppcheck \
         bluez-libs
 
-# Copy application
-COPY ./src /root/bose-connect-app-linux
-
-# Set up the app
-WORKDIR /root/bose-connect-app-linux
-RUN cmake \
-        -S . \
-        -B ./build \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DVALIDATE_QA=True # Optional: It could remove.
-RUN cmake \
-      --build ./build \
-      --parallel $(nproc)
-RUN cd build && \
-    ctest -C Release && \
-    cd ../
+# Add new user with the same ID's as the host
+ARG USER_ID
+ARG GROUP_ID
+RUN groupadd \
+    --non-unique \
+    --force \
+    --gid ${GROUP_ID} \
+    bose-group
+RUN useradd \
+    --no-log-init \
+    --no-create-home \
+    --non-unique \
+    --uid ${USER_ID} \
+    --gid ${GROUP_ID} \
+    --groups root \
+    bose-user

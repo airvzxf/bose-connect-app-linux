@@ -1,3 +1,5 @@
+build/
+Testing/
 *.d
 *.o
 *.ko

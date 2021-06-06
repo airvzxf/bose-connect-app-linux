@@ -65,6 +65,8 @@ Usage: bose-connect-app-linux [options] <address>
 
 ## Build and Installation
 
+The executable produced will be called `./src/build/bose-connect-app-linux`.
+
 ### Dependencies
 
 * BlueZ
@@ -76,80 +78,62 @@ Usage: bose-connect-app-linux [options] <address>
 Follow the next steps:
 
 ```bash
-# Build the Docker image
-docker build \
-  . \
-  --file Dockerfile \
-  --tag bose-connect-app-linux:latest
+# Clean previous docker composes
+docker-compose --project-directory ./src down
 
-# Run the Docker image into container
-docker run \
-  --rm \
-  --detach \
-  --interactive \
-  --tty \
-  --name bose-connect-app-linux \
-  bose-connect-app-linux:latest \
-  /bin/bash
+# Start the docker compose
+export USER_ID=$(id -u ${USER})
+export GROUP_ID=$(id -g ${USER})
+docker-compose --project-directory ./src up --detach --build
 
-# Copy the build folder from the Docker container
-docker cp \
-  bose-connect-app-linux:/root/bose-connect-app-linux/build \
-  $(pwd)
-
-# Stop Docker container
-docker container stop \
-  bose-connect-app-linux
+# Build the application
+docker exec \
+  --user ${USER_ID} \
+  -it bose-connect-app-linux \
+   /root/bose-connect-app-linux/script/build-prod.bash
 
 # Enjoy
-./build/bose-connect-app-linux
+./src/build/bose-connect-app-linux
 ```
-
-The executable produced will be called `./build/bose-connect-app-linux`.
 
 *Note: I created this in `Arch Linux`. It should be crash in `Ubuntu` because
 the library of bluetooth is different, if it fails some fixes will come soon.*
 
 ### Local
 
-The local build require the installation of the follow packages: `make`,
+The local build require the installation of the follow packages: `gcc`, `make`,
 `cmake`, `pkgconf`, and (`bluez-libs` or `libbluetooth-dev`).
 
 ```bash
-# Configure CMake
-cmake \
-  -S ./src \
-  -B ./build \
-  -DCMAKE_BUILD_TYPE=Release
-
-# Build
-cmake \
-  --build ./build \
-  --parallel $(nproc)
+# Execute the Bash script
+./src/script/build-prod.bash
 
 # Enjoy
-./build/bose-connect-app-linux
+./src/build/bose-connect-app-linux
 ```
-
-The executable produced will be called `./build/bose-connect-app-linux`.
 
 ### Install
 
-Pending... ~~Run `make install` to install the program. The `PREFIX` and
-`DESTDIR` variables are assignable and have the traditional meaning.~~
+Run `./src/script/install-prod.bash` to install the program, it will place in
+the directory `/usr/local/bin/bose-connect-app-linux`. The
+`PREFIX` and `DESTDIR` variables are assignable and have the traditional
+meaning. For more information reefer to the [official web site][cmake-install].
+
+Uninstall needs to run the script `./src/script/uninstall.bash`.
 
 ## Contribute
 
-Pending...
+Check the file [CONTRIBUTING.md][contributing] for more information. It
+includes the instructions for build with special configuration for development.
 
 ## To-Do's List
 
 Visit the document with all the checkpoints in [TODO.md][todo.md].
 
-## Details
+## Development Notes
 
 For more information about the details of how use the firmwares to found
-functionality, please review the file [DETAILS.md][details-file].
+functionality, please review the file [DEVELOPMENT.md][details-file].
 
 ## Disclaimer
 
@@ -160,6 +144,10 @@ program works on any other devices.
 
 [Denton-L]: https://github.com/Denton-L/based-connect
 
-[details-file]: ./DETAILS.md
+[details-file]: ./DEVELOPMENT.md
 
 [todo.md]: ./TODO.md
+
+[contributing]: https://github.com/airvzxf/bose-connect-app-linux/blob/main/DEVELOPMENT.md
+
+[cmake-install]: https://cmake.org/cmake/help/latest/manual/cmake.1.html#install-a-project

@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  build:
+    image: bose-connect-app-linux:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USER_ID: ${USER_ID}
+        GROUP_ID: ${GROUP_ID}
+  app-dev:
+    image: bose-connect-app-linux:latest
+    container_name: bose-connect-app-linux
+    volumes:
+      - ./:/root/bose-connect-app-linux
+    entrypoint: ping -i 1 localhost
+    depends_on:
+      - build
