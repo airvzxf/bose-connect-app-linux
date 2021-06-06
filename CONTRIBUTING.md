@@ -63,12 +63,12 @@ again the commands: `docker-compose down` and
 `docker-compose up --detach --build`.*
 
 ```bash
-# Clean previous docker composes
+# Clean previous docker composes.
 # Execute only one time.
 docker-compose --project-directory ./src down
 
-# Start the docker compose
-# If you did changes on the Dockerfile you nid to add the option `--build`
+# Start the docker compose.
+# If you did changes on the Dockerfile you need to run again this command.
 # Execute only one time.
 export USER_ID=$(id -u ${USER})
 export GROUP_ID=$(id -g ${USER})
@@ -82,14 +82,15 @@ docker exec \
   -it bose-connect-app-linux \
    /root/bose-connect-app-linux/script/build-dev.bash
 
-# Enjoy
+# Enjoy.
 ./src/build/bose-connect-app-linux
 ```
 
 ### Local
 
 Here is more easy, but you need to install in your local machine the next
-packages: `make`, `cmake`, `pkgconf`, `clang`, `cppcheck` and `bluez-libs`.
+packages: `make`, `cmake`, `pkgconf`, `clang`, `cppcheck` and `bluez-libs` /
+`libbluetooth-dev`.
 Also, you need to check the versions, and the compatibility to run the quality
 scanners.
 
@@ -98,7 +99,7 @@ scanners.
 # After it, you can build the application with your changes.
 ./src/script/build-dev.bash
 
-# Enjoy
+# Enjoy.
 ./build/bose-connect-app-linux
 ```
 

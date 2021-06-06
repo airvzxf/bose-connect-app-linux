@@ -65,7 +65,9 @@ Usage: bose-connect-app-linux [options] <address>
 
 ## Build and Installation
 
-The executable produced will be called `./src/build/bose-connect-app-linux`.
+The executable produced by the build will be
+`./src/build/bose-connect-app-linux` and the installation will be
+`/usr/local/bin/bose-connect-app-linux`.
 
 ### Dependencies
 
@@ -78,26 +80,27 @@ The executable produced will be called `./src/build/bose-connect-app-linux`.
 Follow the next steps:
 
 ```bash
-# Clean previous docker composes
+# Clean previous docker composes.
 docker-compose --project-directory ./src down
 
-# Start the docker compose
+# Start the docker compose.
 export USER_ID=$(id -u ${USER})
 export GROUP_ID=$(id -g ${USER})
 docker-compose --project-directory ./src up --detach --build
 
-# Build the application
+# Build the application.
 docker exec \
   --user ${USER_ID} \
   -it bose-connect-app-linux \
    /root/bose-connect-app-linux/script/build-prod.bash
 
-# Enjoy
+# Enjoy.
 ./src/build/bose-connect-app-linux
 ```
 
 *Note: I created this in `Arch Linux`. It should be crash in `Ubuntu` because
-the library of bluetooth is different, if it fails some fixes will come soon.*
+the library of bluetooth is different. If it fails, please
+[create an issue][new-issue], and some fixes will come soon.*
 
 ### Local
 
@@ -105,21 +108,23 @@ The local build require the installation of the follow packages: `gcc`, `make`,
 `cmake`, `pkgconf`, and (`bluez-libs` or `libbluetooth-dev`).
 
 ```bash
-# Execute the Bash script
+# Execute the Bash script.
 ./src/script/build-prod.bash
 
-# Enjoy
+# Enjoy.
 ./src/build/bose-connect-app-linux
 ```
 
 ### Install
 
-Run `./src/script/install-prod.bash` to install the program, it will place in
-the directory `/usr/local/bin/bose-connect-app-linux`. The
-`PREFIX` and `DESTDIR` variables are assignable and have the traditional
-meaning. For more information reefer to the [official web site][cmake-install].
+Run `./src/script/install-prod.bash` to install the application. It will place
+in `/usr/local/bin/bose-connect-app-linux`. The `PREFIX` and `DESTDIR`
+variables are assignable and have the traditional meaning. For more information
+reefer to the [official web site of CMake][cmake-install].
 
-Uninstall needs to run the script `./src/script/uninstall.bash`.
+### Uninstall
+
+Run the script `./src/script/uninstall.bash`.
 
 ## Contribute
 
@@ -151,3 +156,5 @@ program works on any other devices.
 [contributing]: ./CONTRIBUTING.md
 
 [cmake-install]: https://cmake.org/cmake/help/latest/manual/cmake.1.html#install-a-project
+
+[new-issue]: https://github.com/airvzxf/bose-connect-app-linux/issues/new

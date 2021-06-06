@@ -17,6 +17,3 @@ cmake \
   --build ./build \
   --config Release \
   --parallel "$(nproc)"
-
-# Uncomment when the create the tests
-# ctest -C Release

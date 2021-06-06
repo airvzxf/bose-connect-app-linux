@@ -14,7 +14,7 @@
     - [x] Create Docker image and container.
         - [x] Flag for development.
         - [x] Flag for production.
-    - [ ] Add support for Ubuntu
+    - [ ] Add support for Ubuntu on Docker files.
 
 - [ ] QA - Quality assurance.
     - [ ] Unit test: Create unit test for every file, and function.
