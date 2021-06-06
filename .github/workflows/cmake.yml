@@ -19,19 +19,22 @@ jobs:
         run: >
           docker-compose --project-directory ./src down
 
-      - name: Export USER_ID
-        run: >
-          echo "USER_ID=$(id -u ${USER})" >> .env
-
-      - name: Export GROUP_ID
-        run: >
-          echo "GROUP_ID=$(id -g ${USER})" >> .env
+#      - name: Export USER_ID
+#        run: >
+#          echo "USER_ID=$(id -u ${USER})" >> .env
+#
+#      - name: Export GROUP_ID
+#        run: >
+#          echo "GROUP_ID=$(id -g ${USER})" >> .env
 
       - name: Start the docker compose
         run: >
-          USER_ID=$(id -u ${USER}) \
-          GROUP_ID=$(id -g ${USER}) \
+          USER_ID="$(id -u ${USER})" \
+          GROUP_ID="$(id -g ${USER})" \
           docker-compose --project-directory ./src up --detach --build
+
+      - name Exit
+        run: exit 123
 
       - name: Build the application
         run: >
