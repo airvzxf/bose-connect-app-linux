@@ -33,7 +33,7 @@ jobs:
           GROUP_ID="$(id -g ${USER})" \
           docker-compose --project-directory ./src up --detach --build
 
-      - name Exit
+      - name: Exit
         run: exit 123
 
       - name: Build the application
