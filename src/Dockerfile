@@ -28,7 +28,7 @@ RUN groupadd \
     --non-unique \
     --force \
     --gid ${GROUP_ID} \
-    bose-group
+    boseconnect
 RUN useradd \
     --no-log-init \
     --no-create-home \
@@ -36,4 +36,4 @@ RUN useradd \
     --uid ${USER_ID} \
     --gid ${GROUP_ID} \
     --groups root \
-    bose-user
+    boseconnect
