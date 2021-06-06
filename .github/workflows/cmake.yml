@@ -52,5 +52,5 @@ jobs:
       - name: Archive binary's built
         uses: actions/upload-artifact@v2
         with:
-          name: binary-compressed-application
+          name: ${{ env.BINARY_NAME }}
           path: ${{github.workspace}}/src/build/${{ env.BINARY_NAME }}
