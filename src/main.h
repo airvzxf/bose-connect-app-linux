@@ -1,5 +1,5 @@
-#ifndef BOSE_CONNECT_APP_LINUX__MAIN_H
-#define BOSE_CONNECT_APP_LINUX__MAIN_H
+#ifndef BOSE_CONNECT_APP_LINUX_SRC_MAIN_H
+#define BOSE_CONNECT_APP_LINUX_SRC_MAIN_H
 
 int get_socket(char *address);
 
@@ -15,4 +15,4 @@ static int do_get_paired_devices(char *address);
 
 static int do_get_serial_number(char *address);
 
-#endif //BOSE_CONNECT_APP_LINUX__MAIN_H
+#endif

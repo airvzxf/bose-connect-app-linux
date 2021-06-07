@@ -8,12 +8,13 @@
     - [x] Add the device information's option.
     - [ ] Added verbose mode.
     - [ ] How to handle different firmware versions?
-    - [ ] Set up the CMake list for installation.
+    - [x] Set up the CMakeLists with installation.
 
 - [ ] Portability.
-    - [ ] Create Docker image and container.
-        - [ ] Flag for development.
-        - [ ] Flag for production.
+    - [x] Create Docker image and container.
+        - [x] Flag for development.
+        - [x] Flag for production.
+    - [ ] Add support for Ubuntu on Docker files.
 
 - [ ] QA - Quality assurance.
     - [ ] Unit test: Create unit test for every file, and function.
@@ -21,20 +22,20 @@
         - [ ] Code coverage scanner.
         - [x] Code quality scanner.
         - [ ] Security scanner.
-            - [ ] DAST.
             - [x] SAST.
+            - [ ] DAST.
             - [ ] IAST.
     - [ ] Fix alerts.
         - [ ] Code coverage scanner.
-        - [ ] Code quality scanner.
+        - [x] Code quality scanner.
         - [ ] Security scanner.
+            - [x] SAST.
             - [ ] DAST.
-            - [ ] SAST.
             - [ ] IAST.
 
 - [ ] CI/CD - Make similar to GitLab.
-    - [ ] Stage for Build.
-    - [ ] Stage for QA.
+    - [x] Stage for Build.
+    - [x] Stage for QA.
     - [ ] Stage for Deploy.
     - [ ] Stage for Production.
         - [ ] Release to AUR Arch Linux.

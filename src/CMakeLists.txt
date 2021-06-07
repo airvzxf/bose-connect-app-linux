@@ -37,32 +37,9 @@ link_directories(${BLUEZ_LIBRARIES})
 
 
 # ------------------------------------------------------
-# Code quality and security tools.
-# ------------------------------------------------------
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# TODO: Uncomment these lines and fix all the problems in local.
-#set(CMAKE_C_CLANG_TIDY clang-tidy; -fix; -fix-errors;)
-#set(CMAKE_C_CPPCHECK
-#        cppcheck;
-#        --language=c;
-#        --std=c11;
-#        --platform=unix64;
-#        --library=boost.cfg;
-#        --library=cppcheck-lib.cfg;
-#        --library=cppunit.cfg;
-#        --library=gnu.cfg;
-#        --library=libcerror.cfg;
-#        --library=posix.cfg;
-#        --library=std.cfg;
-#        --enable=all;
-#        --inconclusive;
-#        --force;
-#        --max-ctu-depth=1000000;
-#        --project=${PROJECT_BINARY_DIR}/compile_commands.json;)
-
-# ------------------------------------------------------
 # Add the executable.
 # ------------------------------------------------------
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_definitions(PROGRAM_NAME="${PROJECT_NAME}")
 add_executable(
         ${PROJECT_NAME}
@@ -75,3 +52,110 @@ add_executable(
         library/util.c
         library/util.h)
 target_link_libraries(${PROJECT_NAME} bluetooth)
+get_target_property(PROJECT_SOURCES ${PROJECT_NAME} SOURCES)
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
+
+
+# ------------------------------------------------------
+# CLang Format: Autoformatting
+# ------------------------------------------------------
+if (AUTOFORMATTING)
+    add_custom_command(
+            COMMENT "\n\nAutoformatting: CLang Format\n"
+            TARGET ${PROJECT_NAME}
+            PRE_BUILD
+            COMMAND
+            cd ${CMAKE_SOURCE_DIR} &&
+            clang-format
+            "--sort-includes"
+            "--verbose"
+            "--Werror"
+            "-i"
+            ${PROJECT_SOURCES}
+            VERBATIM
+    )
+endif ()
+
+
+# ------------------------------------------------------
+# CLang Format
+# ------------------------------------------------------
+if (VALIDATE_QA)
+    add_custom_command(
+            COMMENT "\n\nScanning: CLang Format\n"
+            TARGET ${PROJECT_NAME}
+            PRE_BUILD
+            COMMAND
+            cd ${CMAKE_SOURCE_DIR} &&
+            clang-format
+            "--Werror"
+            "--dry-run"
+            ${PROJECT_SOURCES}
+            VERBATIM
+    )
+endif ()
+
+# ------------------------------------------------------
+# CLang Tidy
+# ------------------------------------------------------
+if (VALIDATE_QA)
+    add_custom_command(
+            COMMENT "\n\nScanning: CLang Tidy\n"
+            TARGET ${PROJECT_NAME}
+            PRE_BUILD
+            COMMAND
+            cd ${CMAKE_SOURCE_DIR} &&
+            clang-tidy
+            -p ${CMAKE_BINARY_DIR}
+            ${PROJECT_SOURCES}
+            VERBATIM
+    )
+endif ()
+
+
+# ------------------------------------------------------
+# CPP Check
+# ------------------------------------------------------
+set(CPPCHECK_TEMPLATE "")
+string(APPEND CPPCHECK_TEMPLATE "{file}:{line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE "  Message: {message}\\n")
+string(APPEND CPPCHECK_TEMPLATE "    Check: CWE-{cwe}\\n")
+string(APPEND CPPCHECK_TEMPLATE "     Type: {severity} -> {id}\\n")
+string(APPEND CPPCHECK_TEMPLATE "     Line: {line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE "    Stack: {callstack}\\n")
+string(APPEND CPPCHECK_TEMPLATE "{code}\\n")
+
+set(CPPCHECK_TEMPLATE_LOCATION "")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "{file}:{line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "   Note: {info}\\n")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "   Line: {line}:{column}\\n")
+string(APPEND CPPCHECK_TEMPLATE_LOCATION "{code}\\n")
+
+if (VALIDATE_QA)
+    add_custom_command(
+            COMMENT "\n\nScanning: CPP Check\n"
+            TARGET ${PROJECT_NAME}
+            PRE_BUILD
+            COMMAND cppcheck
+            "--language=c"
+            "--std=c11"
+            "--platform=unix64"
+            "--suppress=missingIncludeSystem"
+            "--enable=all"
+            "--inconclusive"
+            "--force"
+            "--max-ctu-depth=1000000"
+            "--library=boost.cfg"
+            "--library=cppcheck-lib.cfg"
+            "--library=cppunit.cfg"
+            "--library=gnu.cfg"
+            "--library=libcerror.cfg"
+            "--library=posix.cfg"
+            "--library=std.cfg"
+            "--template=${CPPCHECK_TEMPLATE}"
+            "--template-location=${CPPCHECK_TEMPLATE_LOCATION}"
+            "--project=${CMAKE_BINARY_DIR}/compile_commands.json"
+            "--error-exitcode=1"
+            VERBATIM
+    )
+endif ()

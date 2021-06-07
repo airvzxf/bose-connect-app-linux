@@ -27,8 +27,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Install BlueZ development library
-        run: sudo apt --yes install libbluetooth-dev
+      - name: Install packages
+        run: >
+          sudo apt --assume-yes install \
+            libbluetooth-dev
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v1
@@ -37,14 +39,11 @@ jobs:
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v1
-        # ℹ️ Command-line programs to run using the OS shell.
-        # 📚 https://git.io/JvXDl
-        # ✏️ If the Autobuild fails above, remove it and uncomment the following three lines
-        #    and modify them (or add more) to build your code if your project
-        #    uses a compiled language
-        #- run: |
-        #   make bootstrap
-        #   make release
+        # ✏️ If the Autobuild fails above, remove it and uncomment the
+        #    following three lines and modify them (or add more) to build
+        #    your code if your project uses a compiled language.
+        #run: >
+        #  cmake ./src || true
 
       - name: Perform analysis
         uses: github/codeql-action/analyze@v1

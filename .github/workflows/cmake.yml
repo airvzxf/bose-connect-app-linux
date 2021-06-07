@@ -7,10 +7,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-env:
-  # Types: Debug, Release, RelWithDebInfo, MinSizeRel.
-  BUILD_TYPE: Release
-
 jobs:
   build:
     name: Build the application
@@ -19,41 +15,42 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Update packages
-        run: sudo apt update
+      - name: Store user in environment file for Docker composer
+        run: |
+          echo "USER_ID=$(id -u "${USER}")" >./src/.env-user
+          echo "GROUP_ID=$(id -g "${USER}")" >>./src/.env-user
 
-      - name: Install packages
+      - name: Clean previous docker composes
         run: >
-          sudo apt --assume-yes install \
-            cmake libbluetooth-dev
+          docker-compose \
+            --project-directory ./src \
+            --env-file ./src/.env-user \
+            down
 
-      - name: CMake - Configure
+      - name: Start the docker compose
         run: >
-          cmake \
-            -S ${{github.workspace}}/src \
-            -B ${{github.workspace}}/build \
-            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          docker-compose \
+            --project-directory ./src \
+            --env-file ./src/.env-user \
+            up \
+            --detach \
+            --build
 
-      - name: CMake - Build
+      - name: Build the application
         run: >
-          cmake \
-            --build ${{github.workspace}}/build \
-            --config ${{env.BUILD_TYPE}}
-
-      - name: CMake - Test
-        working-directory: ${{github.workspace}}/build
-        run: ctest -C ${{env.BUILD_TYPE}}
+          docker exec \
+            --user $(id -u "${USER}") \
+            bose-connect-app-linux \
+            /root/bose-connect-app-linux/script/build-prod.bash
 
       - name: Get binary's name
         run: |
-          cd ${{github.workspace}}/build
+          cd ${{github.workspace}}/src/build
           PROJECT_NAME=$(grep PROJECT_NAME CMakeCache.txt | cut -d "=" -f2)
           echo "BINARY_NAME=${PROJECT_NAME}" >> $GITHUB_ENV
-          tar -zcvf "${PROJECT_NAME}.tar.gz" "${PROJECT_NAME}"
-          zip "${PROJECT_NAME}.zip" "${PROJECT_NAME}"
 
       - name: Archive binary's built
         uses: actions/upload-artifact@v2
         with:
-          name: binary-compressed-application
-          path: ${{github.workspace}}/build/${{ env.BINARY_NAME }}.*
+          name: ${{ env.BINARY_NAME }}
+          path: ${{github.workspace}}/src/build/${{ env.BINARY_NAME }}

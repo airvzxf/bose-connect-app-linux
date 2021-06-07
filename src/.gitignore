@@ -1,3 +1,6 @@
+.env-user
+build/
+Testing/
 *.d
 *.o
 *.ko

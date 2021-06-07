@@ -1,27 +1,29 @@
-#include <bluetooth/bluetooth.h>
 #include <stdlib.h>
 
 #include "bluetooth.h"
+#include "util.h"
 
-/*
- * Based on code taken from the BlueZ library.
- */
+void reverse_ba2str(const bdaddr_t *ba, char *str) {
+  int size = sizeof(ba->b);
 
-int reverse_ba2str(const bdaddr_t *ba, char *str) {
-    return sprintf(str, "%2.2X:%2.2X:%2.2X:%2.2X:%2.2X:%2.2X",
-                   ba->b[0], ba->b[1], ba->b[2], ba->b[3], ba->b[4], ba->b[5]);
+  for (unsigned int position = 0; position < size; position++) {
+    unsigned int string_position = position * 3;
+    unit_to_hex_string(ba->b[position], &str[string_position]);
+    str[string_position + 2] = (char)':';
+  }
+
+  str[(size * 3) - 1] = 0;
 }
 
-int reverse_str2ba(const char *str, bdaddr_t *ba) {
-    int i;
+void reverse_str2ba(const char *str, bdaddr_t *ba) {
+  if (bachk(str) < 0) {
+    memory_set(ba, 0, sizeof(*ba));
+    return;
+  }
 
-    if (bachk(str) < 0) {
-        memset(ba, 0, sizeof(*ba));
-        return -1;
-    }
-
-    for (i = 0; i < 6; i++, str += 3)
-        ba->b[i] = strtol(str, NULL, 16);
-
-    return 0;
+  const int max_ba       = 6;
+  const int numeric_base = 16;
+  for (int i = 0; i < max_ba; i++, str += 3) {
+    ba->b[i] = (uint8_t)strtol(str, NULL, numeric_base);
+  }
 }
