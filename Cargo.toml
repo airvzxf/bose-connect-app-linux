@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bluer = { version = "0.16", features = ["bluetoothd", "rfcomm"] }
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
