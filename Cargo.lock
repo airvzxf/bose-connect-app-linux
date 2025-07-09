@@ -136,6 +136,8 @@ dependencies = [
  "anyhow",
  "bluer",
  "clap",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
