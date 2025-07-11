@@ -32,31 +32,29 @@ pub struct BoseDevice {
 
 async fn detect_model(adapter: &Adapter, address: Address) -> Result<Model, BoseError> {
     let device = adapter.device(address)?;
+
+    // 1. Attempt to detect model using Vendor and Product IDs.
+    if let Some(modalias) = device.modalias().await? {
+        // The `vendor` 158 (0x009E) is "Bose Corporation".
+        if modalias.vendor == 158 {
+            match modalias.product {
+                // Product ID 16416 (0x4020) is "QC35 II".
+                16416 => return Ok(Model::Qc35ii),
+                // Product ID 16397 (0x400D) is "SoundLink Color II".
+                16397 => return Ok(Model::SoundLinkColorII),
+                _ => {
+                    // Known Bose vendor, but unknown product. Fallback to device name.
+                }
+            }
+        }
+    }
+
+    // 2. Fallback to device name if Device ID detection fails.
     let device_name = device.name().await?.unwrap_or_default();
-    let device_mod_alias = device.modalias().await?.unwrap();
-    let device_vendor = device_mod_alias.vendor;
-    let device_product = device_mod_alias.product;
-    let device_device = device_mod_alias.device;
-
-    // TODO: The `vendor` 158 (0x009E) is referred to as "Bose Corporation" in the Linux kernel.
-    //       The `product` 16416 (0x4020) is the "QC35 II" and 16397 (0x400D) is the "SoundLink Color II".
-    //       We can use these values to identify the device model more reliably.
-    //       However, for now, we will use the device name as a fallback because the meaning is unknown.
-    //       Create the logic to handle the device name and vendor/product IDs to detect the model.
-    println!("Device address: {address}");
-    println!("Device name: {device_name}");
-    println!("Device vendor: {device_vendor} (0x{device_vendor:X})");
-    println!("Device device: {device_device} (0x{device_device:X})");
-    println!("Device product: {device_product} (0x{device_product:X})");
-
-    // 2. Fallback to device name
-    if device_name
-        .to_lowercase()
-        .contains("QuietComfort 35 Series 2")
-    {
+    if device_name.to_lowercase().contains("quietcomfort 35 2") {
         return Ok(Model::Qc35ii);
     }
-    if device_name.to_lowercase().contains("SoundLink Color II") {
+    if device_name.to_lowercase().contains("soundlink color") {
         return Ok(Model::SoundLinkColorII);
     }
 
