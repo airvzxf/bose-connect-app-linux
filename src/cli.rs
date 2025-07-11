@@ -7,6 +7,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub address: String,
 
+    /// Manually specify the device model (e.g., "QC35II", "SoundLinkColorII")
+    #[arg(long)]
+    pub model: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
