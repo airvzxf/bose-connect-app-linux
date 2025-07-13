@@ -17,4 +17,9 @@ impl Firmware for BayWolfFirmware {
         // BayWolf specific byte codes for getting device ID
         ([0x00, 0x03, 0x01, 0x00], [0x00, 0x03, 0x03, 0x03])
     }
+
+    fn get_firmware_version_command(&self) -> ([u8; 4], [u8; 4]) {
+        // BayWolf specific byte codes for getting firmware version
+        ([0x00, 0x05, 0x01, 0x00], [0x00, 0x05, 0x03, 0x05])
+    }
 }

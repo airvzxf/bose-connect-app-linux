@@ -31,4 +31,6 @@ pub enum Commands {
     NoiseCancelling,
     /// Gets the device ID
     DeviceId,
+    /// Gets the firmware version
+    FirmwareVersion,
 }
