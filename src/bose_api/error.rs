@@ -19,4 +19,10 @@ pub enum BoseError {
 
     #[error("Invalid input: {0}")]
     InvalidInput(String),
+
+    #[error("Timeout waiting for device response")]
+    Timeout(#[from] tokio::time::error::Elapsed),
+
+    #[error("Failed to read value from device")]
+    ReadError(#[from] Box<BoseError>),
 }

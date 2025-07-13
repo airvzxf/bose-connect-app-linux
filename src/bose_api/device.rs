@@ -1,9 +1,13 @@
 use crate::bose_api::BoseError;
 use crate::bose_api::firmware::{Firmware, detect_firmware};
 use crate::bose_api::operations::battery::{BatteryInfo, parse_battery_level};
+use crate::bose_api::operations::device_status::{
+    AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
+};
 use bluer::rfcomm::{Socket, SocketAddr, Stream};
 use bluer::{Adapter, Address, Session};
 use std::str::FromStr;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -135,5 +139,64 @@ impl BoseDevice {
         let (send_bytes, ack_bytes) = self.firmware.get_battery_level_command();
         let response = self.execute_command(&send_bytes, &ack_bytes, 1).await?;
         parse_battery_level(&response)
+    }
+
+    async fn read_value(&mut self, ack_len: usize) -> Result<Vec<u8>, BoseError> {
+        let mut len_buffer = vec![0; ack_len];
+        self.stream.read_exact(&mut len_buffer).await?;
+        let len = len_buffer[ack_len - 1] as usize;
+
+        let mut value_buffer = vec![0; len];
+        self.stream.read_exact(&mut value_buffer).await?;
+        Ok(value_buffer)
+    }
+
+    pub async fn get_device_status(&mut self) -> Result<DeviceStatus, BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.get_device_status_command();
+        let response_timeout = Duration::from_secs(5);
+
+        tokio::time::timeout(response_timeout, async {
+            self.stream.write_all(&send_bytes).await?;
+
+            let mut ack_buffer = vec![0; ack_bytes.len()];
+            self.stream.read_exact(&mut ack_buffer).await?;
+
+            if ack_buffer != ack_bytes {
+                return Err(BoseError::AckMismatch {
+                    expected: ack_bytes.to_vec(),
+                    got: ack_buffer,
+                });
+            }
+
+            let ack_len = ack_bytes.len();
+
+            let name_bytes = self.read_value(ack_len).await?;
+            let name = String::from_utf8_lossy(&name_bytes)
+                .trim_start_matches('\u{0}')
+                .to_string();
+
+            let language_bytes = self.read_value(ack_len).await?;
+            let language = language_bytes
+                .first()
+                .map_or(PromptLanguage::Unknown, |&v| PromptLanguage::from(v));
+
+            let auto_off_bytes = self.read_value(ack_len).await?;
+            let auto_off = auto_off_bytes
+                .first()
+                .map_or(AutoOff::Unknown, |&v| AutoOff::from(v));
+
+            let nc_bytes = self.read_value(ack_len).await?;
+            let noise_cancelling = nc_bytes
+                .first()
+                .map_or(NoiseCancelling::Unknown, |&v| NoiseCancelling::from(v));
+
+            Ok(DeviceStatus {
+                name,
+                language,
+                auto_off,
+                noise_cancelling,
+            })
+        })
+        .await?
     }
 }

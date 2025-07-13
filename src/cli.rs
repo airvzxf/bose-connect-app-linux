@@ -18,5 +18,15 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Gets the battery level of the connected device
-    GetBattery,
+    Battery,
+    /// Gets the device status (name, language, auto-off, noise-cancelling)
+    DeviceStatus,
+    /// Gets the device name
+    Name,
+    /// Gets the prompt language
+    Language,
+    /// Gets the auto-off setting
+    AutoOff,
+    /// Gets the noise-cancelling setting
+    NoiseCancelling,
 }
