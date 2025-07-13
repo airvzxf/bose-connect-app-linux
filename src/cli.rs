@@ -33,4 +33,6 @@ pub enum Commands {
     DeviceId,
     /// Gets the firmware version
     FirmwareVersion,
+    /// Gets the serial number
+    SerialNumber,
 }

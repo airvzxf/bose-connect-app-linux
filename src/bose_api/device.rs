@@ -6,6 +6,7 @@ use crate::bose_api::operations::device_status::{
     AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
 };
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
+use crate::bose_api::operations::serial_number::{SerialNumberInfo, parse_serial_number};
 use bluer::rfcomm::{Socket, SocketAddr, Stream};
 use bluer::{Adapter, Address, Session};
 use std::str::FromStr;
@@ -141,6 +142,30 @@ impl BoseDevice {
         let mut value_buffer = vec![0; len];
         self.stream.read_exact(&mut value_buffer).await?;
         Ok(value_buffer)
+    }
+
+    pub async fn get_serial_number(&mut self) -> Result<SerialNumberInfo, BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.get_serial_number_command();
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        let mut len_buffer = [0; 1];
+        self.stream.read_exact(&mut len_buffer).await?;
+        let len = len_buffer[0] as usize;
+
+        let mut response_buffer = vec![0; len];
+        self.stream.read_exact(&mut response_buffer).await?;
+
+        parse_serial_number(&response_buffer)
     }
 
     pub async fn get_firmware_version(&mut self) -> Result<FirmwareVersionInfo, BoseError> {

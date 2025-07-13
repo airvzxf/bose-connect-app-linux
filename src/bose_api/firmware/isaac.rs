@@ -22,4 +22,9 @@ impl Firmware for IsaacFirmware {
         // Isaac specific byte codes for getting firmware version (assuming same as BayWolf for now)
         ([0x00, 0x05, 0x01, 0x00], [0x00, 0x05, 0x03, 0x05])
     }
+
+    fn get_serial_number_command(&self) -> ([u8; 4], [u8; 3]) {
+        // Isaac specific byte codes for getting serial number (assuming same as BayWolf for now)
+        ([0x00, 0x07, 0x01, 0x00], [0x00, 0x07, 0x03])
+    }
 }

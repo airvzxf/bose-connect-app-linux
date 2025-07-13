@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
             };
             println!("{json_output}");
         }
+        Commands::SerialNumber => {
+            let serial_number_info = bose_device.get_serial_number().await?;
+            let json_output = serde_json::to_string_pretty(&serial_number_info)?;
+            println!("{json_output}");
+        }
         Commands::FirmwareVersion => {
             let firmware_version_info = bose_device.get_firmware_version().await?;
             let json_output = serde_json::to_string_pretty(&firmware_version_info)?;

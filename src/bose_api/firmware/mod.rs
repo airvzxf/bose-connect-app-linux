@@ -12,6 +12,7 @@ pub trait Firmware {
     fn get_device_status_command(&self) -> ([u8; 4], [u8; 4]);
     fn get_device_id_command(&self) -> ([u8; 4], [u8; 4]);
     fn get_firmware_version_command(&self) -> ([u8; 4], [u8; 4]);
+    fn get_serial_number_command(&self) -> ([u8; 4], [u8; 3]);
 }
 
 pub fn detect_firmware(
