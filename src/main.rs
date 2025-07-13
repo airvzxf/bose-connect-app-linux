@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
             };
             println!("{json_output}");
         }
+        Commands::DeviceInformation { address } => {
+            let device_information_info = bose_device.get_device_information(&address).await?;
+            let json_output = serde_json::to_string_pretty(&device_information_info)?;
+            println!("{json_output}");
+        }
         Commands::PairedDevices => {
             let paired_devices_info = bose_device.get_paired_devices().await?;
             let json_output = serde_json::to_string_pretty(&paired_devices_info)?;

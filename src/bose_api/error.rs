@@ -28,4 +28,7 @@ pub enum BoseError {
 
     #[error("Btleplug error")]
     Btleplug(#[from] btleplug::Error),
+
+    #[error("Hex error")]
+    Hex(#[from] hex::FromHexError),
 }

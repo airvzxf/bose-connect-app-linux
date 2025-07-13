@@ -37,4 +37,6 @@ pub enum Commands {
     SerialNumber,
     /// Gets the paired devices
     PairedDevices,
+    /// Gets information about a specific device
+    DeviceInformation { address: String },
 }

@@ -32,4 +32,9 @@ impl Firmware for BayWolfFirmware {
         // BayWolf specific byte codes for getting paired devices
         ([0x04, 0x04, 0x01, 0x00], [0x04, 0x04, 0x03])
     }
+
+    fn get_device_information_command(&self) -> ([u8; 4], [u8; 3]) {
+        // BayWolf specific byte codes for getting device information
+        ([0x04, 0x05, 0x01, 0x06], [0x04, 0x05, 0x03])
+    }
 }

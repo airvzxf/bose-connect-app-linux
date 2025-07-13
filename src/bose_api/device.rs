@@ -2,6 +2,9 @@ use crate::bose_api::BoseError;
 use crate::bose_api::firmware::{Firmware, detect_firmware};
 use crate::bose_api::operations::battery::{BatteryInfo, parse_battery_level};
 use crate::bose_api::operations::device_id::{DeviceIdInfo, parse_device_id};
+use crate::bose_api::operations::device_information::{
+    DeviceInformationInfo, parse_device_information,
+};
 use crate::bose_api::operations::device_status::{
     AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
 };
@@ -143,6 +146,40 @@ impl BoseDevice {
         let mut value_buffer = vec![0; len];
         self.stream.read_exact(&mut value_buffer).await?;
         Ok(value_buffer)
+    }
+
+    pub async fn get_device_information(
+        &mut self,
+        address: &str,
+    ) -> Result<DeviceInformationInfo, BoseError> {
+        let (send_prefix, ack_bytes) = self.firmware.get_device_information_command();
+        let mut address_bytes = [0u8; 6];
+        hex::decode_to_slice(address.replace(":", ""), &mut address_bytes)?;
+
+        let mut send_packet = [0u8; 10];
+        send_packet[0..4].copy_from_slice(&send_prefix);
+        send_packet[4..10].copy_from_slice(&address_bytes);
+
+        self.stream.write_all(&send_packet).await?;
+
+        let mut ack_buffer = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        let mut len_buffer = [0; 1];
+        self.stream.read_exact(&mut len_buffer).await?;
+        let len = len_buffer[0] as usize;
+
+        let mut response_buffer = vec![0; len];
+        self.stream.read_exact(&mut response_buffer).await?;
+
+        parse_device_information(&response_buffer)
     }
 
     pub async fn get_paired_devices(&mut self) -> Result<PairedDeviceInfo, BoseError> {

@@ -190,6 +190,7 @@ dependencies = [
  "bluer",
  "btleplug",
  "clap",
+ "hex",
  "serde",
  "serde_json",
  "thiserror",
