@@ -27,4 +27,9 @@ impl Firmware for IsaacFirmware {
         // Isaac specific byte codes for getting serial number (assuming same as BayWolf for now)
         ([0x00, 0x07, 0x01, 0x00], [0x00, 0x07, 0x03])
     }
+
+    fn get_paired_devices_command(&self) -> ([u8; 4], [u8; 3]) {
+        // Isaac specific byte codes for getting paired devices (assuming same as BayWolf for now)
+        ([0x04, 0x04, 0x01, 0x00], [0x04, 0x04, 0x03])
+    }
 }

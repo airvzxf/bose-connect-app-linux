@@ -27,4 +27,9 @@ impl Firmware for BayWolfFirmware {
         // BayWolf specific byte codes for getting serial number
         ([0x00, 0x07, 0x01, 0x00], [0x00, 0x07, 0x03])
     }
+
+    fn get_paired_devices_command(&self) -> ([u8; 4], [u8; 3]) {
+        // BayWolf specific byte codes for getting paired devices
+        ([0x04, 0x04, 0x01, 0x00], [0x04, 0x04, 0x03])
+    }
 }

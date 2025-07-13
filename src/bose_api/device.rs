@@ -6,6 +6,7 @@ use crate::bose_api::operations::device_status::{
     AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
 };
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
+use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired_devices};
 use crate::bose_api::operations::serial_number::{SerialNumberInfo, parse_serial_number};
 use bluer::rfcomm::{Socket, SocketAddr, Stream};
 use bluer::{Adapter, Address, Session};
@@ -142,6 +143,39 @@ impl BoseDevice {
         let mut value_buffer = vec![0; len];
         self.stream.read_exact(&mut value_buffer).await?;
         Ok(value_buffer)
+    }
+
+    pub async fn get_paired_devices(&mut self) -> Result<PairedDeviceInfo, BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.get_paired_devices_command();
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        let mut num_devices_buffer = [0; 1];
+        self.stream.read_exact(&mut num_devices_buffer).await?;
+        let num_devices = (num_devices_buffer[0] / 6) as usize;
+
+        let mut connected_buffer = [0; 1];
+        self.stream.read_exact(&mut connected_buffer).await?;
+        let connected = connected_buffer[0];
+
+        let mut addresses_buffer = vec![0; num_devices * 6];
+        self.stream.read_exact(&mut addresses_buffer).await?;
+
+        let mut response_buffer = Vec::new();
+        response_buffer.push(num_devices_buffer[0]);
+        response_buffer.push(connected);
+        response_buffer.extend_from_slice(&addresses_buffer);
+
+        parse_paired_devices(&response_buffer)
     }
 
     pub async fn get_serial_number(&mut self) -> Result<SerialNumberInfo, BoseError> {

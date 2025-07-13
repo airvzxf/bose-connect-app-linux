@@ -35,4 +35,6 @@ pub enum Commands {
     FirmwareVersion,
     /// Gets the serial number
     SerialNumber,
+    /// Gets the paired devices
+    PairedDevices,
 }
