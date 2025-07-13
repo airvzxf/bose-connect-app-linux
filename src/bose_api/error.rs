@@ -25,4 +25,7 @@ pub enum BoseError {
 
     #[error("Failed to read value from device")]
     ReadError(#[from] Box<BoseError>),
+
+    #[error("Btleplug error")]
+    Btleplug(#[from] btleplug::Error),
 }

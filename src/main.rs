@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
             };
             println!("{json_output}");
         }
+        Commands::DeviceId => {
+            let device_id_info = bose_device.get_device_id().await?;
+            let json_output = serde_json::to_string_pretty(&device_id_info)?;
+            println!("{json_output}");
+        }
     }
 
     Ok(())

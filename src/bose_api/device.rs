@@ -1,6 +1,7 @@
 use crate::bose_api::BoseError;
 use crate::bose_api::firmware::{Firmware, detect_firmware};
 use crate::bose_api::operations::battery::{BatteryInfo, parse_battery_level};
+use crate::bose_api::operations::device_id::{DeviceIdInfo, parse_device_id};
 use crate::bose_api::operations::device_status::{
     AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
 };
@@ -111,34 +112,24 @@ impl BoseDevice {
         Ok(BoseDevice { stream, firmware })
     }
 
-    async fn execute_command(
-        &mut self,
-        send_bytes: &[u8],
-        expected_ack: &[u8],
-        response_len: usize,
-    ) -> Result<Vec<u8>, BoseError> {
-        self.stream.write_all(send_bytes).await?;
+    pub async fn get_battery_level(&mut self) -> Result<BatteryInfo, BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.get_battery_level_command();
+        self.stream.write_all(&send_bytes).await?;
 
-        let mut ack_buffer = vec![0; expected_ack.len()];
+        let mut ack_buffer = vec![0; ack_bytes.len()];
         self.stream.read_exact(&mut ack_buffer).await?;
 
-        if ack_buffer != expected_ack {
+        if ack_buffer != ack_bytes {
             return Err(BoseError::AckMismatch {
-                expected: expected_ack.to_vec(),
+                expected: ack_bytes.to_vec(),
                 got: ack_buffer,
             });
         }
 
-        let mut response_buffer = vec![0; response_len];
+        let mut response_buffer = vec![0; 1];
         self.stream.read_exact(&mut response_buffer).await?;
 
-        Ok(response_buffer)
-    }
-
-    pub async fn get_battery_level(&mut self) -> Result<BatteryInfo, BoseError> {
-        let (send_bytes, ack_bytes) = self.firmware.get_battery_level_command();
-        let response = self.execute_command(&send_bytes, &ack_bytes, 1).await?;
-        parse_battery_level(&response)
+        parse_battery_level(&response_buffer)
     }
 
     async fn read_value(&mut self, ack_len: usize) -> Result<Vec<u8>, BoseError> {
@@ -149,6 +140,26 @@ impl BoseDevice {
         let mut value_buffer = vec![0; len];
         self.stream.read_exact(&mut value_buffer).await?;
         Ok(value_buffer)
+    }
+
+    pub async fn get_device_id(&mut self) -> Result<DeviceIdInfo, BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.get_device_id_command();
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        let mut response_buffer = vec![0; 3];
+        self.stream.read_exact(&mut response_buffer).await?;
+
+        parse_device_id(&response_buffer)
     }
 
     pub async fn get_device_status(&mut self) -> Result<DeviceStatus, BoseError> {

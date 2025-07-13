@@ -29,4 +29,6 @@ pub enum Commands {
     AutoOff,
     /// Gets the noise-cancelling setting
     NoiseCancelling,
+    /// Gets the device ID
+    DeviceId,
 }

@@ -11,3 +11,4 @@ anyhow = "1.0"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
+btleplug = { version = "0.10", features = ["serde"] }
