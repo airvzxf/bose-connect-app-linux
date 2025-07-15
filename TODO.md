@@ -18,6 +18,8 @@
   - [ ] Set voice prompts.
   - [ ] Set self voice.
   - [ ] Set pairing.
+- [ ] Set the share music mode.
+- [ ] Set the function button.
 - [ ] Set the party mode.
   - [ ] Get the party mode status.
   - [ ] Initialize the party mode.
