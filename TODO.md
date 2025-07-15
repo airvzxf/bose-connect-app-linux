@@ -16,7 +16,7 @@
   - [x] Set noise-cancelling.
   - [x] Set prompt language.
   - [ ] Set voice prompts.
-  - [ ] Set self voice.
+  - [x] Set self voice.
   - [ ] Set pairing.
 - [ ] Set the share music mode.
 - [ ] Set the function button.

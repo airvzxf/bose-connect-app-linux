@@ -10,6 +10,7 @@ use crate::bose_api::operations::device_status::{
 };
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
 use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired_devices};
+use crate::bose_api::operations::self_voice::SelfVoice;
 use crate::bose_api::operations::serial_number::{SerialNumberInfo, parse_serial_number};
 use crate::cli::AutoOffValue;
 use bluer::rfcomm::{Socket, SocketAddr, Stream};
@@ -377,6 +378,24 @@ impl BoseDevice {
         ack_bytes[0..4].copy_from_slice(&ack_template[0..4]);
         ack_bytes[4] = value.into();
         ack_bytes[5..9].copy_from_slice(&ack_template[5..9]);
+
+        let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn set_self_voice(&mut self, value: SelfVoice) -> Result<(), BoseError> {
+        let (send_bytes, ack_bytes): ([u8; 7], [u8; 7]) =
+            self.firmware.set_self_voice_command(value.into());
+        self.stream.write_all(&send_bytes).await?;
 
         let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
         self.stream.read_exact(&mut ack_buffer).await?;

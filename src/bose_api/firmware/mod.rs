@@ -18,6 +18,7 @@ pub trait Firmware {
     fn set_auto_off_command(&self, value: u8) -> ([u8; 5], [u8; 5]);
     fn set_noise_cancelling_command(&self, value: u8) -> ([u8; 5], [u8; 6]);
     fn set_prompt_language_command(&self, value: u8) -> ([u8; 5], [u8; 9]);
+    fn set_self_voice_command(&self, value: u8) -> ([u8; 7], [u8; 7]);
 }
 
 pub fn detect_firmware(

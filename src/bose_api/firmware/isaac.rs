@@ -61,4 +61,12 @@ impl Firmware for IsaacFirmware {
             [0x01, 0x03, 0x03, 0x05, value, 0x00, 0x04, 0xcf, 0xde],
         )
     }
+
+    fn set_self_voice_command(&self, value: u8) -> ([u8; 7], [u8; 7]) {
+        // Isaac specific byte codes for setting self voice (assuming same as BayWolf for now)
+        (
+            [0x01, 0x0b, 0x02, 0x02, 0x01, value, 0x38],
+            [0x01, 0x0b, 0x03, 0x03, 0x01, value, 0x0f],
+        )
+    }
 }

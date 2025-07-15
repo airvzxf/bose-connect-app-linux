@@ -1,4 +1,5 @@
 use crate::bose_api::operations::device_status::{NoiseCancelling, PromptLanguage};
+use crate::bose_api::operations::self_voice::SelfVoice;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -57,6 +58,12 @@ pub enum Commands {
         /// The prompt language value
         #[arg(value_enum)]
         value: PromptLanguage,
+    },
+    /// Sets the self-voice setting
+    SetSelfVoice {
+        /// The self-voice value
+        #[arg(value_enum)]
+        value: SelfVoice,
     },
 }
 

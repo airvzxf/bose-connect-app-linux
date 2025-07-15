@@ -101,6 +101,12 @@ async fn main() -> Result<()> {
                 serde_json::to_string_pretty(&json!({ "prompt_language_set_to": value }))?;
             println!("{json_output}");
         }
+        Commands::SetSelfVoice { value } => {
+            bose_device.set_self_voice(value).await?;
+            let json_output: String =
+                serde_json::to_string_pretty(&json!({ "self_voice_set_to": value }))?;
+            println!("{json_output}");
+        }
     }
 
     Ok(())
