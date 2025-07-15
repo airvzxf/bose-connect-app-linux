@@ -14,19 +14,19 @@ pub fn parse_paired_devices(response: &[u8]) -> Result<PairedDeviceInfo, BoseErr
         return Err(BoseError::InvalidResponse);
     }
 
-    let num_devices_byte = response[0];
-    let num_devices = (num_devices_byte / 6) as usize;
-    let connected = DevicesConnected::from(response[1]).to_u8();
+    let num_devices_byte: u8 = response[0];
+    let num_devices: usize = (num_devices_byte / 6) as usize;
+    let connected: u8 = DevicesConnected::from(response[1]).to_u8();
 
-    let mut addresses = Vec::new();
+    let mut addresses: Vec<String> = Vec::new();
     for i in 0..num_devices {
-        let start = 2 + i * 6;
-        let end = start + 6;
+        let start: usize = 2 + i * 6;
+        let end: usize = start + 6;
         if response.len() < end {
             return Err(BoseError::InvalidResponse);
         }
-        let address_bytes = &response[start..end];
-        let address = address_bytes
+        let address_bytes: &[u8] = &response[start..end];
+        let address: String = address_bytes
             .iter()
             .map(|b| format!("{b:02X}"))
             .collect::<Vec<String>>()
@@ -44,13 +44,14 @@ pub fn parse_paired_devices(response: &[u8]) -> Result<PairedDeviceInfo, BoseErr
 #[cfg(test)]
 mod tests {
     use super::{PairedDeviceInfo, parse_paired_devices};
+    use crate::bose_api::BoseError;
 
     #[test]
     fn test_paired_devices_parsing() {
-        let sample_response = vec![
+        let sample_response: Vec<u8> = vec![
             12, 3, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC,
         ];
-        let paired_device_info = parse_paired_devices(&sample_response).unwrap();
+        let paired_device_info: PairedDeviceInfo = parse_paired_devices(&sample_response).unwrap();
         assert_eq!(
             paired_device_info,
             PairedDeviceInfo {
@@ -66,8 +67,8 @@ mod tests {
 
     #[test]
     fn test_paired_devices_parsing_invalid() {
-        let sample_response = vec![0x12];
-        let result = parse_paired_devices(&sample_response);
+        let sample_response: Vec<u8> = vec![0x12];
+        let result: Result<PairedDeviceInfo, BoseError> = parse_paired_devices(&sample_response);
         assert!(result.is_err());
     }
 }

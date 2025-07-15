@@ -46,9 +46,9 @@ pub enum Commands {
         #[arg(value_enum)]
         value: AutoOffValue,
     },
-    /// Sets the noise cancelling setting
+    /// Sets the noise-cancelling setting
     SetNoiseCancelling {
-        /// The noise cancelling value
+        /// The noise-cancelling value
         #[arg(value_enum)]
         value: NoiseCancelling,
     },

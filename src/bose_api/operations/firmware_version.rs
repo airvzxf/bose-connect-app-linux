@@ -10,18 +10,20 @@ pub fn parse_firmware_version(response: &[u8]) -> Result<FirmwareVersionInfo, Bo
     if response.is_empty() {
         return Err(BoseError::InvalidResponse);
     }
-    let version = String::from_utf8_lossy(response).to_string();
+    let version: String = String::from_utf8_lossy(response).to_string();
     Ok(FirmwareVersionInfo { version })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{FirmwareVersionInfo, parse_firmware_version};
+    use crate::bose_api::BoseError;
 
     #[test]
     fn test_firmware_version_parsing() {
-        let sample_response = vec![0x31, 0x2e, 0x32, 0x2e, 0x33];
-        let firmware_version_info = parse_firmware_version(&sample_response).unwrap();
+        let sample_response: Vec<u8> = vec![0x31, 0x2e, 0x32, 0x2e, 0x33];
+        let firmware_version_info: FirmwareVersionInfo =
+            parse_firmware_version(&sample_response).unwrap();
         assert_eq!(
             firmware_version_info,
             FirmwareVersionInfo {
@@ -32,8 +34,9 @@ mod tests {
 
     #[test]
     fn test_firmware_version_parsing_empty() {
-        let sample_response = vec![];
-        let result = parse_firmware_version(&sample_response);
+        let sample_response: Vec<u8> = vec![];
+        let result: Result<FirmwareVersionInfo, BoseError> =
+            parse_firmware_version(&sample_response);
         assert!(result.is_err());
     }
 }

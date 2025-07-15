@@ -16,25 +16,26 @@ pub fn parse_battery_level(response: &[u8]) -> Result<BatteryInfo, BoseError> {
 #[cfg(test)]
 mod tests {
     use super::{BatteryInfo, parse_battery_level};
+    use crate::bose_api::BoseError;
 
     #[test]
     fn test_battery_level_parsing() {
-        let sample_response = vec![90];
-        let battery_info = parse_battery_level(&sample_response).unwrap();
+        let sample_response: Vec<u8> = vec![90];
+        let battery_info: BatteryInfo = parse_battery_level(&sample_response).unwrap();
         assert_eq!(battery_info, BatteryInfo { level: 90 });
     }
 
     #[test]
     fn test_battery_level_parsing_empty() {
-        let sample_response = vec![];
-        let result = parse_battery_level(&sample_response);
+        let sample_response: Vec<u8> = vec![];
+        let result: Result<BatteryInfo, BoseError> = parse_battery_level(&sample_response);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_battery_level_parsing_max_value() {
-        let sample_response = vec![255];
-        let battery_info = parse_battery_level(&sample_response).unwrap();
+        let sample_response: Vec<u8> = vec![255];
+        let battery_info: BatteryInfo = parse_battery_level(&sample_response).unwrap();
         assert_eq!(battery_info, BatteryInfo { level: 255 });
     }
 }
