@@ -1,20 +1,36 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(
+    Serialize, Deserialize, Debug, PartialEq, Eq, Copy, Clone, PartialOrd, Ord, clap::ValueEnum,
+)]
 pub enum PromptLanguage {
+    #[clap(name = "dutch")]
     Dutch,
+    #[clap(name = "en")]
     English,
+    #[clap(name = "fr")]
     French,
+    #[clap(name = "de")]
     German,
+    #[clap(name = "it")]
     Italian,
+    #[clap(name = "jp")]
     Japanese,
+    #[clap(name = "kr")]
     Korean,
+    #[clap(name = "cn")]
     Mandarin,
+    #[clap(name = "pl")]
     Polish,
+    #[clap(name = "pt")]
     Portuguese,
+    #[clap(name = "ru")]
     Russian,
+    #[clap(name = "es")]
     SpanishMx,
+    #[clap(name = "se")]
     Swedish,
+    #[clap(skip)]
     Unknown,
 }
 
@@ -35,6 +51,27 @@ impl From<u8> for PromptLanguage {
             0xAF => PromptLanguage::Japanese,
             0xB2 => PromptLanguage::Swedish,
             _ => PromptLanguage::Unknown,
+        }
+    }
+}
+
+impl From<PromptLanguage> for u8 {
+    fn from(value: PromptLanguage) -> Self {
+        match value {
+            PromptLanguage::English => 0xA1,
+            PromptLanguage::French => 0xA2,
+            PromptLanguage::Italian => 0xA3,
+            PromptLanguage::German => 0xA4,
+            PromptLanguage::SpanishMx => 0xA6,
+            PromptLanguage::Portuguese => 0xA7,
+            PromptLanguage::Mandarin => 0xA8,
+            PromptLanguage::Korean => 0xA9,
+            PromptLanguage::Russian => 0xAA,
+            PromptLanguage::Polish => 0xAB,
+            PromptLanguage::Dutch => 0xAE,
+            PromptLanguage::Japanese => 0xAF,
+            PromptLanguage::Swedish => 0xB2,
+            PromptLanguage::Unknown => 0x00, // Default to off
         }
     }
 }

@@ -362,4 +362,26 @@ impl BoseDevice {
 
         Ok(())
     }
+
+    pub async fn set_prompt_language(&mut self, value: PromptLanguage) -> Result<(), BoseError> {
+        let (send_bytes, ack_template) = self.firmware.set_prompt_language_command(value.into());
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_bytes = [0u8; 9];
+        ack_bytes[0..4].copy_from_slice(&ack_template[0..4]);
+        ack_bytes[4] = value.into();
+        ack_bytes[5..9].copy_from_slice(&ack_template[5..9]);
+
+        let mut ack_buffer = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(())
+    }
 }

@@ -1,4 +1,4 @@
-use crate::bose_api::operations::device_status::NoiseCancelling;
+use crate::bose_api::operations::device_status::{NoiseCancelling, PromptLanguage};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -51,6 +51,12 @@ pub enum Commands {
         /// The noise cancelling value
         #[arg(value_enum)]
         value: NoiseCancelling,
+    },
+    /// Sets the prompt language
+    SetPromptLanguage {
+        /// The prompt language value
+        #[arg(value_enum)]
+        value: PromptLanguage,
     },
 }
 

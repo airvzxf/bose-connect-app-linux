@@ -17,6 +17,7 @@ pub trait Firmware {
     fn get_device_information_command(&self) -> ([u8; 4], [u8; 3]);
     fn set_auto_off_command(&self, value: u8) -> ([u8; 5], [u8; 5]);
     fn set_noise_cancelling_command(&self, value: u8) -> ([u8; 5], [u8; 6]);
+    fn set_prompt_language_command(&self, value: u8) -> ([u8; 5], [u8; 9]);
 }
 
 pub fn detect_firmware(

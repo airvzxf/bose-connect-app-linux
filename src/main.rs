@@ -86,6 +86,12 @@ async fn main() -> Result<()> {
                 serde_json::to_string_pretty(&json!({ "noise_cancelling_set_to": value }))?;
             println!("{json_output}");
         }
+        Commands::SetPromptLanguage { value } => {
+            bose_device.set_prompt_language(value).await?;
+            let json_output =
+                serde_json::to_string_pretty(&json!({ "prompt_language_set_to": value }))?;
+            println!("{json_output}");
+        }
     }
 
     Ok(())

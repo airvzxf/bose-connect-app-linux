@@ -53,4 +53,12 @@ impl Firmware for IsaacFirmware {
             [0x01, 0x06, 0x03, 0x02, value, 0x0b],
         )
     }
+
+    fn set_prompt_language_command(&self, value: u8) -> ([u8; 5], [u8; 9]) {
+        // Isaac specific byte codes for setting prompt language (assuming same as BayWolf for now)
+        (
+            [0x01, 0x03, 0x02, 0x01, value],
+            [0x01, 0x03, 0x03, 0x05, value, 0x00, 0x04, 0xcf, 0xde],
+        )
+    }
 }
