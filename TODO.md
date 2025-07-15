@@ -2,7 +2,7 @@
 
 ## Build
 
-- [ ] Update to the latest the versions of the packages in Cargo.toml. Change one by one and review if everything works.
+- [x] Update to the latest the versions of the packages in Cargo.toml. Change one by one and review if everything works.
 
 ## Operations
 
