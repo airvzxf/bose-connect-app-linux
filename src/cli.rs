@@ -39,4 +39,52 @@ pub enum Commands {
     PairedDevices,
     /// Gets information about a specific device
     DeviceInformation { address: String },
+    /// Sets the auto-off setting
+    SetAutoOff {
+        /// The auto-off value
+        #[arg(value_enum)]
+        value: AutoOffValue,
+    },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
+pub enum AutoOffValue {
+    #[clap(name = "never")]
+    Never,
+    #[clap(name = "5")]
+    Minutes5,
+    #[clap(name = "20")]
+    Minutes20,
+    #[clap(name = "40")]
+    Minutes40,
+    #[clap(name = "60")]
+    Minutes60,
+    #[clap(name = "180")]
+    Minutes180,
+}
+
+impl AutoOffValue {
+    pub fn to_minutes(self) -> u16 {
+        match self {
+            AutoOffValue::Never => 0,
+            AutoOffValue::Minutes5 => 5,
+            AutoOffValue::Minutes20 => 20,
+            AutoOffValue::Minutes40 => 40,
+            AutoOffValue::Minutes60 => 60,
+            AutoOffValue::Minutes180 => 180,
+        }
+    }
+}
+
+impl From<AutoOffValue> for u8 {
+    fn from(value: AutoOffValue) -> Self {
+        match value {
+            AutoOffValue::Never => 0x00,
+            AutoOffValue::Minutes5 => 0x05,
+            AutoOffValue::Minutes20 => 0x14,
+            AutoOffValue::Minutes40 => 0x28,
+            AutoOffValue::Minutes60 => 0x3C,
+            AutoOffValue::Minutes180 => 0xB4,
+        }
+    }
 }

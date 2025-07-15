@@ -12,7 +12,7 @@
   - [ ] Remove the device at address from the pairing list.
 - [ ] Add the set operations for the Bose device.
   - [ ] Set device name.
-  - [ ] Set auto-off.
+  - [x] Set auto-off.
   - [ ] Set noise-cancelling.
   - [ ] Set prompt language.
   - [ ] Set voice prompts.

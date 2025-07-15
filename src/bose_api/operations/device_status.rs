@@ -39,14 +39,14 @@ impl From<u8> for PromptLanguage {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Copy, Clone)]
 pub enum AutoOff {
     Never,
-    FiveMinutes,
-    TwentyMinutes,
-    FortyMinutes,
-    OneHour,
-    ThreeHours,
+    Minutes5,
+    Minutes20,
+    Minutes40,
+    Minutes60,
+    Minutes180,
     Unknown,
 }
 
@@ -54,11 +54,11 @@ impl From<u8> for AutoOff {
     fn from(value: u8) -> Self {
         match value {
             0x00 => AutoOff::Never,
-            0x05 => AutoOff::FiveMinutes,
-            0x14 => AutoOff::TwentyMinutes,
-            0x28 => AutoOff::FortyMinutes,
-            0x3C => AutoOff::OneHour,
-            0xB4 => AutoOff::ThreeHours,
+            0x05 => AutoOff::Minutes5,
+            0x14 => AutoOff::Minutes20,
+            0x28 => AutoOff::Minutes40,
+            0x3C => AutoOff::Minutes60,
+            0xB4 => AutoOff::Minutes180,
             _ => AutoOff::Unknown,
         }
     }

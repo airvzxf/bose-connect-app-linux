@@ -74,6 +74,12 @@ async fn main() -> Result<()> {
             let json_output = serde_json::to_string_pretty(&device_id_info)?;
             println!("{json_output}");
         }
+        Commands::SetAutoOff { value } => {
+            bose_device.set_auto_off(value).await?;
+            let json_output =
+                serde_json::to_string_pretty(&json!({ "auto_off_set_to": value.to_minutes() }))?;
+            println!("{json_output}");
+        }
     }
 
     Ok(())

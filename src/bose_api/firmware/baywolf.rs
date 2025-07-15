@@ -37,4 +37,12 @@ impl Firmware for BayWolfFirmware {
         // BayWolf specific byte codes for getting device information
         ([0x04, 0x05, 0x01, 0x06], [0x04, 0x05, 0x03])
     }
+
+    fn set_auto_off_command(&self, value: u8) -> ([u8; 5], [u8; 5]) {
+        // BayWolf specific byte codes for setting auto off
+        (
+            [0x01, 0x04, 0x02, 0x01, value],
+            [0x01, 0x04, 0x03, 0x01, value],
+        )
+    }
 }

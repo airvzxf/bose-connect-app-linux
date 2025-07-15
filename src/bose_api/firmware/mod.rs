@@ -15,6 +15,7 @@ pub trait Firmware {
     fn get_serial_number_command(&self) -> ([u8; 4], [u8; 3]);
     fn get_paired_devices_command(&self) -> ([u8; 4], [u8; 3]);
     fn get_device_information_command(&self) -> ([u8; 4], [u8; 3]);
+    fn set_auto_off_command(&self, value: u8) -> ([u8; 5], [u8; 5]);
 }
 
 pub fn detect_firmware(

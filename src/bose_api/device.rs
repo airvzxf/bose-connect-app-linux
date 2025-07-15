@@ -11,6 +11,7 @@ use crate::bose_api::operations::device_status::{
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
 use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired_devices};
 use crate::bose_api::operations::serial_number::{SerialNumberInfo, parse_serial_number};
+use crate::cli::AutoOffValue;
 use bluer::rfcomm::{Socket, SocketAddr, Stream};
 use bluer::{Adapter, Address, Session};
 use std::str::FromStr;
@@ -326,5 +327,22 @@ impl BoseDevice {
             })
         })
         .await?
+    }
+
+    pub async fn set_auto_off(&mut self, value: AutoOffValue) -> Result<(), BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.set_auto_off_command(value.into());
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(())
     }
 }
