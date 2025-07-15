@@ -14,7 +14,7 @@
   - [ ] Set device name.
   - [x] Set auto-off.
   - [x] Set noise-cancelling.
-  - [ ] Set prompt language.
+  - [x] Set prompt language.
   - [ ] Set voice prompts.
   - [ ] Set self voice.
   - [ ] Set pairing.
