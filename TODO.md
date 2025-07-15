@@ -13,7 +13,7 @@
 - [ ] Add the set operations for the Bose device.
   - [ ] Set device name.
   - [x] Set auto-off.
-  - [ ] Set noise-cancelling.
+  - [x] Set noise-cancelling.
   - [ ] Set prompt language.
   - [ ] Set voice prompts.
   - [ ] Set self voice.

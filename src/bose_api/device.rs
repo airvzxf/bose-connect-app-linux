@@ -345,4 +345,21 @@ impl BoseDevice {
 
         Ok(())
     }
+
+    pub async fn set_noise_cancelling(&mut self, value: NoiseCancelling) -> Result<(), BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.set_noise_cancelling_command(value.into());
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(())
+    }
 }

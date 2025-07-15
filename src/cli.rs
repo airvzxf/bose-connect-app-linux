@@ -1,3 +1,4 @@
+use crate::bose_api::operations::device_status::NoiseCancelling;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -44,6 +45,12 @@ pub enum Commands {
         /// The auto-off value
         #[arg(value_enum)]
         value: AutoOffValue,
+    },
+    /// Sets the noise cancelling setting
+    SetNoiseCancelling {
+        /// The noise cancelling value
+        #[arg(value_enum)]
+        value: NoiseCancelling,
     },
 }
 

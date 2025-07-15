@@ -64,12 +64,18 @@ impl From<u8> for AutoOff {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(
+    Serialize, Deserialize, Debug, PartialEq, Eq, Copy, Clone, PartialOrd, Ord, clap::ValueEnum,
+)]
 pub enum NoiseCancelling {
-    Unknown,
-    High,
-    Low,
+    #[clap(name = "off")]
     Off,
+    #[clap(name = "low")]
+    Low,
+    #[clap(name = "high")]
+    High,
+    #[clap(skip)]
+    Unknown,
 }
 
 impl From<u8> for NoiseCancelling {
@@ -79,6 +85,17 @@ impl From<u8> for NoiseCancelling {
             0x01 => NoiseCancelling::High,
             0x03 => NoiseCancelling::Low,
             _ => NoiseCancelling::Unknown,
+        }
+    }
+}
+
+impl From<NoiseCancelling> for u8 {
+    fn from(value: NoiseCancelling) -> Self {
+        match value {
+            NoiseCancelling::Off => 0x00,
+            NoiseCancelling::High => 0x01,
+            NoiseCancelling::Low => 0x03,
+            NoiseCancelling::Unknown => 0x00, // Default to off
         }
     }
 }
