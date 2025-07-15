@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="MarkdownSettings">
+    <option name="customStylesheetText" value="/* Ocultar el checkbox original */&#10;li.task-list-item input[type=&quot;checkbox&quot;] {&#10;  -webkit-appearance: none; /* Ocultarlo en renderizadores basados en Webkit/Chromium */&#10;  appearance: none;&#10;  margin: 0 0.4em 0 0; /* Ajustar el espaciado */&#10;}&#10;&#10;/* Mostrar un cuadro vacío para tareas no completadas */&#10;li.task-list-item input[type=&quot;checkbox&quot;]::before {&#10;  content: &quot;⬜️&quot;;&#10;  font-size: 1.1em; /* Ajustar tamaño del emoji */&#10;}&#10;&#10;/* Mostrar el emoji de check para tareas completadas y colorear el texto */&#10;li.task-list-item input[type=&quot;checkbox&quot;]:checked::before {&#10;  content: &quot;✅&quot;;&#10;}&#10;" />
+    <option name="splitLayout" value="SHOW_PREVIEW" />
+    <option name="useCustomStylesheetText" value="true" />
+  </component>
+</project>
