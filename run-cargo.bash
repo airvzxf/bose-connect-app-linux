@@ -2,9 +2,28 @@
 # Copyright (c) 2025, Israel Alberto Roldan Vega | GPL-3.0 license
 set -euo pipefail
 
-cargo fmt --all && cargo check && cargo clippy && cargo build #&& cargo run -- --address 2C:41:A1:02:6D:6F get-battery
+echo "=== Format ==="
+cargo fmt --all
 
-# date +'%Y-%m-%dT%H:%M:%S:%3N'
+echo "=== Clippy: Fix ==="
+cargo clippy --fix --allow-dirty --all-features --all-targets
+
+echo "=== Clippy ==="
+cargo clippy --all-targets --all-features -- -D warnings
+
+#echo "=== Check ==="
+#cargo check --all-targets --all-features
+
+echo "=== Test ==="
+cargo test --all-features --quiet
+
+echo "=== Build ==="
+cargo build
+
+if [[ $# -gt 0 ]]; then
+  echo "=== Run | ${*} ==="
+  cargo run -- "${@}"
+fi
 
 # 2C:41:A1:02:6D:6F | Bose QC35 II 🐺
-# cargo run -- --address 2C:41:A1:02:6D:6F discover
+# date +'%Y-%m-%dT%H:%M:%S:%3N'
