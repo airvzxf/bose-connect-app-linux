@@ -44,7 +44,6 @@ pub fn parse_paired_devices(response: &[u8]) -> Result<PairedDeviceInfo, BoseErr
 #[cfg(test)]
 mod tests {
     use super::{PairedDeviceInfo, parse_paired_devices};
-    use crate::bose_api::operations::devices_connected::DevicesConnected;
 
     #[test]
     fn test_paired_devices_parsing() {
