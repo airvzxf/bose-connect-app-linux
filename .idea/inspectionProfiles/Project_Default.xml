@@ -1,0 +1,11 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="Annotator" enabled="true" level="ERROR" enabled_by_default="true">
+      <option name="runVisitors" value="true" />
+    </inspection_tool>
+    <inspection_tool class="RsAssociatedTypeMismatch" enabled="true" level="ERROR" enabled_by_default="true" />
+    <inspection_tool class="RsExperimentalTraitObligations" enabled="true" level="ERROR" enabled_by_default="true" />
+    <inspection_tool class="RsExperimentalTypeCheck" enabled="true" level="ERROR" enabled_by_default="true" />
+  </profile>
+</component>
