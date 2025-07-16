@@ -19,6 +19,7 @@ pub trait Firmware {
     fn set_noise_cancelling_command(&self, value: u8) -> ([u8; 5], [u8; 6]);
     fn set_prompt_language_command(&self, value: u8) -> ([u8; 5], [u8; 9]);
     fn set_self_voice_command(&self, value: u8) -> ([u8; 7], [u8; 7]);
+    fn set_name_command(&self, name_bytes: &[u8]) -> (Vec<u8>, [u8; 5]);
 }
 
 pub fn detect_firmware(

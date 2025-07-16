@@ -409,4 +409,23 @@ impl BoseDevice {
 
         Ok(())
     }
+
+    pub async fn set_name(&mut self, name: &str) -> Result<(), BoseError> {
+        let name_bytes: Vec<u8> = name.as_bytes().to_vec();
+        let (send_bytes, ack_bytes): (Vec<u8>, [u8; 5]) =
+            self.firmware.set_name_command(&name_bytes);
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(())
+    }
 }

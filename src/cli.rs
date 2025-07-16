@@ -65,6 +65,11 @@ pub enum Commands {
         #[arg(value_enum)]
         value: SelfVoice,
     },
+    /// Sets the device name
+    SetName {
+        /// The new name for the device
+        name: String,
+    },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]

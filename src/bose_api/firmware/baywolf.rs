@@ -69,4 +69,12 @@ impl Firmware for BayWolfFirmware {
             [0x01, 0x0b, 0x03, 0x03, 0x01, value, 0x0f],
         )
     }
+
+    fn set_name_command(&self, name_bytes: &[u8]) -> (Vec<u8>, [u8; 5]) {
+        // BayWolf specific byte codes for setting name
+        let name_size: u8 = name_bytes.len() as u8;
+        let mut send_bytes: Vec<u8> = vec![0x01, 0x02, 0x02, name_size];
+        send_bytes.extend_from_slice(name_bytes);
+        (send_bytes, [0x01, 0x02, 0x03, name_size + 1, 0x00])
+    }
 }
