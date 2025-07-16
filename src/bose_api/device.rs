@@ -370,14 +370,9 @@ impl BoseDevice {
     }
 
     pub async fn set_prompt_language(&mut self, value: PromptLanguage) -> Result<(), BoseError> {
-        let (send_bytes, ack_template): ([u8; 5], [u8; 9]) =
+        let (send_bytes, ack_bytes): ([u8; 5], [u8; 9]) =
             self.firmware.set_prompt_language_command(value.into());
         self.stream.write_all(&send_bytes).await?;
-
-        let mut ack_bytes: [u8; 9] = [0u8; 9];
-        ack_bytes[0..4].copy_from_slice(&ack_template[0..4]);
-        ack_bytes[4] = value.into();
-        ack_bytes[5..9].copy_from_slice(&ack_template[5..9]);
 
         let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
         self.stream.read_exact(&mut ack_buffer).await?;

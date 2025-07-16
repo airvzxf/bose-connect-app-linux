@@ -26,7 +26,7 @@ pub enum PromptLanguage {
     Portuguese,
     #[clap(name = "ru")]
     Russian,
-    #[clap(name = "es")]
+    #[clap(name = "es-mx")]
     SpanishMx,
     #[clap(name = "se")]
     Swedish,
