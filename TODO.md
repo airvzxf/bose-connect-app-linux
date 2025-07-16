@@ -4,6 +4,10 @@
 
 - [x] Update to the latest the versions of the packages in Cargo.toml. Change one by one and review if everything works.
 
+## Core
+
+- [ ] Remove condition to get the device firmware, using the name of the device.
+
 ## Operations
 
 - [ ] Add connect operation to the CLI.
