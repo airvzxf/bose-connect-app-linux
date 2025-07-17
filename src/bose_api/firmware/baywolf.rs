@@ -1,3 +1,4 @@
+use crate::bose_api::BoseError;
 use crate::bose_api::firmware::Firmware;
 
 pub struct BayWolfFirmware;
@@ -89,5 +90,14 @@ impl Firmware for BayWolfFirmware {
             [0x04, 0x08, 0x05, 0x01, value],
             [0x04, 0x08, 0x06, 0x01, value],
         )
+    }
+
+    fn connect_device_command(&self, address: &str) -> Result<(Vec<u8>, [u8; 4]), BoseError> {
+        // BayWolf specific byte codes for connecting a device
+        let mut address_bytes: [u8; 6] = [0u8; 6];
+        hex::decode_to_slice(address.replace(":", ""), &mut address_bytes)?;
+        let mut send_bytes: Vec<u8> = vec![0x04, 0x01, 0x05, 0x07, 0x00];
+        send_bytes.extend_from_slice(&address_bytes);
+        Ok((send_bytes, [0x04, 0x01, 0x07, 0x06]))
     }
 }

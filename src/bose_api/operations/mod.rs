@@ -1,4 +1,5 @@
 pub mod battery;
+pub mod connect_device;
 pub mod device_id;
 pub mod device_information;
 pub mod device_status;

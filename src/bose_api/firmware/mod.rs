@@ -22,6 +22,7 @@ pub trait Firmware {
     fn set_self_voice_command(&self, value: u8) -> ([u8; 7], [u8; 7]);
     fn set_name_command(&self, name_bytes: &[u8]) -> (Vec<u8>, [u8; 5]);
     fn set_pairing_command(&self, value: u8) -> ([u8; 5], [u8; 5]);
+    fn connect_device_command(&self, address: &str) -> Result<(Vec<u8>, [u8; 4]), BoseError>;
 }
 
 pub fn detect_firmware(

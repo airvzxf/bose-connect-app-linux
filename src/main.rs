@@ -3,6 +3,7 @@ mod cli;
 
 use crate::bose_api::device::{BoseDevice, Model};
 use crate::bose_api::operations::battery::BatteryInfo;
+use crate::bose_api::operations::connect_device::ConnectDeviceInfo;
 use crate::bose_api::operations::device_id::DeviceIdInfo;
 use crate::bose_api::operations::device_information::DeviceInformationInfo;
 use crate::bose_api::operations::device_status::DeviceStatus;
@@ -133,6 +134,12 @@ async fn main() -> Result<()> {
             bose_device.set_voice_prompts(value).await?;
             let json_output: String =
                 serde_json::to_string_pretty(&json!({ "voice_prompts_set_to": value }))?;
+            println!("{json_output}");
+        }
+        Commands::Connect { address } => {
+            let connect_device_info: ConnectDeviceInfo =
+                bose_device.connect_device(&address).await?;
+            let json_output: String = serde_json::to_string_pretty(&connect_device_info)?;
             println!("{json_output}");
         }
     }

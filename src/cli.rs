@@ -88,6 +88,11 @@ pub enum Commands {
         #[arg(value_enum)]
         value: VoicePrompts,
     },
+    /// Connects to a device
+    Connect {
+        /// The address of the device to connect to
+        address: String,
+    },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
