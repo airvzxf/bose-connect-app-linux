@@ -100,4 +100,13 @@ impl Firmware for IsaacFirmware {
         send_bytes.extend_from_slice(&address_bytes);
         Ok((send_bytes, [0x04, 0x01, 0x07, 0x06]))
     }
+
+    fn disconnect_device_command(&self, address: &str) -> Result<(Vec<u8>, [u8; 4]), BoseError> {
+        // Isaac specific byte codes for disconnecting a device (assuming same as BayWolf for now)
+        let mut address_bytes: [u8; 6] = [0u8; 6];
+        hex::decode_to_slice(address.replace(":", ""), &mut address_bytes)?;
+        let mut send_bytes: Vec<u8> = vec![0x04, 0x02, 0x05, 0x06];
+        send_bytes.extend_from_slice(&address_bytes);
+        Ok((send_bytes, [0x04, 0x02, 0x07, 0x07]))
+    }
 }

@@ -7,6 +7,7 @@ use crate::bose_api::operations::connect_device::ConnectDeviceInfo;
 use crate::bose_api::operations::device_id::DeviceIdInfo;
 use crate::bose_api::operations::device_information::DeviceInformationInfo;
 use crate::bose_api::operations::device_status::DeviceStatus;
+use crate::bose_api::operations::disconnect_device::DisconnectDeviceInfo;
 use crate::bose_api::operations::firmware_version::FirmwareVersionInfo;
 use crate::bose_api::operations::init_connection::InitConnectionInfo;
 use crate::bose_api::operations::paired_devices::PairedDeviceInfo;
@@ -140,6 +141,12 @@ async fn main() -> Result<()> {
             let connect_device_info: ConnectDeviceInfo =
                 bose_device.connect_device(&address).await?;
             let json_output: String = serde_json::to_string_pretty(&connect_device_info)?;
+            println!("{json_output}");
+        }
+        Commands::Disconnect { address } => {
+            let disconnect_device_info: DisconnectDeviceInfo =
+                bose_device.disconnect_device(&address).await?;
+            let json_output: String = serde_json::to_string_pretty(&disconnect_device_info)?;
             println!("{json_output}");
         }
     }

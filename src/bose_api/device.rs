@@ -9,6 +9,7 @@ use crate::bose_api::operations::device_information::{
 use crate::bose_api::operations::device_status::{
     AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
 };
+use crate::bose_api::operations::disconnect_device::DisconnectDeviceInfo;
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
 use crate::bose_api::operations::init_connection::{InitConnectionInfo, parse_init_connection};
 use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired_devices};
@@ -509,5 +510,28 @@ impl BoseDevice {
         self.stream.read_exact(&mut response_buffer).await?;
 
         parse_connect_device_info(&response_buffer)
+    }
+
+    pub async fn disconnect_device(
+        &mut self,
+        address: &str,
+    ) -> Result<DisconnectDeviceInfo, BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.disconnect_device_command(address)?;
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(DisconnectDeviceInfo {
+            address: address.to_string(),
+            status: "disconnected".to_string(),
+        })
     }
 }

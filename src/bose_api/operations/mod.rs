@@ -5,6 +5,7 @@ pub mod device_information;
 pub mod device_status;
 pub mod device_status_info;
 pub mod devices_connected;
+pub mod disconnect_device;
 pub mod firmware_version;
 pub mod init_connection;
 pub mod paired_devices;

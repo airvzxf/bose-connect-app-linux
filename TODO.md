@@ -12,7 +12,7 @@
 
 - [ ] Add connect operation to the CLI.
   - [x] Attempt to connect to the device at address.
-  - [ ] Disconnect the device at address.
+  - [x] Disconnect the device at address.
   - [ ] Remove the device at address from the pairing list.
 - [x] Add the set operations for the Bose device.
   - [x] Set device name.

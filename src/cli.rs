@@ -93,6 +93,11 @@ pub enum Commands {
         /// The address of the device to connect to
         address: String,
     },
+    /// Disconnects a device
+    Disconnect {
+        /// The address of the device to disconnect from
+        address: String,
+    },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
