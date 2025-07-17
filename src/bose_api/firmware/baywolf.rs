@@ -109,4 +109,13 @@ impl Firmware for BayWolfFirmware {
         send_bytes.extend_from_slice(&address_bytes);
         Ok((send_bytes, [0x04, 0x02, 0x07, 0x07]))
     }
+
+    fn remove_device_command(&self, address: &str) -> Result<(Vec<u8>, [u8; 4]), BoseError> {
+        // BayWolf specific byte codes for removing a device
+        let mut address_bytes: [u8; 6] = [0u8; 6];
+        hex::decode_to_slice(address.replace(":", ""), &mut address_bytes)?;
+        let mut send_bytes: Vec<u8> = vec![0x04, 0x03, 0x05, 0x06];
+        send_bytes.extend_from_slice(&address_bytes);
+        Ok((send_bytes, [0x04, 0x03, 0x06, 0x06]))
+    }
 }

@@ -11,6 +11,7 @@ use crate::bose_api::operations::disconnect_device::DisconnectDeviceInfo;
 use crate::bose_api::operations::firmware_version::FirmwareVersionInfo;
 use crate::bose_api::operations::init_connection::InitConnectionInfo;
 use crate::bose_api::operations::paired_devices::PairedDeviceInfo;
+use crate::bose_api::operations::remove_device::RemoveDeviceInfo;
 use crate::bose_api::operations::serial_number::SerialNumberInfo;
 use anyhow::Result;
 use clap::Parser;
@@ -147,6 +148,11 @@ async fn main() -> Result<()> {
             let disconnect_device_info: DisconnectDeviceInfo =
                 bose_device.disconnect_device(&address).await?;
             let json_output: String = serde_json::to_string_pretty(&disconnect_device_info)?;
+            println!("{json_output}");
+        }
+        Commands::Remove { address } => {
+            let remove_device_info: RemoveDeviceInfo = bose_device.remove_device(&address).await?;
+            let json_output: String = serde_json::to_string_pretty(&remove_device_info)?;
             println!("{json_output}");
         }
     }

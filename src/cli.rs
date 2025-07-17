@@ -98,6 +98,11 @@ pub enum Commands {
         /// The address of the device to disconnect from
         address: String,
     },
+    /// Removes a device from the device list
+    Remove {
+        /// The address of the device to remove
+        address: String,
+    },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]

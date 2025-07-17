@@ -14,6 +14,7 @@ use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_f
 use crate::bose_api::operations::init_connection::{InitConnectionInfo, parse_init_connection};
 use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired_devices};
 use crate::bose_api::operations::pairing::Pairing;
+use crate::bose_api::operations::remove_device::RemoveDeviceInfo;
 use crate::bose_api::operations::self_voice::SelfVoice;
 use crate::bose_api::operations::serial_number::{SerialNumberInfo, parse_serial_number};
 use crate::bose_api::operations::voice_prompts::VoicePrompts;
@@ -535,6 +536,26 @@ impl BoseDevice {
         Ok(DisconnectDeviceInfo {
             address: address.to_string(),
             status: "disconnected".to_string(),
+        })
+    }
+
+    pub async fn remove_device(&mut self, address: &str) -> Result<RemoveDeviceInfo, BoseError> {
+        let (send_bytes, ack_bytes) = self.firmware.remove_device_command(address)?;
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(RemoveDeviceInfo {
+            address: address.to_string(),
+            status: "removed".to_string(),
         })
     }
 }

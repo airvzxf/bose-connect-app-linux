@@ -24,6 +24,7 @@ pub trait Firmware {
     fn set_pairing_command(&self, value: u8) -> ([u8; 5], [u8; 5]);
     fn connect_device_command(&self, address: &str) -> Result<(Vec<u8>, [u8; 4]), BoseError>;
     fn disconnect_device_command(&self, address: &str) -> Result<(Vec<u8>, [u8; 4]), BoseError>;
+    fn remove_device_command(&self, address: &str) -> Result<(Vec<u8>, [u8; 4]), BoseError>;
 }
 
 pub fn detect_firmware(

@@ -10,6 +10,7 @@ pub mod firmware_version;
 pub mod init_connection;
 pub mod paired_devices;
 pub mod pairing;
+pub mod remove_device;
 pub mod self_voice;
 pub mod serial_number;
 pub mod voice_prompts;
