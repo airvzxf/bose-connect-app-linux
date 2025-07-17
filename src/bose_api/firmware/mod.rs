@@ -8,6 +8,7 @@ use baywolf::BayWolfFirmware;
 use isaac::IsaacFirmware;
 
 pub trait Firmware {
+    fn init_connection_command(&self) -> ([u8; 4], [u8; 4]);
     fn get_battery_level_command(&self) -> ([u8; 4], [u8; 4]);
     fn get_device_status_command(&self) -> ([u8; 4], [u8; 4]);
     fn get_device_id_command(&self) -> ([u8; 4], [u8; 4]);

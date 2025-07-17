@@ -7,6 +7,7 @@ use crate::bose_api::operations::device_id::DeviceIdInfo;
 use crate::bose_api::operations::device_information::DeviceInformationInfo;
 use crate::bose_api::operations::device_status::DeviceStatus;
 use crate::bose_api::operations::firmware_version::FirmwareVersionInfo;
+use crate::bose_api::operations::init_connection::InitConnectionInfo;
 use crate::bose_api::operations::paired_devices::PairedDeviceInfo;
 use crate::bose_api::operations::serial_number::SerialNumberInfo;
 use anyhow::Result;
@@ -27,6 +28,11 @@ async fn main() -> Result<()> {
     let mut bose_device: BoseDevice = BoseDevice::connect(&cli.address, model_override).await?;
 
     match cli.command {
+        Commands::InitConnection => {
+            let init_connection_info: InitConnectionInfo = bose_device.init_connection().await?;
+            let json_output: String = serde_json::to_string_pretty(&init_connection_info)?;
+            println!("{json_output}");
+        }
         Commands::Battery => {
             let battery_info: BatteryInfo = bose_device.get_battery_level().await?;
             let json_output: String = serde_json::to_string_pretty(&battery_info)?;

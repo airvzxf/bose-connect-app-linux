@@ -9,6 +9,7 @@ use crate::bose_api::operations::device_status::{
     AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
 };
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
+use crate::bose_api::operations::init_connection::{InitConnectionInfo, parse_init_connection};
 use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired_devices};
 use crate::bose_api::operations::pairing::Pairing;
 use crate::bose_api::operations::self_voice::SelfVoice;
@@ -120,6 +121,26 @@ impl BoseDevice {
         let firmware: Box<dyn Firmware> = detect_firmware(model, &protocol_version_bytes)?;
 
         Ok(BoseDevice { stream, firmware })
+    }
+
+    pub async fn init_connection(&mut self) -> Result<InitConnectionInfo, BoseError> {
+        let (send_bytes, ack_bytes): ([u8; 4], [u8; 4]) = self.firmware.init_connection_command();
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        let mut response_buffer: Vec<u8> = vec![0; 5];
+        self.stream.read_exact(&mut response_buffer).await?;
+
+        parse_init_connection(&response_buffer)
     }
 
     pub async fn get_battery_level(&mut self) -> Result<BatteryInfo, BoseError> {

@@ -21,6 +21,8 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// Init connection
+    InitConnection,
     /// Gets the battery level of the connected device
     Battery,
     /// Gets the device status (name, language, auto-off, noise-cancelling)
