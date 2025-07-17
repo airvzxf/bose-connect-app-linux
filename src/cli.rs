@@ -1,4 +1,5 @@
 use crate::bose_api::operations::device_status::{NoiseCancelling, PromptLanguage};
+use crate::bose_api::operations::pairing::Pairing;
 use crate::bose_api::operations::self_voice::SelfVoice;
 use clap::{Parser, Subcommand};
 
@@ -69,6 +70,12 @@ pub enum Commands {
     SetName {
         /// The new name for the device
         name: String,
+    },
+    /// Sets the pairing setting
+    SetPairing {
+        /// The pairing value
+        #[arg(value_enum)]
+        value: Pairing,
     },
 }
 

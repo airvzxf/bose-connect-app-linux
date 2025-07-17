@@ -113,6 +113,12 @@ async fn main() -> Result<()> {
                 serde_json::to_string_pretty(&json!({ "name_set_to": name }))?;
             println!("{json_output}");
         }
+        Commands::SetPairing { value } => {
+            bose_device.set_pairing(value).await?;
+            let json_output: String =
+                serde_json::to_string_pretty(&json!({ "pairing_set_to": value }))?;
+            println!("{json_output}");
+        }
     }
 
     Ok(())

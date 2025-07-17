@@ -10,6 +10,7 @@ use crate::bose_api::operations::device_status::{
 };
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
 use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired_devices};
+use crate::bose_api::operations::pairing::Pairing;
 use crate::bose_api::operations::self_voice::SelfVoice;
 use crate::bose_api::operations::serial_number::{SerialNumberInfo, parse_serial_number};
 use crate::cli::AutoOffValue;
@@ -409,6 +410,24 @@ impl BoseDevice {
         let name_bytes: Vec<u8> = name.as_bytes().to_vec();
         let (send_bytes, ack_bytes): (Vec<u8>, [u8; 5]) =
             self.firmware.set_name_command(&name_bytes);
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn set_pairing(&mut self, value: Pairing) -> Result<(), BoseError> {
+        let (send_bytes, ack_bytes): ([u8; 5], [u8; 5]) =
+            self.firmware.set_pairing_command(value.into());
         self.stream.write_all(&send_bytes).await?;
 
         let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];

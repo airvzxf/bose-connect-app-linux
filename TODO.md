@@ -21,7 +21,7 @@
   - [x] Set prompt language.
   - [ ] Set voice prompts.
   - [x] Set self voice.
-  - [ ] Set pairing.
+  - [x] Set pairing.
 - [ ] Set the share music mode.
 - [ ] Set the function button.
 - [ ] Set the party mode.

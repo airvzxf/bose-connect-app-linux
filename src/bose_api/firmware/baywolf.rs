@@ -77,4 +77,12 @@ impl Firmware for BayWolfFirmware {
         send_bytes.extend_from_slice(name_bytes);
         (send_bytes, [0x01, 0x02, 0x03, name_size + 1, 0x00])
     }
+
+    fn set_pairing_command(&self, value: u8) -> ([u8; 5], [u8; 5]) {
+        // BayWolf specific byte codes for setting pairing
+        (
+            [0x04, 0x08, 0x05, 0x01, value],
+            [0x04, 0x08, 0x06, 0x01, value],
+        )
+    }
 }

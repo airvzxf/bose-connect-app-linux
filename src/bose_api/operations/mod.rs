@@ -6,5 +6,6 @@ pub mod device_status_info;
 pub mod devices_connected;
 pub mod firmware_version;
 pub mod paired_devices;
+pub mod pairing;
 pub mod self_voice;
 pub mod serial_number;
