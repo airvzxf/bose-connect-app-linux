@@ -1,7 +1,7 @@
 use crate::bose_api::BoseError;
 use crate::bose_api::firmware::{Firmware, detect_firmware};
 use crate::bose_api::operations::battery::{BatteryInfo, parse_battery_level};
-use crate::bose_api::operations::connect_device::{ConnectDeviceInfo, parse_connect_device_info};
+use crate::bose_api::operations::connect_device::ConnectDeviceInfo;
 use crate::bose_api::operations::device_id::{DeviceIdInfo, parse_device_id};
 use crate::bose_api::operations::device_information::{
     DeviceInformationInfo, parse_device_information,
@@ -509,7 +509,10 @@ impl BoseDevice {
         let mut response_buffer: Vec<u8> = vec![0; 6];
         self.stream.read_exact(&mut response_buffer).await?;
 
-        parse_connect_device_info(&response_buffer)
+        Ok(ConnectDeviceInfo {
+            address: address.to_string(),
+            status: "connected".to_string(),
+        })
     }
 
     pub async fn disconnect_device(
