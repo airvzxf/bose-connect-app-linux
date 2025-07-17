@@ -36,7 +36,8 @@ async fn main() -> Result<()> {
         | Commands::Name
         | Commands::Language
         | Commands::AutoOff
-        | Commands::NoiseCancelling => {
+        | Commands::NoiseCancelling
+        | Commands::VoicePrompts => {
             let device_status: DeviceStatus = bose_device.get_device_status().await?;
             let json_output: String = match cli.command {
                 Commands::DeviceStatus => serde_json::to_string_pretty(&device_status)?,
@@ -51,6 +52,9 @@ async fn main() -> Result<()> {
                 }
                 Commands::NoiseCancelling => serde_json::to_string_pretty(
                     &json!({ "noise_cancelling": device_status.noise_cancelling }),
+                )?,
+                Commands::VoicePrompts => serde_json::to_string_pretty(
+                    &json!({ "voice_prompts": device_status.voice_prompts }),
                 )?,
                 _ => unreachable!(),
             };
@@ -117,6 +121,12 @@ async fn main() -> Result<()> {
             bose_device.set_pairing(value).await?;
             let json_output: String =
                 serde_json::to_string_pretty(&json!({ "pairing_set_to": value }))?;
+            println!("{json_output}");
+        }
+        Commands::SetVoicePrompts { value } => {
+            bose_device.set_voice_prompts(value).await?;
+            let json_output: String =
+                serde_json::to_string_pretty(&json!({ "voice_prompts_set_to": value }))?;
             println!("{json_output}");
         }
     }

@@ -1,3 +1,4 @@
+use crate::bose_api::operations::voice_prompts::VoicePrompts;
 use serde::{Deserialize, Serialize};
 
 #[derive(
@@ -30,6 +31,8 @@ pub enum PromptLanguage {
     SpanishMx,
     #[clap(name = "se")]
     Swedish,
+    #[clap(name = "disable")]
+    Disable,
     #[clap(skip)]
     Unknown,
 }
@@ -37,6 +40,7 @@ pub enum PromptLanguage {
 impl From<u8> for PromptLanguage {
     fn from(value: u8) -> Self {
         match value {
+            0x86 => PromptLanguage::Disable,
             0xA1 => PromptLanguage::English,
             0xA2 => PromptLanguage::French,
             0xA3 => PromptLanguage::Italian,
@@ -58,6 +62,7 @@ impl From<u8> for PromptLanguage {
 impl From<PromptLanguage> for u8 {
     fn from(value: PromptLanguage) -> Self {
         match value {
+            PromptLanguage::Disable => 0x86,
             PromptLanguage::English => 0xA1,
             PromptLanguage::French => 0xA2,
             PromptLanguage::Italian => 0xA3,
@@ -143,4 +148,5 @@ pub struct DeviceStatus {
     pub language: PromptLanguage,
     pub auto_off: AutoOff,
     pub noise_cancelling: NoiseCancelling,
+    pub voice_prompts: VoicePrompts,
 }

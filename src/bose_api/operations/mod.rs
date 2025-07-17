@@ -9,3 +9,4 @@ pub mod paired_devices;
 pub mod pairing;
 pub mod self_voice;
 pub mod serial_number;
+pub mod voice_prompts;

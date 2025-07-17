@@ -1,6 +1,7 @@
 use crate::bose_api::operations::device_status::{NoiseCancelling, PromptLanguage};
 use crate::bose_api::operations::pairing::Pairing;
 use crate::bose_api::operations::self_voice::SelfVoice;
+use crate::bose_api::operations::voice_prompts::VoicePrompts;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -32,6 +33,8 @@ pub enum Commands {
     AutoOff,
     /// Gets the noise-cancelling setting
     NoiseCancelling,
+    /// Gets the voice prompts setting
+    VoicePrompts,
     /// Gets the device ID
     DeviceId,
     /// Gets the firmware version
@@ -76,6 +79,12 @@ pub enum Commands {
         /// The pairing value
         #[arg(value_enum)]
         value: Pairing,
+    },
+    /// Sets the voice prompts setting
+    SetVoicePrompts {
+        /// The voice prompts value
+        #[arg(value_enum)]
+        value: VoicePrompts,
     },
 }
 

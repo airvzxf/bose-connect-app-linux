@@ -14,12 +14,12 @@
   - [ ] Attempt to connect to the device at address.
   - [ ] Disconnect the device at address.
   - [ ] Remove the device at address from the pairing list.
-- [ ] Add the set operations for the Bose device.
+- [x] Add the set operations for the Bose device.
   - [x] Set device name.
   - [x] Set auto-off.
   - [x] Set noise-cancelling.
   - [x] Set prompt language.
-  - [ ] Set voice prompts.
+  - [x] Set voice prompts.
   - [x] Set self voice.
   - [x] Set pairing.
 - [ ] Set the share music mode.

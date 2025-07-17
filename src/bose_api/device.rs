@@ -13,6 +13,7 @@ use crate::bose_api::operations::paired_devices::{PairedDeviceInfo, parse_paired
 use crate::bose_api::operations::pairing::Pairing;
 use crate::bose_api::operations::self_voice::SelfVoice;
 use crate::bose_api::operations::serial_number::{SerialNumberInfo, parse_serial_number};
+use crate::bose_api::operations::voice_prompts::VoicePrompts;
 use crate::cli::AutoOffValue;
 use bluer::rfcomm::{Socket, SocketAddr, Stream};
 use bluer::{Adapter, Address, Device, Session};
@@ -314,6 +315,12 @@ impl BoseDevice {
                 .first()
                 .map_or(PromptLanguage::Unknown, |&v| PromptLanguage::from(v));
 
+            let voice_prompts: VoicePrompts = if language == PromptLanguage::Disable {
+                VoicePrompts::Off
+            } else {
+                VoicePrompts::On
+            };
+
             let auto_off_bytes: Vec<u8> = self.read_value(ack_len).await?;
             let auto_off: AutoOff = auto_off_bytes
                 .first()
@@ -329,6 +336,7 @@ impl BoseDevice {
                 language,
                 auto_off,
                 noise_cancelling,
+                voice_prompts,
             })
         })
         .await?
@@ -416,6 +424,24 @@ impl BoseDevice {
         self.stream.read_exact(&mut ack_buffer).await?;
 
         if ack_buffer != ack_bytes {
+            return Err(BoseError::AckMismatch {
+                expected: ack_bytes.to_vec(),
+                got: ack_buffer,
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn set_voice_prompts(&mut self, value: VoicePrompts) -> Result<(), BoseError> {
+        let (send_bytes, ack_bytes): ([u8; 5], [u8; 9]) =
+            self.firmware.set_prompt_language_command(value.into());
+        self.stream.write_all(&send_bytes).await?;
+
+        let mut ack_buffer: Vec<u8> = vec![0; ack_bytes.len()];
+        self.stream.read_exact(&mut ack_buffer).await?;
+
+        if ack_buffer[0..4] != ack_bytes[0..4] && ack_buffer[5..] != ack_bytes[5..] {
             return Err(BoseError::AckMismatch {
                 expected: ack_bytes.to_vec(),
                 got: ack_buffer,
