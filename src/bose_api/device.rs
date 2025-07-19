@@ -7,7 +7,7 @@ use crate::bose_api::operations::device_information::{
     DeviceInformationInfo, parse_device_information,
 };
 use crate::bose_api::operations::device_status::{
-    AutoOff, DeviceStatus, NoiseCancelling, PromptLanguage,
+    AutoOff, DeviceStatus, FunctionButton, NoiseCancelling, PromptLanguage,
 };
 use crate::bose_api::operations::disconnect_device::DisconnectDeviceInfo;
 use crate::bose_api::operations::firmware_version::{FirmwareVersionInfo, parse_firmware_version};
@@ -339,7 +339,7 @@ impl BoseDevice {
                 .first()
                 .map_or(PromptLanguage::Unknown, |&v| PromptLanguage::from(v));
 
-            let voice_prompts: VoicePrompts = if language == PromptLanguage::Disable {
+            let voice_prompts: VoicePrompts = if language <= PromptLanguage::SwedishDisabled {
                 VoicePrompts::Off
             } else {
                 VoicePrompts::On
@@ -355,12 +355,28 @@ impl BoseDevice {
                 .first()
                 .map_or(NoiseCancelling::Unknown, |&v| NoiseCancelling::from(v));
 
+            let function_button_buffer: Vec<u8> = self.read_value(ack_len).await?;
+            println!("Function Button Bytes: {function_button_buffer:X?}");
+            let function_button: FunctionButton = function_button_buffer
+                .get(2)
+                .map_or(FunctionButton::Unknown, |&v| FunctionButton::from(v));
+            println!("Function Button: {function_button:?}");
+
+            let self_voice_buffer: Vec<u8> = self.read_value(ack_len).await?;
+            println!("Self Voice Bytes: {self_voice_buffer:X?}");
+            let self_voice: SelfVoice = self_voice_buffer
+                .get(1)
+                .map_or(SelfVoice::Unknown, |&v| SelfVoice::from(v));
+            println!("Self voice: {self_voice:?}");
+
             Ok(DeviceStatus {
                 name,
                 language,
                 auto_off,
                 noise_cancelling,
                 voice_prompts,
+                function_button,
+                self_voice,
             })
         })
         .await?

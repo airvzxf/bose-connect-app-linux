@@ -1,3 +1,4 @@
+use crate::bose_api::operations::self_voice::SelfVoice;
 use crate::bose_api::operations::voice_prompts::VoicePrompts;
 use serde::{Deserialize, Serialize};
 
@@ -31,8 +32,32 @@ pub enum PromptLanguage {
     SpanishMx,
     #[clap(name = "se")]
     Swedish,
-    #[clap(name = "disable")]
-    Disable,
+    #[clap(name = "en-off")]
+    EnglishDisabled,
+    #[clap(name = "fr-off")]
+    FrenchDisabled,
+    #[clap(name = "it-off")]
+    ItalianDisabled,
+    #[clap(name = "de-off")]
+    GermanDisabled,
+    #[clap(name = "es-mx-off")]
+    SpanishMxDisabled,
+    #[clap(name = "pt-off")]
+    PortugueseDisabled,
+    #[clap(name = "cn-off")]
+    MandarinDisabled,
+    #[clap(name = "kr-off")]
+    KoreanDisabled,
+    #[clap(name = "fr-off")]
+    RussianDisabled,
+    #[clap(name = "pl-off")]
+    PolishDisabled,
+    #[clap(name = "dutch-off")]
+    DutchDisabled,
+    #[clap(name = "jp-off")]
+    JapaneseDisabled,
+    #[clap(name = "se-off")]
+    SwedishDisabled,
     #[clap(skip)]
     Unknown,
 }
@@ -40,7 +65,19 @@ pub enum PromptLanguage {
 impl From<u8> for PromptLanguage {
     fn from(value: u8) -> Self {
         match value {
-            0x86 => PromptLanguage::Disable,
+            0x81 => PromptLanguage::EnglishDisabled,
+            0x82 => PromptLanguage::FrenchDisabled,
+            0x83 => PromptLanguage::ItalianDisabled,
+            0x85 => PromptLanguage::GermanDisabled,
+            0x86 => PromptLanguage::SpanishMxDisabled,
+            0x87 => PromptLanguage::PortugueseDisabled,
+            0x88 => PromptLanguage::MandarinDisabled,
+            0x89 => PromptLanguage::KoreanDisabled,
+            0x8A => PromptLanguage::RussianDisabled,
+            0x8B => PromptLanguage::PolishDisabled,
+            0x8E => PromptLanguage::DutchDisabled,
+            0x8F => PromptLanguage::JapaneseDisabled,
+            0x92 => PromptLanguage::SwedishDisabled,
             0xA1 => PromptLanguage::English,
             0xA2 => PromptLanguage::French,
             0xA3 => PromptLanguage::Italian,
@@ -62,7 +99,19 @@ impl From<u8> for PromptLanguage {
 impl From<PromptLanguage> for u8 {
     fn from(value: PromptLanguage) -> Self {
         match value {
-            PromptLanguage::Disable => 0x86,
+            PromptLanguage::EnglishDisabled => 0x81,
+            PromptLanguage::FrenchDisabled => 0x82,
+            PromptLanguage::ItalianDisabled => 0x83,
+            PromptLanguage::GermanDisabled => 0x84,
+            PromptLanguage::SpanishMxDisabled => 0x86,
+            PromptLanguage::PortugueseDisabled => 0x87,
+            PromptLanguage::MandarinDisabled => 0x88,
+            PromptLanguage::KoreanDisabled => 0x89,
+            PromptLanguage::RussianDisabled => 0x8A,
+            PromptLanguage::PolishDisabled => 0x8B,
+            PromptLanguage::DutchDisabled => 0x8E,
+            PromptLanguage::JapaneseDisabled => 0x8F,
+            PromptLanguage::SwedishDisabled => 0x92,
             PromptLanguage::English => 0xA1,
             PromptLanguage::French => 0xA2,
             PromptLanguage::Italian => 0xA3,
@@ -142,6 +191,23 @@ impl From<NoiseCancelling> for u8 {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Copy, Clone)]
+pub enum FunctionButton {
+    Other,
+    NoiseCancelling,
+    Unknown,
+}
+
+impl From<u8> for FunctionButton {
+    fn from(value: u8) -> Self {
+        match value {
+            0x01 => FunctionButton::Other,
+            0x02 => FunctionButton::NoiseCancelling,
+            _ => FunctionButton::Unknown,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct DeviceStatus {
     pub name: String,
@@ -149,4 +215,6 @@ pub struct DeviceStatus {
     pub auto_off: AutoOff,
     pub noise_cancelling: NoiseCancelling,
     pub voice_prompts: VoicePrompts,
+    pub function_button: FunctionButton,
+    pub self_voice: SelfVoice,
 }
