@@ -1,5 +1,11 @@
 # To-Do List
 
+## Now
+
+- [ ] Open WireShark and execute every operation to see the packets and the payloads. Test all the operations for the Bose QC35 II and the Bose SLC II.
+- [ ] Move the enumerator `AutoOffValue` from `src/cli.rs` to the correct place in `src/bose_api/operations/device_status.rs`.
+- [ ] Check if is the best practice to create a directory for `device.rs` and split the code in different files.
+
 ## Build
 
 - [x] Update to the latest the versions of the packages in Cargo.toml. Change one by one and review if everything works.
@@ -7,6 +13,12 @@
 ## Core
 
 - [ ] Remove condition to get the device firmware, using the name of the device.
+- [ ] The firmware pattern is not working because not all devices has the same operations. Rethink the firmware pattern to get the device firmware.
+  - [ ] An idea is to create the command with the name of the device and the subcommand with the operation to perform. On this way, we can have the same command for all devices and the operations will be different depending on the device.
+  - [ ] The best example is the operation `get_device_status`, it returns different payloads depending on the device.
+  - [ ] Check how to solve the problem about the version of the firmware, because we are not covering if the operations change at byte code level or CRUD the operations.
+- [ ] Add the correct timeout functionality to the operations. Remove the timeout from the `get_device_status` operation.
+- [ ] Create a pattern to create all the received byte codes for the operations. The idea is validated or compare to match with some of these, then get the operation based on this match. For example, it receives the buffer `[0x00, 0x03, 0x03, 0x03]` then I search, and it matches for `get_device_id_command`, for this reason it need to validate and read the values.
 
 ## Operations
 
