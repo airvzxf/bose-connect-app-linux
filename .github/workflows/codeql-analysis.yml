@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
 
       - name: Install packages
         run: >
@@ -33,12 +33,12 @@ jobs:
             libbluetooth-dev
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v1
+        uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v1
+        uses: github/codeql-action/autobuild@v4
         # ✏️ If the Autobuild fails above, remove it and uncomment the
         #    following three lines and modify them (or add more) to build
         #    your code if your project uses a compiled language.
@@ -46,6 +46,6 @@ jobs:
         #  cmake ./src || true
 
       - name: Perform analysis
-        uses: github/codeql-action/analyze@v1
+        uses: github/codeql-action/analyze@v4
         with:
           add-snippets: true
