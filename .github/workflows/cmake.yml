@@ -22,14 +22,14 @@ jobs:
 
       - name: Clean previous docker composes
         run: >
-          docker-compose \
+          docker compose \
             --project-directory ./src \
             --env-file ./src/.env-user \
             down
 
       - name: Start the docker compose
         run: >
-          docker-compose \
+          docker compose \
             --project-directory ./src \
             --env-file ./src/.env-user \
             up \
