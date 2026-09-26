@@ -725,7 +725,7 @@ static int do_send_packet(char *address, const char *arg) {
     return 1;
   }
 
-  size_t arg_length = strlen(arg);
+  size_t arg_length = strnlen(arg, MAX_BT_PACK_LEN * 2);
   size_t send_size  = arg_length / 2;
   uint8_t send[send_size > 0 ? send_size : 1];
   for (size_t i = 0; arg[i * 2]; ++i) {
