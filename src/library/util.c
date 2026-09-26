@@ -1,6 +1,6 @@
 #include "util.h"
 
-#define CHAR_BIT 1
+#include <limits.h>
 
 static uint8_t get_value(char c) {
   const int max_decimal_unit   = 10;

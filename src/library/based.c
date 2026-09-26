@@ -277,11 +277,11 @@ enum PromptLanguage get_language(const char *language) {
   }
 
   if (strcmp(language, "pl") == 0) {
-    return PL_RU;
+    return PL_PL;
   }
 
   if (strcmp(language, "ru") == 0) {
-    return PL_PL;
+    return PL_RU;
   }
 
   if (strcmp(language, "nl") == 0) {
@@ -329,7 +329,11 @@ int set_prompt_language(int sock, enum PromptLanguage language) {
     return status;
   }
 
-  return (int)(language - got_language);
+  const enum PromptLanguage sent_clean =
+      (enum PromptLanguage)(language & VP_MASK);
+  const enum PromptLanguage got_clean =
+      (enum PromptLanguage)(got_language & VP_MASK);
+  return abs((int)(sent_clean - got_clean));
 }
 
 int set_voice_prompts(int sock, int on) {
@@ -463,7 +467,9 @@ int get_device_status(int sock, char name[MAX_NAME_LEN],
     *level = NC_DNE;
   }
 
-  return status;
+  static const uint8_t ack_final[] = {0x01, 0x01, 0x06, 0x00};
+  uint8_t              buffer_final[sizeof(ack_final)];
+  return read_check(sock, buffer_final, sizeof(buffer_final), ack_final, NULL);
 }
 
 int set_pairing(int sock, enum Pairing pairing) {
@@ -612,7 +618,7 @@ int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES],
   }
 
   num_devices_byte /= BT_ADDR_LEN;
-  *num_devices = (size_t)(num_devices_byte - 1);
+  *num_devices = (size_t)num_devices_byte;
 
   uint8_t num_connected_byte = 0;
   status                     = (int)read(sock, &num_connected_byte, 1);

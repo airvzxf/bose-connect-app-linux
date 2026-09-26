@@ -12,6 +12,7 @@
 #define MAX_BT_PACK_LEN      0x1000
 #define VER_STR_LEN          6
 #define VP_MASK              0x7fu
+#define VP_ENABLE_BIT        0x20u
 #define MAX_SERIAL_SIZE      0x100
 #define DEVICE_ALIGNED_BYTES 64
 
