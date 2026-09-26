@@ -15,10 +15,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Analysis CLI
-        uses: codacy/codacy-analysis-cli-action@1.1.0
+        uses: codacy/codacy-analysis-cli-action@562ee3e92b8e92df8b67e0a5ff8aa8e261919c08 # v4.4.7
         with:
           verbose: true
           output: results.sarif
@@ -27,12 +27,11 @@ jobs:
           max-allowed-issues: 2147483647
 
       - name: Upload SARIF results file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:
           sarif_file: results.sarif
           # Use a dedicated category so the Codacy run does not collide with
           # the CodeQL workflow (which uploads to the default `codeql`
           # category). GitHub refuses multiple SARIF runs sharing the same
-          # category since July 2025. upload-sarif@v3 is required because
-          # the Codacy CLI emits a SARIF that bundles multiple `runs`.
+          # category since July 2025.
           category: codacy
