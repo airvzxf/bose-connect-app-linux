@@ -88,40 +88,81 @@ static void usage() {
 }
 
 int do_get_information(char *address) {
-  enum { SECS_TO_SLEEP = 6, NANO_TO_SLEEP = 0 };
+  enum {
+    SECS_TO_SLEEP = 1,
+    NANO_TO_SLEEP = 0,
+    MAX_RETRIES   = 3
+  };
   struct timespec remaining;
   struct timespec request = {SECS_TO_SLEEP, NANO_TO_SLEEP};
 
-  while (do_get_device_id(address)) {
+  for (int retries = 0; retries < MAX_RETRIES; ++retries) {
+    if (do_get_device_id(address) == 0) {
+      goto device_id_ok;
+    }
     nanosleep(&request, &remaining);
   }
+  fprintf(stderr, "Failed to get device id after %d attempts.\n", MAX_RETRIES);
+  return 1;
+device_id_ok:
   nanosleep(&request, &remaining);
 
-  while (do_get_serial_number(address)) {
+  for (int retries = 0; retries < MAX_RETRIES; ++retries) {
+    if (do_get_serial_number(address) == 0) {
+      goto serial_ok;
+    }
     nanosleep(&request, &remaining);
   }
+  fprintf(stderr, "Failed to get serial number after %d attempts.\n", MAX_RETRIES);
+  return 1;
+serial_ok:
   nanosleep(&request, &remaining);
 
-  while (do_get_firmware_version(address)) {
+  for (int retries = 0; retries < MAX_RETRIES; ++retries) {
+    if (do_get_firmware_version(address) == 0) {
+      goto firmware_ok;
+    }
     nanosleep(&request, &remaining);
   }
+  fprintf(stderr, "Failed to get firmware version after %d attempts.\n",
+          MAX_RETRIES);
+  return 1;
+firmware_ok:
   nanosleep(&request, &remaining);
 
-  while (do_get_battery_level(address)) {
+  for (int retries = 0; retries < MAX_RETRIES; ++retries) {
+    if (do_get_battery_level(address) == 0) {
+      goto battery_ok;
+    }
     nanosleep(&request, &remaining);
   }
+  fprintf(stderr, "Failed to get battery level after %d attempts.\n",
+          MAX_RETRIES);
+  return 1;
+battery_ok:
   nanosleep(&request, &remaining);
 
-  while (do_get_device_status(address)) {
+  for (int retries = 0; retries < MAX_RETRIES; ++retries) {
+    if (do_get_device_status(address) == 0) {
+      goto status_ok;
+    }
     nanosleep(&request, &remaining);
   }
+  fprintf(stderr, "Failed to get device status after %d attempts.\n",
+          MAX_RETRIES);
+  return 1;
+status_ok:
   nanosleep(&request, &remaining);
 
-  while (do_get_paired_devices(address)) {
+  for (int retries = 0; retries < MAX_RETRIES; ++retries) {
+    if (do_get_paired_devices(address) == 0) {
+      return 0;
+    }
     nanosleep(&request, &remaining);
   }
-
-  return 0;
+  fprintf(stderr, "Failed to get paired devices after %d attempts.\n",
+          MAX_RETRIES);
+  return 1;
 }
 
 static int do_set_name(char *address, const char *arg) {
@@ -228,12 +269,14 @@ static int do_set_auto_off(char *address, const char *arg) {
     if (strcmp(arg, "never") != 0) {
       fprintf(stderr, "Invalid auto-off argument: %s\n", arg);
       usage();
+      close(sock);
       return 1;
     }
   }
 
+  const int status = set_auto_off(sock, ao);
   close(sock);
-  return set_auto_off(sock, ao);
+  return status;
 }
 
 enum NoiseCancelling get_noise_cancelling(const char *arg) {
@@ -676,23 +719,26 @@ static int do_get_device_id(char *address) {
 }
 
 static int do_send_packet(char *address, const char *arg) {
-  int char_type_pointer_size = sizeof(char *);
-  int sock                   = get_socket(address);
+  int sock = get_socket(address);
 
   if (sock == -1) {
     return 1;
   }
 
-  uint8_t send[char_type_pointer_size / 2];
+  size_t arg_length = strnlen(arg, MAX_BT_PACK_LEN * 2);
+  size_t send_size  = arg_length / 2;
+  uint8_t send[send_size > 0 ? send_size : 1];
   for (size_t i = 0; arg[i * 2]; ++i) {
     if (str_to_byte(&arg[i * 2], &send[i]) != 0) {
+      close(sock);
       return 1;
     }
   }
 
   uint8_t received[MAX_BT_PACK_LEN];
-  int     received_n = send_packet(sock, send, sizeof(send), received);
+  int     received_n = send_packet(sock, send, send_size, received);
   if (received_n < 0) {
+    close(sock);
     return received_n;
   }
 
