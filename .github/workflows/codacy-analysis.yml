@@ -27,11 +27,12 @@ jobs:
           max-allowed-issues: 2147483647
 
       - name: Upload SARIF results file
-        uses: github/codeql-action/upload-sarif@v1
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
           # Use a dedicated category so the Codacy run does not collide with
           # the CodeQL workflow (which uploads to the default `codeql`
           # category). GitHub refuses multiple SARIF runs sharing the same
-          # category since July 2025.
+          # category since July 2025. upload-sarif@v3 is required because
+          # the Codacy CLI emits a SARIF that bundles multiple `runs`.
           category: codacy
