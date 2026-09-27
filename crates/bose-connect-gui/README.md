@@ -1,6 +1,6 @@
 # `bose-connect-gui`
 
-A GTK4 + libadwaita + Relm4 desktop front-end for the
+A GTK4 + libadwaita desktop front-end for the
 [`bose-connect`](../bose-connect) RFCOMM library. Lets you drive a
 Bose QuietComfort / SoundLink headphone from a modern Linux desktop
 without vendor-supplied tooling — same byte-level protocol, modern UX.
@@ -13,15 +13,14 @@ crates/bose-connect-gui
 │   ├── app
 │   │   ├── model.rs    AppModel (single source of truth)
 │   │   ├── view.rs     widget tree assembly
-│   │   ├── widgets.rs  pure functions that paint AdwToolbarView
-│   │   └── component.rs Relm4 Component scaffold (no Widget relm4 lifecycle yet)
+│   │   └── widgets.rs  pure functions that paint AdwToolbarView
 │   ├── services
-│   │   ├── device.rs   DeviceService trait + MockService + RealService stub
-│   │   ├── state.rs    PersistedState + 4 Profiles (Focus/Travel/Home/Quiet)
-│   │   ├── tray.rs     KStatusNotifierItem scaffold
-│   │   ├── notifications.rs  notify-rust → org.freedesktop.Notifications
-│   │   ├── media_player.rs   MPRIS state holder
-│   │   └── bluetooth.rs     BlueZ D-Bus scaffold
+│   │   ├── device.rs        DeviceService trait + MockService + RealService stub
+│   │   ├── state.rs         PersistedState + 4 Profiles (Focus/Travel/Home/Quiet)
+│   │   ├── tray.rs          Hand-rolled StatusNotifierItem via gio::DBus
+│   │   ├── bluetooth.rs     Hand-rolled BlueZ discovery via gio::DBus
+│   │   ├── notifications.rs notify-rust → org.freedesktop.Notifications
+│   │   └── media_player.rs  MPRIS state holder
 │   ├── i18n            label helpers
 │   └── transport.rs    in-process BoseIo simulator with battery-drain tick
 └── resources
@@ -37,7 +36,7 @@ cargo build --workspace --all-targets          # entire workspace
 cargo run -p bose-connect-gui                   # interactive launch
 cargo run -p bose-connect-gui -- --headless      # smoke: writes
                                                # /tmp/bose-connect-gui.smoke
-cargo run -p bose-connect-gui -- --dump-tree    # 297-line widget tree dump
+cargo run -p bose-connect-gui -- --dump-tree    # widget tree dump
 
 # Release build (stripped, ready for distribution).
 cargo build --workspace --release --locked
@@ -50,7 +49,6 @@ cargo build --workspace --release --locked
 
 ```bash
 # 1) Run in headless mode and check the marker.
-RUST_LOG=info $(cargo metadata --no-deps --format-value -q | head -1)
 cargo build -p bose-connect-gui --bin bose-connect-gui
 RUST_LOG=info target/debug/bose-connect-gui --headless --run-secs 7 \
     --mock-tick-ms 250 --low-battery-test
@@ -60,7 +58,13 @@ RUST_LOG=info target/debug/bose-connect-gui --headless --run-secs 7 \
 dbus-monitor --session \
     "interface='org.freedesktop.Notifications',member='Notify'"
 
-# 3) Verify registration on the D-Bus session bus.
+# 3) Verify the StatusNotifierItem registered with the KDE
+#    Plasma watcher on the session bus.
+dbus-monitor --session \
+    "interface='org.kde.StatusNotifierWatcher'" 2>&1 | tee /tmp/sni.log
+# → expect a `Register` call on the watcher
+
+# 4) Verify registration of our application on the D-Bus session bus.
 gdbus call --session --dest org.freedesktop.DBus --object-path / \
     --method org.freedesktop.DBus.ListNames | grep airvzxf
 ```
@@ -85,6 +89,15 @@ gdbus call --session --dest org.freedesktop.DBus --object-path / \
   `dbus-monitor` (verified end-to-end on this host).
 * `com.airvzxf.bose-connect-gui` registered on the D-Bus session
   bus as a `gtk::Application` (verified with `gdbus call … ListNames`).
+* `org.kde.StatusNotifierItem-<pid>-1` registered as the KDE
+  Plasma tray icon, hand-rolled on `gio::DBus`. The watcher
+  picks the icon up after a real `Register` call captured by
+  `dbus-monitor --session interface='org.kde.StatusNotifierWatcher'`.
+* BlueZ (`org.bluez` over the **system** bus) is queried once at
+  startup via `GetManagedObjects`, plus live updates from
+  `InterfacesAdded` / `InterfacesRemoved`. The Bose Connect
+  service UUID `0000fddd-0000-1000-8000-00805f9b34fb` is used
+  to flag Bose candidates in the discover list.
 * Custom icons compiled into the binary via `glib-build-tools`
   (hicolor + symbolic SVG).
 * CSS injected at startup from the GResource bundle, so the desktop
@@ -95,15 +108,14 @@ gdbus call --session --dest org.freedesktop.DBus --object-path / \
 
 ## Deferred to a follow-up PR
 
-* `ksni`-backed KDE Plasma tray icon: the `services::tray`
-  scaffolding is in place; the actual `ksni::TrayService::spawn`
-  wiring is gated on being able to keep `gtk4-sys` pinned across
-  the workspace.
-* `MediaPlayer2` D-Bus object via `zbus_macros`.
-* `BlueZ` device-discovery scan via `org.freedesktop.DBus.ObjectManager`.
 * `RealService::connect` — the public surface is laid out; the
   RFCOMM open + `init_connection` round-trip is deliberately
   stubbed so the GUI builds without a real RFCOMM socket.
+* An active Bluetooth scan must be triggered once after
+  `StartDiscovery` is called; today the discovery list
+  populates from `GetManagedObjects` at startup, but a
+  user-driven "Scan" button requires the GTK button to be
+  wired into `BluetoothDiscovery::start_scan()`.
 
 The protocol module `bose_connect::protocol::*` is untouched, so the
 on-wire fidelity of the wired transport stays byte-for-byte identical

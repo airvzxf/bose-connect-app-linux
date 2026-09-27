@@ -27,6 +27,31 @@ under a Wayland or X11 session, then capture the result with
 `grim` (Wayland) or `scrot` (X11). The PPM/PNG here is a
 contract test, not a marketing screenshot.
 
+## Live tray icon and BlueZ discovery surface
+
+The PPM/PNG artefacts above only paint the widget tree. In a
+real KDE Plasma 6 session the binary additionally:
+
+- registers a `StatusNotifierItem-<pid>-1` with
+  `org.kde.StatusNotifierWatcher` (hand-rolled on `gio::DBus`,
+  ~250 lines in `services/tray.rs`). Clicking the icon calls
+  `Activate(int, int)` which the GUI forwards into
+  `AppMsg::TrayEvent(Activate)`.
+- walks the `org.bluez` ObjectManager at startup
+  (`GetManagedObjects`) and subscribes to `InterfacesAdded` /
+  `InterfacesRemoved` for live updates. The Bose Connect
+  service UUID `0000fddd-0000-1000-8000-00805f9b34fb` flags
+  Bose candidates in the discover list.
+
+To capture the SNI Register call into a `dbus-monitor` log,
+run the binary under a session bus that has the watcher
+running:
+
+```bash
+dbus-monitor --session \
+    "interface='org.kde.StatusNotifierWatcher'" 2>&1 | tee /tmp/sni.log
+```
+
 ## Regenerating
 
 ```bash
