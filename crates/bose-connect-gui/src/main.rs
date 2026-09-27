@@ -81,6 +81,17 @@ fn parse_cli() -> CliArgs {
                 println!(
                     "  --low-battery-test       Seed mock at 10 %% with fast tick; emits libnotify"
                 );
+                println!("  --version, -V             Print version and exit");
+                println!("  --dump-tree               Print the GTK widget tree to stdout");
+                std::process::exit(0);
+            }
+            "-V" | "--version" => {
+                println!(
+                    "{} {} ({})",
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION"),
+                    env!("CARGO_PKG_AUTHORS")
+                );
                 std::process::exit(0);
             }
             other => eprintln!("warning: unknown argument: {other}"),
