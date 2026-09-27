@@ -25,7 +25,7 @@ nix = { version = "0.29", default-features = false, features = ["socket", "poll"
 thiserror = "1"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-cbindgen = "0.27"
+cbindgen = "0.29"
 
 # Crate-specific paths
 bose-connect = { path = "crates/bose-connect", version = "0.1.0" }
