@@ -101,6 +101,15 @@ fn main() -> anyhow::Result<()> {
     let cli_clone = cli.clone();
     let service_for_activate = _service.clone();
     app.connect_activate(move |application| {
+        // libadwaita replaces the GTK dark-mode setting with
+        // its own `AdwStyleManager::color-scheme`. Setting the
+        // legacy property on `GtkSettings` triggers an
+        // `Adwaita-WARNING` at startup; we set the modern one
+        // here so the application follows the system preference
+        // without the warning.
+        let style = adw::StyleManager::default();
+        style.set_color_scheme(adw::ColorScheme::Default);
+
         activate(
             &app_for_app,
             application.clone(),
