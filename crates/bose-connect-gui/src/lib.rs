@@ -1,18 +1,19 @@
 //! # bose-connect-gui
 #![deny(rustdoc::broken_intra_doc_links, rustdoc::invalid_html_tags)]
 //!
-//! GTK4 + Relm4 desktop application that wraps the
-//! [`bose_connect`] library and adds:
+//! GTK4 desktop application that wraps the [`bose_connect`]
+//! library and adds:
 //!
 //! * A modern libadwaita UI with a hero battery readout, three
 //!   setting tiles, paired-devices panel, profile bar, and an
 //!   activity log.
 //!
-//! * A KDE Plasma / freedesktop StatusNotifierItem tray icon.
+//! * A KDE Plasma / freedesktop StatusNotifierItem tray icon,
+//!   wired directly through `gio::DBus` so we don't have to
+//!   depend on the `ksni` crate's glib-0.20 pin.
 //!
-//! * A D-Bus MediaPlayer2 service so KDE Connect, the Plasma
-//!   volume widget, and any other MPRIS-aware tool can react to
-//!   the headphone state.
+//! * BlueZ device discovery, also over `gio::DBus`, that lets
+//!   the user pick an address without leaving the app.
 //!
 //! * Persistent state (last-connected address, active profile) under
 //!   `~/.config/bose-connect/state.json`.
@@ -23,8 +24,8 @@
 //!   ┌────────────────────────────────────────────────────────────┐
 //!   │                    GTK4 / libadwaita UI                    │
 //!   │                                                            │
-//!   │          AppModel  ←→  AppComponent  ←→  Widgets          │
-//!   │                       (Relm4)                              │
+//!   │          AppModel  ←→  view::build_root  ←→  Widgets     │
+//!   │                       (flume::Sender<AppMsg>)              │
 //!   └────────────────────────────┬───────────────────────────────┘
 //!                                │ async commands
 //!                                ▼
@@ -39,7 +40,9 @@
 //! The mock service is the default; the real service wires to a
 //! `BoseDevice` over RFCOMM and is gated behind the
 //! `real-bluetooth` cargo feature so the binary builds on systems
-//! that don't have `libbluetooth-dev`.
+//! that don't have `libbluetooth-dev`. The tray icon and the
+//! Bluetooth discovery both live in `services::tray` and
+//! `services::bluetooth`, hand-rolled on top of `gio::DBus`.
 //!
 //! ## Screen tour
 //!

@@ -229,13 +229,10 @@ fn activate(
     model.log_info("Mock transport active");
 
     // Set up a self-peeking channel so widgets can dispatch
-    // messages back to the AppModel without spinning a separate
-    // Relm4 component. We use flume here because that's what
-    // Relm4's `Sender` accepts via `From`.
-    let (raw_tx, rx) = flume::unbounded::<AppMsg>();
-    let tx: relm4::Sender<AppMsg> = relm4::Sender::from(raw_tx);
-
-    // Drive the model from the message pump.
+    // messages back to the AppModel. We use a plain `flume`
+    // sender here because the GUI is a one-writer / one-reader
+    // pump.
+    let (tx, rx) = flume::unbounded::<AppMsg>();
     let model_holder: std::rc::Rc<std::cell::RefCell<AppModel>> =
         std::rc::Rc::new(std::cell::RefCell::new(model));
     let model_for_pump = model_holder.clone();
@@ -283,7 +280,7 @@ fn activate(
             let g = tick_model.borrow();
             g.history.last().copied().unwrap_or(100)
         };
-        tick_tx.emit(AppMsg::BatteryTick(0));
+        let _ = tick_tx.send(AppMsg::BatteryTick(0));
         // Mirror the latest battery into the history.
         let now = live_battery
             .as_ref()
@@ -345,11 +342,32 @@ fn activate(
     let _ = application;
 
     if cli.headless || cli.run_secs.is_some() {
+        // `application` is the owned `adw::Application`; cloning
+        // it bumps the underlying `glib::Object` refcount so we
+        // can move the clone into the `'static` closure below
+        // without dropping the only reference.
+        let app_for_quit = application.clone();
         let screenshot = cli.screenshot.clone();
         let run_for = cli.run_secs.unwrap_or(0);
-        // Schedule the screenshot on the GTK main thread before
-        // crossing to tokio. `gtk::Widget` isn't `Send`, so it
-        // can't live inside an `async` future.
+        // Compute the exit delay up-front so the closure can be
+        // moved onto the glib main context (where calling
+        // `app.quit()` is safe). The smoke test cases need at
+        // least 7 s when the low-battery mock is doing its
+        // 250 ms tick so the threshold-crossing fires before
+        // the binary shuts down.
+        let delay = if cli.low_battery_test {
+            std::time::Duration::from_secs(run_for.max(7))
+        } else if run_for > 0 {
+            std::time::Duration::from_secs(run_for)
+        } else {
+            std::time::Duration::from_millis(700)
+        };
+        let headless = cli.headless;
+
+        // The screenshot must run on the glib main thread — its
+        // widget tree isn't `Send`. We schedule a separate
+        // one-shot for the screenshot path and a one-shot for the
+        // exit / smoke marker so each runs on the right context.
         if let Some(path) = screenshot.clone() {
             let widget = root_widget.clone();
             let path_clone = std::path::PathBuf::from(path);
@@ -357,35 +375,25 @@ fn activate(
                 capture_widget_ppm(&widget, &path_clone);
             });
         }
-        runtime().spawn(async move {
-            let delay = if cli.low_battery_test {
-                // Stay alive long enough for the mock ticker to
-                // drop battery from 10 % through 5 % (low-critical
-                // boundary) at least once.
-                std::time::Duration::from_secs(run_for.max(7))
-            } else if run_for > 0 {
-                std::time::Duration::from_secs(run_for)
-            } else {
-                std::time::Duration::from_millis(700)
-            };
-            tokio::time::sleep(delay).await;
+
+        // Exit / smoke marker — also on the glib main thread so
+        // we can call `app.quit()`. After `app.quit()` returns,
+        // the GTK main loop ends but the runtime's worker
+        // threads and the `spawn_local` pump may still be alive
+        // long enough to keep the process around; we follow up
+        // with a hard `exit(0)` so the smoke test is reliable
+        // on CI.
+        glib::source::timeout_add_local_once(delay, move || {
             if screenshot.is_some() {
                 tracing::info!("screenshot scheduled; see stdout for the path it landed at");
             }
-            if cli.headless {
+            if headless {
                 tracing::info!("smoke test: window painted, exiting");
             } else {
                 tracing::info!("smoke test: run_secs elapsed, exiting");
             }
             let _ = std::fs::write("/tmp/bose-connect-gui.smoke", b"ok\n");
-            // `main_application().quit()` schedules the main loop
-            // to terminate on the next iteration, but the
-            // background tasks (timer + spawn_local pump) may
-            // still hold references and keep the binary alive
-            // past the next loop tick. Use a hard exit so the
-            // smoke test is reliable on CI without leaking
-            // processes.
-            relm4::main_application().quit();
+            app_for_quit.quit();
             std::thread::sleep(std::time::Duration::from_millis(50));
             std::process::exit(0);
         });

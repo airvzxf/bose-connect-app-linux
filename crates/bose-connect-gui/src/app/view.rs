@@ -1,26 +1,24 @@
-//! Helpers that construct the Relm4 widget tree.
+//! Helpers that construct the widget tree.
 
 use adw;
 use gtk::prelude::*;
 use gtk::{Box as GtkBox, Orientation};
-use relm4::Sender;
 
 use crate::app::model::{AppModel, AppMsg};
 use crate::app::widgets::{
     ActivityLog, ConnectionBanner, HeroCard, NoiseCancellingTile, PairedDevicesPanel, ProfilesBar,
-    QuietModePill, SenderHandle,
+    QuietModePill, SenderExt,
 };
 
 /// Build the top-level widget for the main window.
 pub fn build_root(
     app: &adw::Application,
     model: &AppModel,
-    sender: &Sender<AppMsg>,
+    sender: &flume::Sender<AppMsg>,
 ) -> gtk::Widget {
-    let handle = SenderHandle::new(sender.clone());
     let toolbar_view = adw::ToolbarView::new();
 
-    let top_bar = build_top_bar(app, model, &handle);
+    let top_bar = build_top_bar(app, model, sender);
     toolbar_view.add_top_bar(&top_bar);
 
     let content = GtkBox::new(Orientation::Vertical, 0);
@@ -39,13 +37,13 @@ pub fn build_root(
 
     content.append(&ConnectionBanner::render(model));
     content.append(&HeroCard::render(model));
-    content.append(&build_quick_settings_row(model, &handle));
+    content.append(&build_quick_settings_row(model, sender));
 
     let split = GtkBox::new(Orientation::Horizontal, 16);
     split.set_margin_top(16);
     split.set_hexpand(true);
     split.set_homogeneous(true);
-    split.append(&ProfilesBar::render(model, &handle));
+    split.append(&ProfilesBar::render(model, sender));
     split.append(&PairedDevicesPanel::render(model));
     content.append(&split);
 
@@ -57,7 +55,7 @@ pub fn build_root(
 pub fn build_top_bar(
     app: &adw::Application,
     model: &AppModel,
-    sender: &SenderHandle,
+    sender: &flume::Sender<AppMsg>,
 ) -> adw::HeaderBar {
     let bar = adw::HeaderBar::new();
     let title_widget = adw::WindowTitle::new("Bose Connect", "");
@@ -75,7 +73,7 @@ pub fn build_top_bar(
     refresh_button.set_tooltip_text(Some("Re-read every setting from the device"));
     let s = sender.clone();
     refresh_button.connect_clicked(move |_| {
-        s.send(AppMsg::Refresh);
+        s.send_app(AppMsg::Refresh);
     });
     bar.pack_end(&refresh_button);
 
@@ -84,7 +82,7 @@ pub fn build_top_bar(
     bar
 }
 
-fn build_quick_settings_row(model: &AppModel, sender: &SenderHandle) -> GtkBox {
+fn build_quick_settings_row(model: &AppModel, sender: &flume::Sender<AppMsg>) -> GtkBox {
     let row = GtkBox::new(Orientation::Horizontal, 16);
     row.set_margin_top(12);
     row.set_hexpand(true);

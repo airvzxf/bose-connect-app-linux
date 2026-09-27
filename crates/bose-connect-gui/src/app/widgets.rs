@@ -1,5 +1,5 @@
 //! Widget sub-trees — pure functions that take `&AppModel` and a
-//! send-capable handle and return a fully-formed widget.
+//! message-sending handle and return a fully-formed widget.
 //!
 //! We keep them in a single `widgets.rs` rather than a folder
 //! because they share a lot of helpers (the `tile` factory, the
@@ -9,29 +9,22 @@
 use adw;
 use gtk::prelude::*;
 use gtk::{glib, Box as GtkBox, Button, Label, ListBox, ListBoxRow, Orientation, ToggleButton};
-use relm4::Sender;
 
 use crate::app::model::{AppModel, AppMsg, ConnectionState, LogLevel};
 use crate::i18n;
 
-/// Light-weight handle widgets can use to send messages to the
-/// top-level component. We intentionally stay away from capturing
-/// the full `ComponentSender<AppModel>` (which has additional
-/// methods that need `Worker` impls and `Send` bounds) — this
-/// newtype is just a `Sender<AppMsg>` plus an `AppModel` alias
-/// for ergonomic method signatures on the widget functions.
-#[derive(Clone)]
-pub struct SenderHandle {
-    sender: Sender<AppMsg>,
+/// Convenience extension so widget code stays readable. The
+/// GUI is a single producer (`flume::Sender`) on top of
+/// `glib::MainContext::spawn_local`, so any error here means the
+/// pump is gone — the GUI is tearing down. Swallowing the error
+/// keeps the closure bodies one-liners.
+pub trait SenderExt {
+    fn send_app(&self, msg: AppMsg);
 }
 
-impl SenderHandle {
-    pub fn new(sender: Sender<AppMsg>) -> Self {
-        Self { sender }
-    }
-
-    pub fn send(&self, msg: AppMsg) {
-        self.sender.emit(msg);
+impl SenderExt for flume::Sender<AppMsg> {
+    fn send_app(&self, msg: AppMsg) {
+        let _ = self.send(msg);
     }
 }
 
@@ -267,7 +260,7 @@ fn build_sparkline(history: &[u8]) -> GtkBox {
 pub struct NoiseCancellingTile;
 
 impl NoiseCancellingTile {
-    pub fn render_tile_nc(model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
+    pub fn render_tile_nc(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
         let cap = model.capabilities();
         let tile = tile("tile-nc");
         tile.append(&tile_header(
@@ -291,15 +284,21 @@ impl NoiseCancellingTile {
         let cb = {
             let s = sender.clone();
             move |v: &str| match v {
-                "off" => s.send(AppMsg::SetNoiseCancelling(
-                    bose_connect::NoiseCancelling::Off,
-                )),
-                "low" => s.send(AppMsg::SetNoiseCancelling(
-                    bose_connect::NoiseCancelling::Low,
-                )),
-                "high" => s.send(AppMsg::SetNoiseCancelling(
-                    bose_connect::NoiseCancelling::High,
-                )),
+                "off" => {
+                    s.send_app(AppMsg::SetNoiseCancelling(
+                        bose_connect::NoiseCancelling::Off,
+                    ));
+                }
+                "low" => {
+                    s.send_app(AppMsg::SetNoiseCancelling(
+                        bose_connect::NoiseCancelling::Low,
+                    ));
+                }
+                "high" => {
+                    s.send_app(AppMsg::SetNoiseCancelling(
+                        bose_connect::NoiseCancelling::High,
+                    ));
+                }
                 _ => {}
             }
         };
@@ -319,7 +318,7 @@ impl NoiseCancellingTile {
         tile.upcast::<gtk::Widget>()
     }
 
-    pub fn render_tile_voice(model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
+    pub fn render_tile_voice(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
         let tile = tile("tile-voice");
         tile.append(&tile_header("Voice prompts", "spoken status updates"));
 
@@ -340,7 +339,7 @@ impl NoiseCancellingTile {
         switch.set_active(active);
         let s = sender.clone();
         switch.connect_state_set(move |_, state| {
-            s.send(AppMsg::SetVoicePrompts(state));
+            s.send_app(AppMsg::SetVoicePrompts(state));
             glib::Propagation::Proceed
         });
         row.append(&switch);
@@ -348,7 +347,7 @@ impl NoiseCancellingTile {
         tile.upcast::<gtk::Widget>()
     }
 
-    pub fn render_tile_language(model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
+    pub fn render_tile_language(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
         let tile = tile("tile-lang");
         tile.append(&tile_header("Language", "voice-prompt language"));
 
@@ -394,7 +393,7 @@ impl NoiseCancellingTile {
             row.set_child(Some(&h));
             row.set_activatable(true);
             row.connect_activate(move |_| {
-                s.send(AppMsg::SetLanguage {
+                s.send_app(AppMsg::SetLanguage {
                     language: lang,
                     voice_prompts: true,
                 });
@@ -411,7 +410,7 @@ impl NoiseCancellingTile {
         tile.upcast::<gtk::Widget>()
     }
 
-    pub fn render_tile_auto_off(model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
+    pub fn render_tile_auto_off(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
         let tile = tile("tile-auto-off");
         tile.append(&tile_header("Auto-off", "power saving"));
 
@@ -448,7 +447,7 @@ impl NoiseCancellingTile {
             let choice = *choice;
             let s = sender.clone();
             r.connect_activate(move |_| {
-                s.send(AppMsg::SetAutoOff(choice));
+                s.send_app(AppMsg::SetAutoOff(choice));
             });
             list.append(&r);
         }
@@ -468,7 +467,7 @@ impl NoiseCancellingTile {
 pub struct ProfilesBar;
 
 impl ProfilesBar {
-    pub fn render(_model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
+    pub fn render(_model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
         let wrap = tile("profiles");
         wrap.append(&tile_header("Profiles", "one-click combinations"));
 
@@ -494,7 +493,7 @@ impl ProfilesBar {
             let profile = *profile;
             let s = sender.clone();
             r.connect_activate(move |_| {
-                s.send(AppMsg::ApplyProfile(profile));
+                s.send_app(AppMsg::ApplyProfile(profile));
             });
             list.append(&r);
         }
@@ -638,7 +637,7 @@ fn format_address(addr: bose_connect::BdAddr) -> String {
 pub struct QuietModePill;
 
 impl QuietModePill {
-    pub fn render(model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
+    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
         let btn = Button::with_label(if model.quiet_mode {
             "  Quiet mode ON  "
         } else {
@@ -650,7 +649,7 @@ impl QuietModePill {
         }
         let s = sender.clone();
         btn.connect_clicked(move |_| {
-            s.send(AppMsg::ToggleQuietMode);
+            s.send_app(AppMsg::ToggleQuietMode);
         });
         btn.upcast::<gtk::Widget>()
     }
