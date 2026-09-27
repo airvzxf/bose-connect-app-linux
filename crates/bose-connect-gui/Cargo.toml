@@ -46,6 +46,7 @@ parking_lot = "0.12"
 rand = "0.8"
 flume = "0.12"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+cairo-rs = "0.22"
 
 [features]
 # By default the GUI ships with the *real* Bluetooth transport. In

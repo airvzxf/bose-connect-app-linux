@@ -315,6 +315,16 @@ fn activate(
     if cli.headless || cli.run_secs.is_some() {
         let screenshot = cli.screenshot.clone();
         let run_for = cli.run_secs.unwrap_or(0);
+        // Schedule the screenshot on the GTK main thread before
+        // crossing to tokio. `gtk::Widget` isn't `Send`, so it
+        // can't live inside an `async` future.
+        if let Some(path) = screenshot.clone() {
+            let widget = root_widget.clone();
+            let path_clone = std::path::PathBuf::from(path);
+            glib::source::timeout_add_local_once(Duration::from_millis(1500), move || {
+                capture_widget_ppm(&widget, &path_clone);
+            });
+        }
         runtime().spawn(async move {
             let delay = if cli.low_battery_test {
                 // Stay alive long enough for the mock ticker to
@@ -327,8 +337,8 @@ fn activate(
                 std::time::Duration::from_millis(700)
             };
             tokio::time::sleep(delay).await;
-            if let Some(path) = screenshot {
-                tracing::info!("smoke test: would write screenshot to {path}");
+            if screenshot.is_some() {
+                tracing::info!("screenshot scheduled; see stdout for the path it landed at");
             }
             if cli.headless {
                 tracing::info!("smoke test: window painted, exiting");
@@ -478,4 +488,125 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
         }
         _ => {}
     }
+}
+
+/// Best-effort screenshot: render the widget tree onto an
+/// off-screen `Snapshot`, paint the resulting `gsk::RenderNode`
+/// onto a `cairo::ImageSurface`, then dump the premultiplied
+/// ARGB32 bytes to disk as PPM.
+///
+/// Why PPM and not PNG? `cairo-rs 0.22` does not re-export
+/// `Surface::write_to_png` for every feature combination, and the
+/// `png` crate's public API churns between releases; PPM is plain
+/// enough to write by hand (header line + raw RGB), avoiding yet
+/// another moving target. ImageMagick / `display` / `gimp` open
+/// PPM files out of the box.
+///
+/// Triggered only by `--screenshot PATH`; falls back silently to a
+/// log line on any error.
+fn capture_widget_ppm(widget: &gtk::Widget, path: &std::path::Path) {
+    use std::fs;
+    use std::io::Write as _;
+
+    let width = 1180u32;
+    let height = 760u32;
+
+    // Off-screen image surface and cairo context.
+    let surface =
+        match cairo::ImageSurface::create(cairo::Format::ARgb32, width as i32, height as i32) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(target: "screenshot", "cairo surface: {e:?}");
+                return;
+            }
+        };
+    let cr = match cairo::Context::new(&surface) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(target: "screenshot", "cairo context: {e:?}");
+            return;
+        }
+    };
+
+    // Fill the background with the libadwaita canvas color
+    // (`Breeze` here) so transparent pixels don't survive.
+    cr.set_source_rgba(0.93, 0.94, 0.96, 1.0);
+    cr.paint().ok();
+
+    // Render the widget into a fresh `Snapshot` and paint the
+    // resulting `RenderNode` onto the cairo surface.
+    let snapshot = gtk::Snapshot::new();
+    widget.snapshot_child(widget, &snapshot);
+    if let Some(node) = snapshot.to_node() {
+        node.draw(&cr);
+    } else {
+        tracing::warn!(target: "screenshot", "snapshot had no RenderNode");
+    }
+    drop(cr);
+
+    // Read the raw premultiplied ARGB32 buffer.
+    let raw = match surface.take_data() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(target: "screenshot", "could not read surface data: {e:?}");
+            return;
+        }
+    };
+    let raw_pixels: &[u8] = raw.as_ref();
+    let row_bytes = width as usize * 4;
+    if raw_pixels.len() < row_bytes * height as usize {
+        tracing::warn!(target: "screenshot", "raw pixel buffer too small");
+        return;
+    }
+
+    let mut file = match fs::File::create(path) {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::warn!(target: "screenshot", "open {}: {e}", path.display());
+            return;
+        }
+    };
+    // PPM header (P6 = binary RGB; cairo gives us BGRA premultiplied,
+    // so after un-premultiplying per row we emit BGR as PPM expects).
+    let header = format!("P6\n{width} {height}\n255\n");
+    if let Err(e) = file.write_all(header.as_bytes()) {
+        tracing::warn!(target: "screenshot", "write header: {e}");
+        return;
+    }
+    let row_pixels = row_bytes;
+    let mut buf: Vec<u8> = Vec::with_capacity(width as usize * 3 * height as usize);
+    for chunk in raw_pixels.chunks_exact(row_pixels).take(height as usize) {
+        for px in chunk.chunks_exact(4) {
+            let b = px[0];
+            let g = px[1];
+            let r = px[2];
+            let a = px[3];
+            // Un-premultiply if needed; PPM ignores alpha so the
+            // fastest path for fully opaque / transparent pixels
+            // is to emit directly.
+            let (rr, gg, bb) = if a == 0 || a == 255 {
+                (r, g, b)
+            } else {
+                let inv = 255u32 * 255 / a as u32;
+                let rr = ((r as u32 * inv) / 255).min(255) as u8;
+                let gg = ((g as u32 * inv) / 255).min(255) as u8;
+                let bb = ((b as u32 * inv) / 255).min(255) as u8;
+                (rr, gg, bb)
+            };
+            // PPM `P6` writes RGB in big-endian: order is R, G, B.
+            // (Many viewers also accept BGR because PPM is barely
+            // a standard, but `display` and ImageMagick parse both.)
+            buf.extend_from_slice(&[rr, gg, bb]);
+        }
+    }
+    if let Err(e) = file.write_all(&buf) {
+        tracing::warn!(target: "screenshot", "write body: {e}");
+        return;
+    }
+    tracing::info!(
+        target: "screenshot",
+        "wrote screenshot to {} ({} bytes, PPM P6)",
+        path.display(),
+        buf.len()
+    );
 }

@@ -272,6 +272,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bose-connect",
+ "cairo-rs",
  "chrono",
  "directories",
  "flume",
