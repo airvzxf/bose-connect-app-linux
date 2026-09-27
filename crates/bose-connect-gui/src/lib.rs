@@ -1,7 +1,8 @@
 //! # bose-connect-gui
+#![deny(rustdoc::broken_intra_doc_links, rustdoc::invalid_html_tags)]
 //!
 //! GTK4 + Relm4 desktop application that wraps the
-//! [`bose_connect`](bose_connect) library and adds:
+//! [`bose_connect`] library and adds:
 //!
 //! * A modern libadwaita UI with a hero battery readout, three
 //!   setting tiles, paired-devices panel, profile bar, and an
