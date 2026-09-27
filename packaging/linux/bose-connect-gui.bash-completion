@@ -1,0 +1,33 @@
+# bash-completion for the `bose-connect-gui` binary
+# Install to /usr/share/bash-completion/completions/bose-connect-gui
+# (or ~/.local/share/bash-completion/completions/bose-connect-gui for
+# user-only). Then `bose-connect-gui --<TAB>` works.
+_bose_connect_gui() {
+    local cur prev opts
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    opts="--mock --real --real-bluetooth --headless --dump-tree
+          --help -h --version -V
+          --screenshot --address --mock-tick-ms --run-secs
+          --low-battery-test"
+
+    case "${prev}" in
+        --screenshot)
+            # File path completion is the shell's default; nothing
+            # else to do here.
+            return 0
+            ;;
+        --address|--mock-tick-ms|--run-secs)
+            # These all take a value; let the shell complete the
+            # argument normally.
+            return 0
+            ;;
+    esac
+
+    if [[ "${cur}" == -* ]] ; then
+        COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+        return 0
+    fi
+}
+complete -F _bose_connect_gui bose-connect-gui

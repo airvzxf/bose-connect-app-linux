@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream / metainfo metadata for the Bose Connect for Linux GUI.
+  KDE Discover, GNOME Software, and elementary AppCenter all read
+  this file from
+  /usr/share/metainfo/com.airvzxf.bose-connect-gui.metainfo.xml
+  to populate the "About" page in their application launchers.
+-->
+<component type="desktop-application">
+  <id>com.airvzxf.bose-connect-gui</id>
+  <name>Bose Connect for Linux</name>
+  <summary>Drive a Bose QuietComfort or SoundLink over RFCOMM</summary>
+  <summary xml:lang="es">Controla unos audífonos Bose QuietComfort o SoundLink sobre RFCOMM</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer_name>Israel Roldan</developer_name>
+  <update_contact>israel.alberto.rv@gmail.com</update_contact>
+  <url type="homepage">https://github.com/airvzxf/bose-connect-app-linux</url>
+  <url type="bugtracker">https://github.com/airvzxf/bose-connect-app-linux/issues</url>
+  <description>
+    <p>
+      A reverse-engineered Linux port of the Bose Connect app
+      originally forked from Denton-L/based-connect. This package
+      is the GTK4 + libadwaita + Relm4 front-end that wraps the
+      upstream <code>bose_connect</code> RFCOMM library.
+    </p>
+    <p>
+      Features include a hero battery card with sparkline history,
+      four setting tiles (noise cancelling, voice prompts, language,
+      auto-off), four one-click Profiles (Focus, Travel, Home, Quiet),
+      a paired-devices panel, and a live activity log. KDE Plasma 6
+      notifications are wired through libnotify; persistent state
+      lives at <code>~/.config/bose-connect/state.json</code>.
+    </p>
+  </description>
+  <categories>
+    <category>Audio</category>
+    <category>Settings</category>
+  </categories>
+  <keywords>
+    <keyword>Bose</keyword>
+    <keyword>Bluetooth</keyword>
+    <keyword>Headphones</keyword>
+    <keyword>QuietComfort</keyword>
+    <keyword>SoundLink</keyword>
+    <keyword>RFCOMM</keyword>
+    <keyword>libadwaita</keyword>
+  </keywords>
+  <launchable type="desktop-id">com.airvzxf.bose-connect-gui.desktop</launchable>
+  <url type="donation">https://github.com/sponsors/airvzxf</url>
+  <provides>
+    <binary>bose-connect-gui</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-09-27" urgency="medium">
+      <description>
+        <p>First GUI release. Hero battery card, four setting tiles, four profiles, paired-devices panel, and a live activity log. KDE Plasma 6 libnotify integration verified end-to-end. Tray icon and BlueZ discovery are scaffolded; full D-Bus bindings land in a follow-up.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">none</content_attribute>
+    <content_attribute id="violence-fantasy">none</content_attribute>
+    <content_attribute id="violence-realistic">none</content_attribute>
+    <content_attribute id="violence-bloodshed">none</content_attribute>
+    <content_attribute id="violence-sexual">none</content_attribute>
+    <content_attribute id="drugs-alcohol">none</content_attribute>
+    <content_attribute id="drugs-narcotics">none</content_attribute>
+    <content_attribute id="drugs-tobacco">none</content_attribute>
+    <content_attribute id="sex-nudity">none</content_attribute>
+    <content_attribute id="language-profanity">none</content_attribute>
+  </content_rating>
+</component>
