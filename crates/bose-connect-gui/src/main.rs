@@ -256,17 +256,39 @@ fn activate(
     // critical thresholds (the KDE Plasma info-bar via libnotify).
     let tick_model = model_holder.clone();
     let tick_tx = tx.clone();
-    glib::timeout_add_local(Duration::from_millis(TICK_INTERVAL_MS), move || {
+    // Use a tighter tick when running the low-battery smoke so
+    // the threshold-crossing fires before the headless timer
+    // shuts the binary down. The default 4 s cadence is right
+    // for an interactive session; the mock drains at 250 ms in
+    // the smoke path, so the GUI needs to sample at least that
+    // often to keep the sparkline live.
+    let tick_period_ms: u64 = if cli.low_battery_test {
+        250
+    } else {
+        TICK_INTERVAL_MS
+    };
+    let tick_service = _service.clone();
+    glib::timeout_add_local(Duration::from_millis(tick_period_ms), move || {
+        // Pull the live battery from the service so the mock's
+        // background drain actually reaches the GUI. The model
+        // only knows about the last *refreshed* battery; the
+        // mock can change faster than the user can press
+        // Refresh, and we want the threshold-crossing to fire
+        // without manual interaction.
+        let live_battery = tick_service
+            .refresh()
+            .ok()
+            .map(|s| (s.battery, s.name.clone()));
         let prev = {
             let g = tick_model.borrow();
             g.history.last().copied().unwrap_or(100)
         };
         tick_tx.emit(AppMsg::BatteryTick(0));
         // Mirror the latest battery into the history.
-        let now = {
-            let snap = tick_model.borrow().snapshot.clone();
-            snap.map(|s| s.battery)
-        };
+        let now = live_battery
+            .as_ref()
+            .map(|(b, _)| *b)
+            .or_else(|| tick_model.borrow().snapshot.as_ref().map(|s| s.battery));
         if let Some(b) = now {
             {
                 let mut g = tick_model.borrow_mut();
@@ -290,6 +312,10 @@ fn activate(
                     _ => return glib::ControlFlow::Continue,
                 };
                 let title = "Bose Connect";
+                tracing::info!(
+                    target: "battery",
+                    "cross band {prev_band} -> {now_band} (battery={b}%); notifying"
+                );
                 let _ = Notifications::notify(title, body, level);
             }
         }
@@ -352,7 +378,16 @@ fn activate(
                 tracing::info!("smoke test: run_secs elapsed, exiting");
             }
             let _ = std::fs::write("/tmp/bose-connect-gui.smoke", b"ok\n");
+            // `main_application().quit()` schedules the main loop
+            // to terminate on the next iteration, but the
+            // background tasks (timer + spawn_local pump) may
+            // still hold references and keep the binary alive
+            // past the next loop tick. Use a hard exit so the
+            // smoke test is reliable on CI without leaking
+            // processes.
             relm4::main_application().quit();
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            std::process::exit(0);
         });
     }
 }
