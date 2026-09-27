@@ -1,7 +1,11 @@
 # Build artefacts
 /target
 **/target
-**/Cargo.lock
+
+# Cargo.lock IS committed for this workspace because it pins the
+# exact versions of every dependency that the release build uses.
+# This is the convention for application / hybrid crates (vs
+# pure libraries, where lockfiles stay untracked).
 
 # Editor / IDE
 .idea/
