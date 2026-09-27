@@ -14,13 +14,19 @@
 //! to evolve; this layer must not.
 
 use std::io::{Read, Write};
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::time::Duration;
-
-use nix::sys::socket::{socket, AddressFamily, SockFlag, SockType};
 
 use crate::error::{BoseError, BoseResult};
 use crate::types::{BdAddr, BOSE_CHANNEL};
+
+/// `BTPROTO_RFCOMM` is `3` on Linux/glibc. The `libc` crate does
+/// not export it (it's only available with the `extra_traits`
+/// feature on a Bluetooth-specific build, which stable Rust does
+/// not support). We hard-code the value here and document the
+/// source: `include/net/bluetooth/rfcomm.h` defines
+/// `#define BTPROTO_RFCOMM 3`.
+const BTPROTO_RFCOMM: libc::c_int = 3;
 
 /// `SO_SNDTIMEO` for the RFCOMM socket. Mirrors the C `send_timeout`.
 pub(crate) const SEND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -33,28 +39,34 @@ pub(crate) const RECEIVE_TIMEOUT: Duration = Duration::from_secs(1);
 /// `nix` crate does not expose it either.
 pub(crate) const AF_BLUETOOTH: libc::sa_family_t = 31;
 
-/// `struct sockaddr_rc` layout from `<bluetooth/rfcomm.h>`:
+/// `struct sockaddr_rc` layout from `<bluetooth/rfcomm.h>`. The
+/// field order on Linux/BlueZ is **NOT** what the Bose protocol
+/// uses internally — BlueZ defines it as:
 ///
 /// ```c
 /// struct sockaddr_rc {
 ///     sa_family_t    rc_family;   // u16 on Linux
-///     uint8_t        rc_channel;
 ///     bdaddr_t       rc_bdaddr;   // { uint8_t b[6]; }
+///     uint8_t        rc_channel;
 /// };
 /// ```
 ///
-/// The 10-byte layout is: family(2) + channel(1) + padding(1) +
-/// bdaddr(6). We pack it manually because `libc` does not expose
-/// this struct on stable Rust.
+/// Total: 10 bytes on x86_64 glibc (family 2 + bdaddr 6 + channel 1,
+/// padded by 1 byte for alignment). Note that `rc_bdaddr` comes
+/// **before** `rc_channel` — getting this wrong produces an
+/// `EINVAL` from `connect()` because the kernel reads `rc_channel`
+/// from the byte at offset 8, not offset 2 as one might guess
+/// from the Bose protocol's internal packet layouts.
 ///
-/// `#[repr(C)]` keeps the field order stable so the layout matches
-/// what `connect()` expects.
+/// We define the struct manually because `libc` does not expose
+/// `sockaddr_rc` on stable Rust. `#[repr(C)]` keeps the field
+/// order stable so the layout matches what `connect()` expects.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SockaddrRc {
     pub rc_family: libc::sa_family_t,
-    pub rc_channel: u8,
     pub rc_bdaddr: BdAddr,
+    pub rc_channel: u8,
 }
 
 /// A connected RFCOMM socket to a Bose headphone.
@@ -81,16 +93,20 @@ impl Connection {
         // 1. Parse the address. Mirrors `str2ba` validation.
         let addr = crate::address::parse_bdaddr_strict(address)?;
 
-        // 2. Open the RFCOMM socket. AF_BLUETOOTH / BTPROTO_RFCOMM
-        //    constants live in libc; nix's `AddressFamily` enum
-        //    carries AF_BLUETOOTH on Linux.
-        let fd: OwnedFd = socket(
-            AddressFamily::Bluetooth,
-            SockType::Stream,
-            SockFlag::empty(),
-            None, // protocol: 0 -> BTPROTO_RFCOMM is the only SOCK_STREAM option
-        )
-        .map_err(|e| BoseError::SocketOpen(e.into()))?;
+        // 2. Open the RFCOMM socket. We call `libc::socket`
+        //    directly because nix's `socket()` with `protocol =
+        //    None` can pass a value the kernel doesn't expect for
+        //    AF_BLUETOOTH, leading to a confusing `EINVAL` from
+        //    `connect()` even though the socket itself opens
+        //    fine. Hard-coding BTPROTO_RFCOMM (3) is the safe
+        //    path; AF_BLUETOOTH (31) is also passed directly so
+        //    future glibc renumbering is picked up automatically.
+        let raw_fd: RawFd =
+            unsafe { libc::socket(libc::AF_BLUETOOTH, libc::SOCK_STREAM, BTPROTO_RFCOMM) };
+        if raw_fd < 0 {
+            return Err(BoseError::SocketOpen(std::io::Error::last_os_error()));
+        }
+        let fd: OwnedFd = unsafe { OwnedFd::from_raw_fd(raw_fd) };
 
         // 3. Set per-IO timeouts. Mirrors the C `setsockopt` calls.
         set_timeout(&fd, SEND_TIMEOUT, "SO_SNDTIMEO")?;
@@ -216,13 +232,18 @@ fn set_timeout(fd: &OwnedFd, dur: Duration, which: &'static str) -> BoseResult<(
         tv_sec: secs,
         tv_usec: usecs,
     };
-    // SO_SNDTIMEO = 0x21, SO_RCVTIMEO = 0x20 on Linux/glibc.
-    // We hard-code the values to avoid relying on libc::SO_*
-    // constants (they are stable but easier to read in the wire
-    // log without a libc::SO_* import).
+    // Use libc's named constants rather than hard-coded numbers.
+    // Earlier versions of this code hard-coded 0x21 / 0x20 thinking
+    // those were SO_SNDTIMEO / SO_RCVTIMEO — they are actually
+    // SO_RCVBUFFORCE / SO_SNDBUFFORCE on Linux/glibc, which
+    // require CAP_NET_ADMIN. The kernel responds with EPERM to
+    // a normal user, which manifests as "Operation not permitted"
+    // and makes the whole connection fail. The libc constants
+    // (SO_SNDTIMEO = 21 = 0x15, SO_RCVTIMEO = 20 = 0x14) are
+    // general socket options and need no privileges.
     let optname = match which {
-        "SO_SNDTIMEO" => 0x21,
-        "SO_RCVTIMEO" => 0x20,
+        "SO_SNDTIMEO" => libc::SO_SNDTIMEO,
+        "SO_RCVTIMEO" => libc::SO_RCVTIMEO,
         _ => unreachable!("which must be SO_SNDTIMEO or SO_RCVTIMEO"),
     };
     let res = unsafe {
@@ -246,13 +267,31 @@ fn set_timeout(fd: &OwnedFd, dur: Duration, which: &'static str) -> BoseResult<(
 
 /// Build a `sockaddr_rc` for the given Bluetooth address.
 ///
-/// The kernel expects the bdaddr bytes in **MSB-first** order (the
-/// same byte order `str2ba` produces and the same order the Bose
-/// protocol uses). The `rc_channel` field is one octet.
+/// **Byte order quirk.** Our internal [`BdAddr`] stores the
+/// address in **MSB-first** (canonical) order — that matches the
+/// Bose protocol, which emits and accepts addresses in MSB-first
+/// form on the wire. The Linux kernel's `sockaddr_rc.rc_bdaddr`,
+/// however, expects the bytes in **LSB-first** order, because
+/// libbluetooth's `str2ba()` reverses them on the way in (so
+/// `ba->b[0]` is the LSB on x86). The original C code calls
+/// `str2ba()` before `connect()`, which produces the LSB-first
+/// byte order the kernel wants.
+///
+/// We mirror that behaviour by reversing the bytes here so the
+/// kernel sees the same wire representation the original C
+/// produced. The Bose protocol is unaffected: it operates on
+/// the MSB-first `BdAddr` directly, never touching this struct.
 fn build_sockaddr_rc(addr: BdAddr) -> SockaddrRc {
+    let mut reversed = BdAddr::ANY;
+    for i in 0..6 {
+        // addr.b[0] is the MSB of the canonical address; we want
+        // it to land in sockaddr_rc.rc_bdaddr.b[5] so the kernel
+        // sees LSB-first.
+        reversed.b[i] = addr.b[5 - i];
+    }
     SockaddrRc {
         rc_family: AF_BLUETOOTH,
+        rc_bdaddr: reversed,
         rc_channel: BOSE_CHANNEL,
-        rc_bdaddr: addr,
     }
 }

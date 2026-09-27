@@ -15,8 +15,8 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use bose_connect::protocol::language_from_arg;
 use bose_connect::{
-    BdAddr, BoseDevice, BoseError, DeviceStatus, DevicesConnected, NoiseCancelling, PromptLanguage,
-    SelfVoice, VP_ENABLE_BIT, VP_MASK,
+    BdAddr, BoseDevice, DeviceStatus, DevicesConnected, NoiseCancelling, PromptLanguage, SelfVoice,
+    VP_ENABLE_BIT, VP_MASK,
 };
 use clap::{Parser, ValueHint};
 
@@ -297,29 +297,44 @@ fn run_info(device: &mut BoseDevice) -> Result<()> {
     const MAX_RETRIES: usize = 3;
     const SLEEP: Duration = Duration::from_secs(1);
 
-    retry(MAX_RETRIES, SLEEP, || device.device_id()).context("getting device id")?;
+    // Each sub-query prints its own banner (mirrors the C
+    // `do_get_*` helpers); the retries only print on failure, so
+    // successful runs are quiet between banners.
+    let (id, index) =
+        retry(MAX_RETRIES, SLEEP, || device.device_id()).context("getting device id")?;
+    println!("Device ID: 0x{:04x} | Index: {}", id, index);
     std::thread::sleep(SLEEP);
 
-    retry(MAX_RETRIES, SLEEP, || device.serial_number()).context("getting serial number")?;
+    let serial =
+        retry(MAX_RETRIES, SLEEP, || device.serial_number()).context("getting serial number")?;
+    println!("Serial number: {}", serial);
     std::thread::sleep(SLEEP);
 
-    retry(MAX_RETRIES, SLEEP, || device.firmware_version()).context("getting firmware version")?;
+    let fw = retry(MAX_RETRIES, SLEEP, || device.firmware_version())
+        .context("getting firmware version")?;
+    println!("Firmware version: {}", fw);
     std::thread::sleep(SLEEP);
 
-    retry(MAX_RETRIES, SLEEP, || device.battery_level()).context("getting battery level")?;
+    let batt =
+        retry(MAX_RETRIES, SLEEP, || device.battery_level()).context("getting battery level")?;
+    println!("Battery level: {}", batt);
     std::thread::sleep(SLEEP);
 
-    retry(MAX_RETRIES, SLEEP, || device.device_status()).context("getting device status")?;
+    // device_status and paired_devices have multi-line printers in
+    // the C `do_*` helpers. Reuse them so the operator-facing
+    // format matches the C version byte-for-byte.
+    retry(MAX_RETRIES, SLEEP, || do_device_status(device)).context("getting device status")?;
     std::thread::sleep(SLEEP);
 
-    retry(MAX_RETRIES, SLEEP, || device.paired_devices()).context("getting paired devices")?;
+    retry(MAX_RETRIES, SLEEP, || do_paired_devices(device)).context("getting paired devices")?;
 
     Ok(())
 }
 
-fn retry<T, F>(max: usize, sleep: Duration, mut f: F) -> Result<T>
+fn retry<T, E, F>(max: usize, sleep: Duration, mut f: F) -> Result<T, E>
 where
-    F: FnMut() -> Result<T, BoseError>,
+    F: FnMut() -> Result<T, E>,
+    E: std::fmt::Display,
 {
     for attempt in 1..=max {
         match f() {
@@ -328,7 +343,7 @@ where
                 eprintln!("attempt {attempt}/{max} failed: {e}; sleeping {sleep:?}");
                 std::thread::sleep(sleep);
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => return Err(e),
         }
     }
     unreachable!("loop always returns")
