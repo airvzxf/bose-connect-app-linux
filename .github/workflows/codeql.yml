@@ -1,0 +1,69 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly cadence keeps the alert graph fresh even when the
+    # repo is quiet. Cron syntax follows GitHub Actions docs (UTC).
+    - cron: '32 14 * * 1'
+  workflow_dispatch:
+
+# Serialize concurrent runs in FIFO order — do NOT cancel in-flight
+# or pending runs. Mirrors the convention from moagan's codeql.yml:
+# CodeQL itself makes no upstream API calls; the value is
+# audit-trail consistency (a burst of squash-merges no longer
+# renders 3–4 commits as cancelled/red on the commit page) plus
+# runner-quota backpressure.
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+  queue: max
+
+# CodeQL needs `security-events: write` to upload the SARIF bundle
+# to the repository's Code scanning tab. Everything else is
+# read-only.
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+  checks: write
+
+jobs:
+  analyze:
+    name: 'CodeQL · rust'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['rust']
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9e3211c9a3b9311dfe05da2ed48eea3386f042dd # v4.37.6
+        with:
+          languages: ${{ matrix.language }}
+          # 'security-extended' adds the lower-severity and
+          # lower-precision queries on top of the default
+          # 'security-and-quality' suite.
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - 'target/**'
+              - '**/*.lock'
+          # CodeQL's Rust extractor only accepts `build-mode: none`.
+          # Passing `autobuild` fails the init step with "Rust does
+          # not support the autobuild build mode." Same as moagan.
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@9e3211c9a3b9311dfe05da2ed48eea3386f042dd # v4.37.6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          output: sarif-results
+          category: "/language:${{ matrix.language }}"

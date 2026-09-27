@@ -1,0 +1,22 @@
+[package]
+name = "bose-connect-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+description = "Command-line interface for the Bose Connect protocol (RFCOMM over Bluetooth)."
+
+[[bin]]
+name = "bose-connect-app-linux"
+path = "src/main.rs"
+
+[dependencies]
+bose-connect = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }

@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/bose-connect",
+    "crates/bose-connect-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "GPL-3.0-only"
+authors = ["Israel Roldan <israel.alberto.rv@gmail.com>"]
+repository = "https://github.com/airvzxf/bose-connect-app-linux"
+homepage = "https://github.com/airvzxf/bose-connect-app-linux"
+readme = "README.md"
+categories = ["api-bindings", "hardware-support"]
+keywords = ["bose", "bluetooth", "rfcomm", "headphones", "reverse-engineered"]
+description = "Rust library and CLI for controlling Bose Bluetooth headphones over RFCOMM (Bose Connect protocol)."
+
+[workspace.dependencies]
+# Core crates
+libc = "0.2"
+nix = { version = "0.29", default-features = false, features = ["socket", "poll"] }
+thiserror = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+cbindgen = "0.27"
+
+# Crate-specific paths
+bose-connect = { path = "crates/bose-connect", version = "0.1.0" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+debug = false

@@ -1,0 +1,224 @@
+name: release
+
+on:
+  push:
+    # Conventional SemVer tag. The 'v' prefix is required because
+    # the AGENTS.md release flow uses `git tag -s vX.Y.Z` locally.
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.5.0). Must exist on the remote.'
+        required: true
+        type: string
+        # Constrains the manual path to the same shape the `push`
+        # tag filter enforces; a malformed tag string fails fast in
+        # the validate-tag-input job below instead of producing a
+        # confusing `git rev-parse` error mid-build.
+        pattern: '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+    # Restrict to manual dispatch only — without this some
+    # GitHub versions treat any push as a workflow_dispatch event
+    # and run the workflow even though the tag filter would
+    # otherwise exclude it. Branch pushes (no tag) should NOT
+    # trigger release.yml.
+    branches-ignore:
+      - "**"
+
+# Releases need to write tags and create a GitHub Release page, but
+# only the `publish` job does — the `build-release` job only reads
+# repo contents. Scoping `contents: write` to the `publish` job
+# applies the principle of least privilege at the workflow level.
+
+# Do not let two release jobs for the same tag run in parallel;
+# the second one would race the upload.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+  queue: max
+
+# Default permissions for every job. Each job narrows or escalates
+# its own `permissions:` block below; the publish job needs
+# `contents: write` to create the GitHub Release.
+permissions:
+  contents: read
+
+jobs:
+  # Tag-input validator: the `push` trigger filters to
+  # `v[0-9]+.[0-9]+.[0-9]+*` so a manual dispatch could otherwise
+  # feed arbitrary strings (`main`, `refs/tags/v…`, leading
+  # whitespace, etc.) into `git rev-parse`, producing a confusing
+  # failure mid-build. This job runs first and fails fast on a
+  # malformed tag name. It also confirms the tag exists on the
+  # remote — the push trigger guarantees this for tag events, but
+  # the dispatch path is unvalidated otherwise.
+  validate-tag-input:
+    name: 'Validate · tag input'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.TAG }}
+    steps:
+      - name: Validate tag shape
+        id: resolve
+        env:
+          RAW: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${RAW}"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]] \
+            || { echo "ERROR: '$TAG' is not vX.Y.Z[-prerelease]"; exit 1; }
+          echo "TAG=${TAG}" >> "$GITHUB_OUTPUT"
+
+  # Tag-reachability guard: enforces the "tag the trunk merge
+  # commit, NOT the branch tip" rule mechanically. If the tag's
+  # commit is not an ancestor of origin/main, the workflow fails
+  # before any binary is built. Defense in depth — the procedural
+  # rule still lives in CONTRIBUTING.md / README.md; this job is
+  # the structural check.
+  verify-tag-reachability:
+    name: 'Verify · tag is reachable from main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    needs: validate-tag-input
+    steps:
+      - name: Checkout at tag SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve tag commit + fetch main
+        env:
+          TAG: ${{ needs.validate-tag-input.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+          MAIN_COMMIT="$(git rev-parse origin/main)"
+          if git merge-base --is-ancestor "${TAG_COMMIT}" origin/main; then
+            echo "✓ ${TAG} (${TAG_COMMIT}) is reachable from origin/main (${MAIN_COMMIT})"
+            exit 0
+          fi
+          {
+            echo "ERROR: tag ${TAG} points at ${TAG_COMMIT}, which is NOT an"
+            echo "ancestor of origin/main (${MAIN_COMMIT})."
+            echo "Fix (delete the orphan tag, re-tag the merge commit on main):"
+            echo "  git tag -d ${TAG}"
+            echo "  git push origin :refs/tags/${TAG}"
+            echo "  git checkout main && git reset --hard origin/main"
+            echo "  git tag -s ${TAG} \$(git rev-parse origin/main)"
+            echo "  git push origin ${TAG}"
+          } >&2
+          exit 1
+
+  # Build + publish to crates.io + attach binaries to the GitHub
+  # release page. Runs after both validation gates have passed.
+  publish:
+    name: 'Publish · crates.io + GitHub Release + binaries'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [validate-tag-input, verify-tag-reachability]
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout at tag SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry / target
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-on-failure: true
+
+      - name: Sanity: workspace builds clean at the tag
+        run: cargo build --workspace --release --locked
+
+      - name: Sanity: cbindgen header is well-formed
+        # `cargo doc` exercises the build.rs and would surface any
+        # cbindgen misconfiguration as a build failure. Also runs
+        # `cargo package` to verify the crate metadata is
+        # publishable (publish is dry-run; actual publish is the
+        # next step).
+        run: |
+          cargo doc --no-deps --workspace
+          cargo package --workspace --no-verify
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # `cargo publish` is one-shot per crate; the workspace
+          # publishes each member in dependency order. The
+          # `bose-connect` library has no internal deps so it
+          # publishes first; `bose-connect-cli` is a binary and is
+          # not published.
+          cargo publish -p bose-connect --locked --no-verify
+          # Wait briefly for crates.io index propagation so a
+          # downstream consumer who watches this release can pull
+          # the new version immediately.
+          sleep 30
+
+      - name: Build release artefacts
+        # Build the CLI binary and the C-ABI library so the
+        # release page has everything a downstream consumer needs.
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p bose-connect-cli
+          cargo build --release --locked -p bose-connect --lib
+          # Also build a staticlib target for C/C++ consumers who
+          # link the FFI library statically.
+          cargo build --release --locked -p bose-connect \
+            --target x86_64-unknown-linux-gnu \
+            --lib \
+            --crate-type staticlib,cdylib
+          ls -la target/release/bose-connect-app-linux \
+                 target/release/libbose_connect.so \
+                 target/release/libbose_connect.a \
+                 target/x86_64-unknown-linux-gnu/release/libbose_connect.a
+
+      - name: Generate the C header at the tag
+        run: |
+          set -euo pipefail
+          # The build.rs already generates `bose_connect.h` next
+          # to the crate's Cargo.toml at every build. Copy it
+          # into a stable path for the release artefact.
+          cp crates/bose-connect/bose_connect.h bose_connect.h
+
+      - name: Stage release artefacts
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp target/release/bose-connect-app-linux release/
+          cp target/release/libbose_connect.so release/
+          cp target/release/libbose_connect.a release/
+          cp target/x86_64-unknown-linux-gnu/release/libbose_connect.a release/libbose_connect-static.a
+          cp bose_connect.h release/
+          (cd release && sha256sum -b * > SHA256SUMS)
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@9b18e7b8b8b56e2e8218c9219b1611f6cde7c4b8 # v2.3.2
+        with:
+          name: ${{ needs.validate-tag-input.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/bose-connect-app-linux
+            release/libbose_connect.so
+            release/libbose_connect.a
+            release/libbose_connect-static.a
+            release/bose_connect.h
+            release/SHA256SUMS

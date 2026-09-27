@@ -1,1 +1,33 @@
-build/
+# Build artefacts
+/target
+**/target
+
+# Cargo.lock IS committed for this workspace because it pins the
+# exact versions of every dependency that the release build uses.
+# This is the convention for application / hybrid crates (vs
+# pure libraries, where lockfiles stay untracked).
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Local config files
+.env
+.env.local
+*.local.toml
+
+# Rust build cache (extra paranoia — Cargo's gitignore already
+# covers `target/`)
+**/*.pdb
+**/*.d
+
+# Auto-generated header — kept under `crates/bose-connect/bose_connect.h`
+# so cbindgen's per-build copy is reproducible, but ignore any
+# stray copies elsewhere.
+**/bose_connect.h
+
+# OS artefacts
+Thumbs.db
