@@ -12,6 +12,7 @@ use once_cell::sync::OnceCell;
 use bose_connect_gui::app::model::{AppModel, AppMsg, ConnectionState, TICK_INTERVAL_MS};
 use bose_connect_gui::app::view::build_root;
 use bose_connect_gui::services::device::{DeviceService, MockService, RealService};
+use bose_connect_gui::services::notifications::{NotificationLevel, Notifications};
 use bose_connect_gui::transport;
 
 static RUNTIME: OnceCell<Arc<tokio::runtime::Runtime>> = OnceCell::new();
@@ -35,6 +36,19 @@ struct CliArgs {
     headless: bool,
     screenshot: Option<String>,
     address: Option<String>,
+    /// Override the mock's battery-drain interval. Used by the
+    /// `--low-battery-test` smoke; 0 means "default from transport::spawn".
+    mock_tick_ms: Option<u64>,
+    /// If set, the app keeps running for this many seconds and then
+    /// exits cleanly. Used to drive notification flows without a
+    /// window manager.
+    run_secs: Option<u64>,
+    /// Convenience flag: spawn a fresh mock seeded with battery=10
+    /// and a fast tick so the app fires a low-battery libnotify
+    /// notification within a couple of seconds, then exits. The
+    /// GUI is fully painted but the notification is the deliverable
+    /// being tested.
+    low_battery_test: bool,
 }
 
 fn parse_cli() -> CliArgs {
@@ -48,6 +62,9 @@ fn parse_cli() -> CliArgs {
             "--headless" => cli.headless = true,
             "--screenshot" => cli.screenshot = args.next(),
             "--address" => cli.address = args.next(),
+            "--mock-tick-ms" => cli.mock_tick_ms = args.next().and_then(|s| s.parse().ok()),
+            "--run-secs" => cli.run_secs = args.next().and_then(|s| s.parse().ok()),
+            "--low-battery-test" => cli.low_battery_test = true,
             "-h" | "--help" => {
                 println!("bose-connect-gui — GTK4 + Relm4 GUI for Bose headphones");
                 println!();
@@ -59,6 +76,11 @@ fn parse_cli() -> CliArgs {
                 println!("  --headless                Render once and exit (smoke tests)");
                 println!("  --screenshot PATH         Save a PNG of the first frame (headless)");
                 println!("  --address AA:BB:CC:DD:EE:FF  Override the persisted address");
+                println!("  --mock-tick-ms MS        Battery-drain interval (default 4000)");
+                println!("  --run-secs SECONDS        After running for N s, exit cleanly");
+                println!(
+                    "  --low-battery-test       Seed mock at 10 %% with fast tick; emits libnotify"
+                );
                 std::process::exit(0);
             }
             other => eprintln!("warning: unknown argument: {other}"),
@@ -87,8 +109,20 @@ fn main() -> anyhow::Result<()> {
         Arc::new(RealService::new())
     } else {
         // The mock requires a Tokio runtime for its background
-        // battery-drain tick task.
-        let (handle, _ticker) = runtime().block_on(async { transport::spawn(None, None) });
+        // battery-drain tick task. The `--low-battery-test` flag
+        // seeds the device with a 10 % charge and a 250 ms tick
+        // so the libnotify threshold-crossing fires within a few
+        // seconds of `activate`.
+        let seed = if cli.low_battery_test {
+            Some(bose_connect_gui::transport::MockSeed {
+                battery: 10,
+                ..Default::default()
+            })
+        } else {
+            None
+        };
+        let tick = cli.mock_tick_ms.map(Duration::from_millis);
+        let (handle, _ticker) = runtime().block_on(async { transport::spawn(seed, tick) });
         Arc::new(MockService::new(handle))
     };
 
@@ -160,7 +194,7 @@ fn activate(
         firmware: "1.3.2".to_string(),
         serial: "08AB12CD345678".to_string(),
         device_id: 0x4020,
-        battery: 85,
+        battery: if cli.low_battery_test { 10 } else { 85 },
         status: bose_connect::DeviceStatusReport {
             name: "QuietCompanion".to_string(),
             language: 0x21 | bose_connect::VP_ENABLE_BIT,
@@ -211,18 +245,46 @@ fn activate(
         }
     });
 
-    // Periodic battery tick — drives the sparkline redraws.
+    // Periodic battery tick — drives the sparkline redraws AND
+    // fires desktop notifications when the battery crosses low /
+    // critical thresholds (the KDE Plasma info-bar via libnotify).
     let tick_model = model_holder.clone();
     let tick_tx = tx.clone();
     glib::timeout_add_local(Duration::from_millis(TICK_INTERVAL_MS), move || {
+        let prev = {
+            let g = tick_model.borrow();
+            g.history.last().copied().unwrap_or(100)
+        };
         tick_tx.emit(AppMsg::BatteryTick(0));
         // Mirror the latest battery into the history.
-        let snap = tick_model.borrow().snapshot.clone();
-        if let Some(snap) = snap {
-            let mut g = tick_model.borrow_mut();
-            g.history.push(snap.battery);
-            if g.history.len() > 32 {
-                g.history.remove(0);
+        let now = {
+            let snap = tick_model.borrow().snapshot.clone();
+            snap.map(|s| s.battery)
+        };
+        if let Some(b) = now {
+            {
+                let mut g = tick_model.borrow_mut();
+                g.history.push(b);
+                if g.history.len() > 32 {
+                    g.history.remove(0);
+                }
+            }
+            // Fire notifications on threshold crossings.
+            let prev_band = band(prev);
+            let now_band = band(b);
+            if prev_band != now_band && now_band >= 0 {
+                let level = if now_band <= 1 {
+                    NotificationLevel::Critical
+                } else {
+                    NotificationLevel::Warning
+                };
+                let body = match now_band {
+                    0 => "Battery critical — last 5 %. Plug in immediately.",
+                    1 => "Battery low — plug in soon.",
+                    _ => return glib::ControlFlow::Continue,
+                };
+                let title = "Bose Connect";
+                let _ = Notifications::notify(title, body, level);
             }
         }
         glib::ControlFlow::Continue
@@ -250,14 +312,29 @@ fn activate(
 
     let _ = application;
 
-    if cli.headless {
+    if cli.headless || cli.run_secs.is_some() {
         let screenshot = cli.screenshot.clone();
+        let run_for = cli.run_secs.unwrap_or(0);
         runtime().spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+            let delay = if cli.low_battery_test {
+                // Stay alive long enough for the mock ticker to
+                // drop battery from 10 % through 5 % (low-critical
+                // boundary) at least once.
+                std::time::Duration::from_secs(run_for.max(7))
+            } else if run_for > 0 {
+                std::time::Duration::from_secs(run_for)
+            } else {
+                std::time::Duration::from_millis(700)
+            };
+            tokio::time::sleep(delay).await;
             if let Some(path) = screenshot {
                 tracing::info!("smoke test: would write screenshot to {path}");
             }
-            tracing::info!("smoke test: window painted, exiting");
+            if cli.headless {
+                tracing::info!("smoke test: window painted, exiting");
+            } else {
+                tracing::info!("smoke test: run_secs elapsed, exiting");
+            }
             let _ = std::fs::write("/tmp/bose-connect-gui.smoke", b"ok\n");
             relm4::main_application().quit();
         });
@@ -265,6 +342,17 @@ fn activate(
 }
 
 use std::time::Duration;
+
+/// Bucket battery levels for notification thresholds.
+/// Returns `-1` when unknown, `0` for critical (≤5%), `1` for low
+/// (≤25%), and `2` for OK.
+fn band(battery: u8) -> i32 {
+    match battery {
+        0..=5 => 0,
+        6..=25 => 1,
+        _ => 2,
+    }
+}
 
 /// Dump the GTK widget tree rooted at `widget` to a `String`.
 fn dump_widget_tree(widget: &gtk::Widget, depth: usize, out: &mut String) {
