@@ -1,0 +1,47 @@
+[package]
+name = "bose-connect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+description.workspace = true
+
+# FFI consumers (Python ctypes, Ruby FFI, C/C++ projects, …) link
+# against the resulting `libbose_connect.so` / `.a`. We expose a
+# stable C ABI through `cbindgen` (build.rs) and document the surface
+# in the crate-level rustdoc.
+links = "bose_connect"
+
+[features]
+# Default: Rust API + C FFI together. The two take the same architectural
+# path because the FFI functions are thin `extern "C"` wrappers around
+# the Rust API. If a future need forces them apart, this is the seam.
+default = ["ffi"]
+
+# Pure-Rust consumers can opt out of the FFI surface and `cbindgen`
+# build step (skips `libbluetooth-dev` probe during `cargo doc`, etc.).
+ffi = []
+
+[dependencies]
+libc = { workspace = true }
+nix = { workspace = true }
+thiserror = { workspace = true }
+
+[build-dependencies]
+cbindgen = { workspace = true }
+
+[dev-dependencies]
+
+[[bin]]
+# Standalone sanity probe — calls init_connection against a real or
+# loopback socket. Mostly used by maintainers when testing protocol
+# changes; not the user-facing CLI.
+name = "bose-connect-probe"
+path = "src/bin/probe.rs"
+required-features = ["ffi"]

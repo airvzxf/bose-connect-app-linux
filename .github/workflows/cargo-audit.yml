@@ -1,0 +1,68 @@
+name: cargo-audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly cadence so the advisory graph tracks RustSec in near
+    # real-time.
+    - cron: '37 5 * * *'
+  workflow_dispatch:
+
+# Serialize concurrent runs in FIFO order — do NOT cancel in-flight
+# or pending runs. Mirrors the convention used by voxora /
+# moagan: cargo-audit makes no upstream API calls; the value is
+# backpressure against parallel scan storms.
+concurrency:
+  group: cargo-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+  queue: max
+
+# Read-only token. We only fetch public advisory data and read
+# Cargo.lock.
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  audit:
+    name: 'cargo-audit · RustSec advisories'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@7f4eb899022d8fe70b20c4f3de697aa85c309026 # v2.85.11
+        with:
+          tool: cargo-audit
+
+      - name: Run cargo audit (JSON)
+        # `--json` writes a stable report to stdout that we capture
+        # for the artifact. The fetch is kept (no `--no-fetch`) so
+        # the nightly cron uses the latest DB. We filter out
+        # dev-dependency advisories from the report and fail the
+        # job only on production dependencies.
+        run: |
+          set -o pipefail
+          cargo audit --json 2>&1 \
+            | tee audit.raw.json \
+            | jq '{ vulnerabilities: { found: (((.vulnerabilities.found // []) | if type == "array" then map(select(.package.kind != "dev-dependency")) else [] end)), count: (.vulnerabilities.count // 0) } }' \
+            > audit.json
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cargo-audit-report
+          path: audit.json
+          retention-days: 14
+          if-no-files-found: warn

@@ -1,16 +1,88 @@
 # Bose® Connect App for Linux
 
---- Not Official App ---
+> **Not an official app.**
 
-Based on [Denton-L project][Denton-L], looks like it is not maintained. I
-created a copy to have an active repository. This project keeps the original
-license GPL-3.0.
+A reverse-engineered Linux port of the **Bose Connect** app,
+originally forked from [Denton-L/based-connect][denton-l]. This
+repository keeps the original GPL-3.0 license.
 
-If you own a Bose device, you'll know that `Bose Connect` is not available on
-Linux. This program attempts to reverse engineer that app to give the device
-Linux support.
+If you own a Bose device, you'll know that `Bose Connect` is not
+available on Linux. This program re-implements the RFCOMM protocol
+the official app speaks so the device can be controlled from Linux.
 
-### Usage
+This is the **Rust** port of the codebase. The original C
+implementation lives on the [`main`][main-branch] branch's git
+history; see `git log --follow src/library/based.c` for the last
+C version.
+
+## Repository layout
+
+```text
+.
+├── Cargo.toml                # workspace manifest
+├── crates/
+│   ├── bose-connect/         # library crate (Rust API + C FFI)
+│   │   ├── src/
+│   │   │   ├── lib.rs        # public Rust API
+│   │   │   ├── connection.rs # RFCOMM socket layer
+│   │   │   ├── protocol.rs   # Bose Connect protocol commands
+│   │   │   ├── io.rs         # transport-agnostic IO trait
+│   │   │   ├── types.rs      # enums + BdAddr + Device
+│   │   │   ├── error.rs      # BoseError + thiserror
+│   │   │   ├── util.rs       # hex / byte helpers
+│   │   │   ├── address.rs    # Bluetooth address parsing
+│   │   │   ├── ffi.rs        # C ABI surface (cfg(feature = "ffi"))
+│   │   │   └── bin/probe.rs  # sanity-probe binary
+│   │   ├── tests/
+│   │   │   └── protocol_roundtrip.rs  # UnixStream-backed round-trip tests
+│   │   ├── cbindgen.toml     # C header generation config
+│   │   └── build.rs          # cbindgen invocation
+│   └── bose-connect-cli/     # binary crate
+│       └── src/main.rs       # clap-based CLI
+└── .github/workflows/        # CI / CD / release
+```
+
+## Quick start
+
+### Library (`bose-connect`)
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+bose-connect = "0.1"
+```
+
+Use the high-level `BoseDevice` driver:
+
+```rust
+use bose_connect::{BoseDevice, PromptLanguage};
+
+let mut device = BoseDevice::open("AA:BB:CC:DD:EE:FF")?;
+println!("Battery: {}%", device.battery_level()?);
+device.set_language_keep_voice_prompts(PromptLanguage::En)?;
+```
+
+Or drop down to the protocol layer directly:
+
+```rust
+use bose_connect::protocol;
+
+let mut device = BoseDevice::open("AA:BB:CC:DD:EE:FF")?;
+let (device_id, index) = protocol::get_device_id(device.connection())?;
+let firmware = protocol::get_firmware_version(device.connection())?;
+```
+
+### CLI (`bose-connect-app-linux`)
+
+Build from source:
+
+```bash
+cargo install --path crates/bose-connect-cli
+```
+
+Then run, exactly like the original C version (every flag is
+preserved):
 
 ```text
 Usage: bose-connect-app-linux [options] <address>
@@ -21,8 +93,7 @@ Usage: bose-connect-app-linux [options] <address>
   -i, --info
     Print all the device information.
   -d, --device-status
-    Print the device status information. This includes its name, language,
-    voice-prompts, auto-off and noise cancelling settings.
+    Print the device status information.
   -f, --firmware-version
     Print the firmware version on the device.
   -s, --serial-number
@@ -31,30 +102,23 @@ Usage: bose-connect-app-linux [options] <address>
     Print the battery level of the device as a percent.
   -a, --paired-devices
     Print the devices currently connected to the device.
-    !: indicates the current device
-    *: indicates other connected devices
   --device-id
     Print the device id followed by the index revision.
   -n <name>, --name=<name>
     Change the name of the device.
   -o <minutes>, --auto-off=<minutes>
-    Change the auto-off time.
-    minutes: never, 5, 20, 40, 60, 180
+    Change the auto-off time.  minutes: never, 5, 20, 40, 60, 180
   -c <level>, --noise-cancelling=<level>
-    Change the noise cancelling level.
-    level: high, low, off
+    Change the noise cancelling level.  level: high, low, off
   -l <language>, --prompt-language=<language>
     Change the voice-prompt language.
     language: en, fr, it, de, es, pt, zh, ko, nl, ja, sv
   -v <switch>, --voice-prompts=<switch>
-    Change whether voice-prompts are on or off.
-    switch: on, off
+    Change whether voice-prompts are on or off.  switch: on, off
   -p <status>, --pairing=<status>
-    Change whether the device is pairing.
-    status: on, off
+    Change whether the device is pairing.  status: on, off
   -e, --self-voice=<level>
-    Change the self voice level.
-    level: high, medium, low, off
+    Change the self voice level.  level: high, medium, low, off
   --connect-device=<address>
     Attempt to connect to the device at address.
   --disconnect-device=<address>
@@ -63,110 +127,95 @@ Usage: bose-connect-app-linux [options] <address>
     Remove the device at address from the pairing list.
 ```
 
-## Build and Installation
+### C / FFI
 
-The executable produced by the build will be
-`./src/build/bose-connect-app-linux` and the installation will be
-`/usr/local/bin/bose-connect-app-linux`.
+The library ships a stable C ABI through the `ffi` feature
+(default-on). The header is auto-generated by `cbindgen` into
+`crates/bose-connect/bose_connect.h` at build time:
+
+```bash
+cargo build -p bose-connect
+ls crates/bose-connect/bose_connect.h
+```
+
+Build a shared library for non-Rust consumers:
+
+```bash
+cargo build --release -p bose-connect \
+  --crate-type cdylib
+
+# The resulting .so is at target/release/libbose_connect.so
+```
+
+## Build and Installation
 
 ### Dependencies
 
-* BlueZ
+* Rust toolchain (1.75 or newer; tested on stable)
+* `pkg-config`
+* BlueZ headers
     * `bluez-libs` on Arch Linux
     * `libbluetooth-dev` on Debian and Ubuntu
 
-### Docker
-
-Follow the next steps:
-
-```bash
-# Set up the host's user ID and group.
-echo "USER_ID=$(id -u "${USER}")" >./src/.env-user
-echo "GROUP_ID=$(id -g "${USER}")" >>./src/.env-user
-
-# Clean previous docker composes.
-docker-compose \
-  --project-directory ./src \
-  --env-file ./src/.env-user \
-  down
-
-# Start the docker compose.
-docker-compose \
-  --project-directory ./src \
-  --env-file ./src/.env-user \
-  up \
-  --detach \
-  --build
-
-# Build the application.
-docker exec \
-  --user $(id -u "${USER}") \
-  --interactive \
-  --tty \
-  bose-connect-app-linux \
-  /root/bose-connect-app-linux/script/build-prod.bash
-
-# Enjoy.
-./src/build/bose-connect-app-linux
-```
-
-*Note: I created this in `Arch Linux`. It should be crash in `Ubuntu` because
-the library of bluetooth is different. If it fails, please
-[create an issue][new-issue], and some fixes will come soon.*
+The Rust crate builds on Linux without the BlueZ headers — it
+calls the kernel through `libc::connect` directly. The headers are
+required only for downstream C/C++ projects that include the
+generated header in environments without the BlueZ userspace
+headers installed.
 
 ### Local
 
-The local build require the installation of the follow packages: `gcc`, `make`,
-`cmake`, `pkgconf`, and (`bluez-libs` or `libbluetooth-dev`).
-
 ```bash
-# Execute the Bash script.
-./src/script/build-prod.bash
+# Run the CI gauntlet locally (matches .github/workflows/ci.yml).
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --all-targets
+cargo doc --no-deps --workspace
+cargo build --workspace --release --locked
 
-# Enjoy.
-./src/build/bose-connect-app-linux
+# Smoke-test the binary.
+./target/release/bose-connect-app-linux --help
 ```
 
-### Install
+### Docker
 
-Run `./src/script/install-prod.bash` to install the application. It will place
-in `/usr/local/bin/bose-connect-app-linux`. The `PREFIX` and `DESTDIR`
-variables are assignable and have the traditional meaning. For more information
-reefer to the [official web site of CMake][cmake-install].
+The original C repo's Docker setup is replaced by a
+`rust:1.83-bookworm`-based image (Dockerfile / compose TBD; tracked
+in TODO.md). For now, install the toolchain locally.
 
-### Uninstall
+## CI/CD
 
-Run the script `./src/script/uninstall.bash`.
+The `.github/workflows/` directory contains:
 
-## Contribute
+| File              | Purpose                                                  |
+| ----------------- | -------------------------------------------------------- |
+| `ci.yml`          | Rust CI: fmt, clippy, test, doc, release build          |
+| `codeql.yml`      | GitHub CodeQL security analysis                          |
+| `cargo-audit.yml` | RustSec advisory scanner, nightly                        |
+| `release.yml`     | Tag-triggered release: crates.io publish + GitHub release with binary artefacts |
 
-Check the file [CONTRIBUTING.md][contributing] for more information. It
-includes the instructions for build with special configuration for development.
+## Migrating from the C version
 
-## To-Do's List
+| C source file       | Rust counterpart                                      |
+| ------------------- | ----------------------------------------------------- |
+| `src/main.c`        | `crates/bose-connect-cli/src/main.rs`                 |
+| `src/library/based.c` | `crates/bose-connect/src/protocol.rs`               |
+| `src/library/bluetooth.c` | `crates/bose-connect/src/connection.rs` (+ `address.rs`) |
+| `src/library/util.c` | `crates/bose-connect/src/util.rs`                    |
+| `src/library/based.h` (enums) | `crates/bose-connect/src/types.rs`     |
 
-Visit the document with all the checkpoints in [TODO.md][todo.md].
-
-## Development Notes
-
-For more information about the details of how use the firmwares to found
-functionality, please review the file [DEVELOPMENT.md][details-file].
+The on-wire protocol is unchanged: every byte sequence,
+masked-ACK mask, and short-read / short-write semantic is
+preserved verbatim from the original C. If a regression slips
+through, `git diff feat/migration-to-rust main -- src/library/based.c`
+shows the source-of-truth protocol implementation side-by-side.
 
 ## Disclaimer
 
-This has only been tested on Bose `QuietComfort 35's` with firmware 1.3.2,
-1.2.9, 1.06 and `SoundLink II's` with firmware 2.1.1. I cannot ensure that this
-program works on any other devices.
+This has only been tested on Bose `QuietComfort 35's` with
+firmware 1.3.2, 1.2.9, 1.06 and `SoundLink II's` with firmware
+2.1.1. I cannot ensure that this program works on any other
+devices.
 
-
-[Denton-L]: https://github.com/Denton-L/based-connect
-
-[details-file]: ./DEVELOPMENT.md
-
-[todo.md]: ./TODO.md
-
-[contributing]: ./CONTRIBUTING.md
-
-[cmake-install]: https://cmake.org/cmake/help/latest/manual/cmake.1.html#install-a-project
-
-[new-issue]: https://github.com/airvzxf/bose-connect-app-linux/issues/new
+[denton-l]: https://github.com/Denton-L/based-connect
+[main-branch]: https://github.com/airvzxf/bose-connect-app-linux/tree/main

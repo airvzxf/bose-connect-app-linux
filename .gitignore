@@ -1,1 +1,29 @@
-build/
+# Build artefacts
+/target
+**/target
+**/Cargo.lock
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Local config files
+.env
+.env.local
+*.local.toml
+
+# Rust build cache (extra paranoia — Cargo's gitignore already
+# covers `target/`)
+**/*.pdb
+**/*.d
+
+# Auto-generated header — kept under `crates/bose-connect/bose_connect.h`
+# so cbindgen's per-build copy is reproducible, but ignore any
+# stray copies elsewhere.
+**/bose_connect.h
+
+# OS artefacts
+Thumbs.db

@@ -1,0 +1,129 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel previous runs on the same PR / branch when a new commit lands.
+# Saves minutes on iterative PRs (re-fix typo, re-push → previous
+# run killed). Mirrors the convention used by voxora's ci.yml in
+# this org's Rust workspace.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Minimum token permissions: only read repo contents. Each job may
+# further escalate (none currently do). Combined with the repo-level
+# Actions policy (`default_workflow_permissions: read`) this caps the
+# blast radius of a compromised third-party action.
+permissions:
+  contents: read
+
+# Validation tiers, but kept compact for a small CLI/library
+# workspace. The dependency graph:
+#
+#   fmt-check            ─┐
+#   clippy               ─┤   Round 1 (no deps)
+#                          │
+#   test                 ─┤
+#   doc                  ─┤   Round 2 (no inter-job deps)
+#   build                ─┘
+#
+# Wall-clock critical path:
+#   round 1 = max(fmt-check, clippy)                       ~30 s
+#   round 2 = max(test, doc, build)                        ~3 min
+# Total: ~3 min cold / ~1 min warm.
+#
+# Required check names (must match the ruleset `protect-main`
+# rule `required_status_checks.required_status_checks[].context`
+# when the ruleset is enabled):
+#   - fmt-check
+#   - clippy
+#   - test
+#   - doc
+#   - build
+jobs:
+  fmt-check:
+    name: 'T0 · fmt-check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: 'T1 · clippy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+          components: clippy
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: 'T2 · cargo test --workspace'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+      - run: cargo test --workspace --all-targets
+
+  doc:
+    name: 'T2 · cargo doc --no-deps --workspace strict'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+      - run: cargo doc --no-deps --workspace
+      # Reject tracked build artifacts. Mirrors voxora's `fmt-check`
+      # tracked-artifact guard (defensive — Cargo's gitignore
+      # already filters `target/` but a copy-pasted `cargo package`
+      # could re-introduce one).
+      - name: Reject tracked build artifacts
+        run: |
+          if git ls-files | grep -E '(^|/)CACHEDIR\.TAG$|(^|/)\.(rustc_info|rustdoc_fingerprint)\.json$|(^|/)target/'; then
+            echo "::error::build artifacts are tracked; see the paths above"
+            exit 1
+          fi
+
+  build:
+    name: 'T2 · cargo build --workspace --release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+      - run: cargo build --workspace --release --locked
+      - name: Smoke-test the binary --help
+        # Sanity check that the CLI parses its arguments. Mirrors
+        # the original CMake CI which would just build, never run.
+        run: ./target/release/bose-connect-app-linux --help
+      - name: Upload built binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bose-connect-app-linux-${{ github.sha }}
+          path: |
+            target/release/bose-connect-app-linux
+            target/release/libbose_connect.so*
+            target/release/libbose_connect.a
+          if-no-files-found: warn
