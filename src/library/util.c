@@ -46,9 +46,12 @@ int str_to_byte(const char *str, uint8_t *byte) {
 void str_copy(char *to, const char *from, int size) {
   const int ascii_null_character  = 0;
   const int ascii_space_character = 32;
-  to[size]                        = 0;
 
-  for (unsigned int position = 0; position < size; position++) {
+  if (size <= 0) {
+    return;
+  }
+
+  for (unsigned int position = 0; position < (unsigned int)size; position++) {
 
     if (from[position] == ascii_null_character) {
       to[position] = from[position];
@@ -60,6 +63,8 @@ void str_copy(char *to, const char *from, int size) {
       to[position] = from[position];
     }
   }
+
+  to[size - 1] = ascii_null_character;
 }
 
 void memory_copy(uint8_t *to, const uint8_t *from, int size) {
