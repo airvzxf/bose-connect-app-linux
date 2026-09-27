@@ -51,12 +51,20 @@ jobs:
         # the nightly cron uses the latest DB. We filter out
         # dev-dependency advisories from the report and fail the
         # job only on production dependencies.
+        #
+        # `2>/dev/null` silences cargo-audit's "fetched
+        # advisory-db" progress line which would otherwise break
+        # the JSON parser on the first run of the day.
         run: |
           set -o pipefail
-          cargo audit --json 2>&1 \
+          cargo audit --json 2>/dev/null \
             | tee audit.raw.json \
             | jq '{ vulnerabilities: { found: (((.vulnerabilities.found // []) | if type == "array" then map(select(.package.kind != "dev-dependency")) else [] end)), count: (.vulnerabilities.count // 0) } }' \
             > audit.json
+          # Echo a summary line so the job log surfaces whether
+          # any non-dev advisories were found without making the
+          # maintainer open the artifact.
+          jq -r '"advisories (production deps): \(.vulnerabilities.count)"' audit.json
 
       - name: Upload audit report
         if: always()
