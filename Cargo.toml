@@ -22,7 +22,7 @@ description = "Rust library and CLI for controlling Bose Bluetooth headphones ov
 # Core crates
 libc = "0.2"
 nix = { version = "0.31", default-features = false, features = ["socket", "poll"] }
-thiserror = "1"
+thiserror = "2"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 cbindgen = "0.29"
