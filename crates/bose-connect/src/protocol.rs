@@ -125,6 +125,34 @@ pub fn has_noise_cancelling(device_id: u16) -> bool {
     )
 }
 
+/// `has_self_voice` is a new predicate that does not exist in
+/// the original C code. It is used by the CLI to short-circuit
+/// `--self-voice` on devices known not to support the command
+/// (so the user gets an instant error instead of waiting for
+/// the 1 s `SO_RCVTIMEO` × 3 retry budget on a command the
+/// device will never answer).
+///
+/// Conservative allow-list: only the QC35 series (device IDs
+/// `0x4014` and `0x4020`) is known to expose self-voice. The
+/// SoundLink II (`0x400d`) does not. If a new device is found
+/// to support self-voice, add its device ID here and the CLI's
+/// pre-flight check will start allowing the command.
+pub fn has_self_voice(device_id: u16) -> bool {
+    matches!(device_id, NOISE_CANCELLING_14 | NOISE_CANCELLING_20)
+}
+
+/// `has_pairing_toggle` is a new predicate that does not exist
+/// in the original C code. It mirrors [`has_self_voice`] but
+/// for the `--pairing` flag (which controls RFCOMM
+/// discoverability). Only the QC35 series supports it; the
+/// SoundLink II returns an `AckMismatch` immediately, but the
+/// 1 s timeout per retry means the C version wastes ~3 s on
+/// every call before failing. Pre-flighting here saves that
+/// wall-clock cost.
+pub fn has_pairing_toggle(device_id: u16) -> bool {
+    matches!(device_id, NOISE_CANCELLING_14 | NOISE_CANCELLING_20)
+}
+
 /// `int send_packet(int sock, const void *send, size_t send_n,
 /// uint8_t received[MAX_BT_PACK_LEN])` in `based.c`. Returns the
 /// bytes received, or a [`BoseError::ShortRead`] /

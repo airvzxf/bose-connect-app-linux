@@ -262,9 +262,30 @@ fn dispatch(cli: Cli) -> Result<()> {
         device.set_voice_prompts(on)?;
     } else if let Some(status) = cli.pairing.as_deref() {
         let on = parse_pairing(status)?;
+        // Pre-flight: refuse early on devices that don't
+        // implement the pairing-toggle command. Without this
+        // check the protocol would waste ~3 s (1 s per retry)
+        // waiting for a response that never comes before
+        // surfacing AckMismatch. The C version does not
+        // short-circuit here; the SoundLink II returns
+        // AckMismatch on `SET_PAIRING` after a full timeout
+        // budget.
+        let (device_id, _) = device.device_id()?;
+        if !bose_connect::has_pairing_toggle(device_id) {
+            bail!("this device does not support pairing-toggle");
+        }
         device.set_pairing(on)?;
     } else if let Some(level) = cli.self_voice.as_deref() {
         let parsed = parse_self_voice(level)?;
+        // Pre-flight: refuse early on devices that don't
+        // implement the self-voice command. Without this the
+        // protocol would waste ~3 s (1 s per retry) waiting for
+        // a response that never comes. Same rationale as the
+        // pairing-toggle check above.
+        let (device_id, _) = device.device_id()?;
+        if !bose_connect::has_self_voice(device_id) {
+            bail!("this device does not support self-voice");
+        }
         device.set_self_voice(parsed)?;
     } else if let Some(addr) = cli.connect_device.as_deref() {
         let addr = parse_address(addr)?;

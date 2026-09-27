@@ -56,9 +56,9 @@ pub use crate::error::{BoseError, BoseResult};
 pub use crate::io::BoseIo;
 pub use crate::protocol::{
     get_battery_level, get_device_id, get_device_info, get_device_status, get_firmware_version,
-    get_paired_devices, get_serial_number, has_noise_cancelling, set_auto_off, set_name,
-    set_noise_cancelling, set_pairing, set_prompt_language, set_self_voice, set_voice_prompts,
-    DeviceStatusReport, PairedDevices,
+    get_paired_devices, get_serial_number, has_noise_cancelling, has_pairing_toggle,
+    has_self_voice, set_auto_off, set_name, set_noise_cancelling, set_pairing, set_prompt_language,
+    set_self_voice, set_voice_prompts, DeviceStatusReport, PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, NoiseCancelling,
