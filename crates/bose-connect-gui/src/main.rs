@@ -296,6 +296,58 @@ fn activate(
         let _ = tx_for_widget_tray;
     }
 
+    // Bluetooth discovery (BlueZ). Connects to the system bus,
+    // walks `GetManagedObjects`, and subscribes to
+    // `InterfacesAdded` / `InterfacesRemoved`. The mpsc is
+    // polled on a slow (500 ms) glib timer so we can stay on
+    // the main thread; events fold into `AppMsg::DiscoveryFound`
+    // just like the wire level did. We try to connect to BlueZ
+    // once at startup; if it's not running, `BluetoothDiscovery::connect`
+    // returns a handle with `available() == false`, and the
+    // GUI's discover panel just stays empty.
+    let (bt_handle, bt_rx) = match runtime()
+        .block_on(bose_connect_gui::services::bluetooth::BluetoothDiscovery::connect())
+    {
+        Ok(pair) => pair,
+        Err(err) => {
+            tracing::warn!(target: "bluez", "discovery disabled: {err}");
+            // Synthetic empty receiver — `start_scan` will
+            // emit the simulated event for offline smoke
+            // tests.
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<
+                bose_connect_gui::services::bluetooth::DiscoveryEvent,
+            >();
+            let _ = tx;
+            (
+                bose_connect_gui::services::bluetooth::BluetoothDiscovery::empty(),
+                rx,
+            )
+        }
+    };
+    // Trigger an active scan so the user actually sees
+    // devices when they click "Scan" — the smoke test path
+    // does the same.
+    let _ = runtime().block_on(bt_handle.start_scan()).ok();
+    let mut bt_rx = bt_rx;
+    let tx_for_bt = tx.clone();
+    glib::source::timeout_add_local(Duration::from_millis(500), move || {
+        while let Ok(ev) = bt_rx.try_recv() {
+            let mapped = match ev {
+                bose_connect_gui::services::bluetooth::DiscoveryEvent::DeviceFound(d) => {
+                    Some(AppMsg::DiscoveryFound {
+                        address: d.address,
+                        name: d.name,
+                    })
+                }
+                _ => None,
+            };
+            if let Some(msg) = mapped {
+                let _ = tx_for_bt.send(msg);
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
     // Periodic battery tick — drives the sparkline redraws AND
     // fires desktop notifications when the battery crosses low /
     // critical thresholds (the KDE Plasma info-bar via libnotify).
