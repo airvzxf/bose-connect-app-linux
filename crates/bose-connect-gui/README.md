@@ -38,6 +38,12 @@ cargo run -p bose-connect-gui                   # interactive launch
 cargo run -p bose-connect-gui -- --headless      # smoke: writes
                                                # /tmp/bose-connect-gui.smoke
 cargo run -p bose-connect-gui -- --dump-tree    # 297-line widget tree dump
+
+# Release build (stripped, ready for distribution).
+cargo build --workspace --release --locked
+# → target/release/bose-connect-gui  (3.6 MB, stripped)
+# → target/release/bose-connect-app-linux  (868 KB, the CLI)
+# → target/release/libbose_connect.so  (380 KB, the C ABI)
 ```
 
 ## Smoke testing on this host
