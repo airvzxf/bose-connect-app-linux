@@ -138,10 +138,10 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Sanity: workspace builds clean at the tag
+      - name: 'Sanity: workspace builds clean at the tag'
         run: cargo build --workspace --release --locked
 
-      - name: Sanity: cbindgen header is well-formed
+      - name: 'Sanity: cbindgen header is well-formed'
         # `cargo doc` exercises the build.rs and would surface any
         # cbindgen misconfiguration as a build failure. Also runs
         # `cargo package` to verify the crate metadata is
