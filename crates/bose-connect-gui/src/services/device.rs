@@ -211,11 +211,18 @@ impl DeviceService for MockService {
 
 pub struct RealService;
 
+impl Default for RealService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RealService {
     pub fn new() -> Self {
         Self
     }
 
+    #[allow(clippy::too_many_arguments, dead_code)]
     fn snapshot_for_state(
         address: BdAddr,
         device_id: u16,

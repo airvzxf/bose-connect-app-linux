@@ -7,7 +7,6 @@
 //! enough to navigate with the keyboard.
 
 use adw;
-use adw::prelude::*;
 use gtk::prelude::*;
 use gtk::{glib, Box as GtkBox, Button, Label, ListBox, ListBoxRow, Orientation, ToggleButton};
 use relm4::Sender;
@@ -469,7 +468,7 @@ impl NoiseCancellingTile {
 pub struct ProfilesBar;
 
 impl ProfilesBar {
-    pub fn render(model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
+    pub fn render(_model: &AppModel, sender: &SenderHandle) -> gtk::Widget {
         let wrap = tile("profiles");
         wrap.append(&tile_header("Profiles", "one-click combinations"));
 
@@ -515,7 +514,7 @@ fn summarise(profile: crate::services::state::ProfileName) -> String {
     let s = crate::services::state::Profiles::resolve(profile);
     let nc = s
         .noise_cancelling
-        .map(|l| i18n::noise_cancelling_label(l))
+        .map(i18n::noise_cancelling_label)
         .unwrap_or("—");
     let voice = s
         .voice_prompts

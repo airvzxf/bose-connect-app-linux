@@ -1,7 +1,6 @@
 //! Helpers that construct the Relm4 widget tree.
 
 use adw;
-use adw::prelude::*;
 use gtk::prelude::*;
 use gtk::{Box as GtkBox, Orientation};
 use relm4::Sender;
@@ -67,7 +66,7 @@ pub fn build_top_bar(
     let menu = gtk::MenuButton::new();
     menu.set_icon_name("open-menu-symbolic");
     menu.set_menu_model(Some(&crate::app::widgets::build_app_menu(
-        &app.upcast_ref::<gtk::Application>(),
+        app.upcast_ref::<gtk::Application>(),
     )));
     bar.pack_end(&menu);
 

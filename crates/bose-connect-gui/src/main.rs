@@ -2,12 +2,12 @@
 
 use std::sync::Arc;
 
-use adw;
+#[allow(unused_imports)]
 use adw::prelude::*;
 use gtk::glib;
+#[allow(unused_imports)]
 use gtk::prelude::*;
 use once_cell::sync::OnceCell;
-use relm4::Sender;
 
 use bose_connect_gui::app::model::{AppModel, AppMsg, ConnectionState, TICK_INTERVAL_MS};
 use bose_connect_gui::app::view::build_root;
@@ -94,7 +94,7 @@ fn main() -> anyhow::Result<()> {
 
     let app = adw::Application::builder()
         .application_id("com.airvzxf.bose-connect-gui")
-        .flags(gtk::gio::ApplicationFlags::FLAGS_NONE)
+        .flags(gtk::gio::ApplicationFlags::empty())
         .build();
 
     let app_for_app = app.clone();
@@ -192,11 +192,11 @@ fn activate(
     // messages back to the AppModel without spinning a separate
     // Relm4 component. We use flume here because that's what
     // Relm4's `Sender` accepts via `From`.
-    let (raw_tx, mut rx) = flume::unbounded::<AppMsg>();
-    let tx: Sender<AppMsg> = Sender::from(raw_tx);
+    let (raw_tx, rx) = flume::unbounded::<AppMsg>();
+    let tx: relm4::Sender<AppMsg> = relm4::Sender::from(raw_tx);
 
     // Drive the model from the message pump.
-    let mut model_holder: std::rc::Rc<std::cell::RefCell<AppModel>> =
+    let model_holder: std::rc::Rc<std::cell::RefCell<AppModel>> =
         std::rc::Rc::new(std::cell::RefCell::new(model));
     let model_for_pump = model_holder.clone();
     let service_clone = _service.clone();

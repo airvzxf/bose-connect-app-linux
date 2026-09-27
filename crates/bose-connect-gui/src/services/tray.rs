@@ -36,6 +36,7 @@ pub enum TrayCommand {
 
 pub struct TrayService {
     snapshot: Arc<Mutex<TraySnapshot>>,
+    #[allow(dead_code)]
     tx: mpsc::UnboundedSender<TrayCommand>,
 }
 
