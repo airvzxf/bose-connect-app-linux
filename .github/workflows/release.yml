@@ -17,6 +17,13 @@ on:
         # the validate-tag-input job below instead of producing a
         # confusing `git rev-parse` error mid-build.
         pattern: '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+    # Restrict to manual dispatch only — without this some
+    # GitHub versions treat any push as a workflow_dispatch event
+    # and run the workflow even though the tag filter would
+    # otherwise exclude it. Branch pushes (no tag) should NOT
+    # trigger release.yml.
+    branches-ignore:
+      - "**"
 
 # Releases need to write tags and create a GitHub Release page, but
 # only the `publish` job does — the `build-release` job only reads
