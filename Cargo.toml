@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/bose-connect",
     "crates/bose-connect-cli",
+    "crates/bose-connect-gui",
 ]
 
 [workspace.package]

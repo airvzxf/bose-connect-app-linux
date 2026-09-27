@@ -1,0 +1,266 @@
+/*
+ * Bose Connect for Linux — GTK4 custom CSS.
+ *
+ * We intentionally keep this file small: libadwaita owns the heavy
+ * lifting (rounded corners, dark/light handling, accent colour), and
+ * we layer only the bits that are project-specific:
+ *
+ *   - hero card         : the big battery readout
+ *   - pill              : status / firmware chips
+ *   - sparkline         : battery history bar chart
+ *   - tile              : the ANC / voice / language setting cards
+ *   - quick-action      : the small action buttons (refresh, etc.)
+ *   - log-row           : the activity log
+ *
+ * Everything here responds to the user's light/dark preference via
+ * the `accentcolor`, `accentbg`, `cardbg`, and `window-bg` named
+ * colours so libadwaita re-themes it for free.
+ */
+
+/* ------ Project colour tokens (used through @define-color) ------ */
+@define-color quiet_cyan   #3ab9ff;
+@define-color quiet_ink    #0b1437;
+@define-color quiet_paper  #f6f7fb;
+@define-color quiet_dim    #d1d6e6;
+@define-color quiet_accent #ff7a59;
+
+/* The hero card uses a tint of the accent colour and a soft drop
+ * shadow so it reads as "important", but never shouty. */
+.hero-card {
+    background: linear-gradient(135deg,
+        alpha(@accentcolor, 0.10),
+        alpha(@accentcolor, 0.03));
+    border-radius: 22px;
+    padding: 28px 32px;
+    box-shadow: 0 4px 12px alpha(#000, 0.04);
+}
+
+.hero-card .battery-display {
+    /* The big "%" number. We deliberately use a heavy weight to
+     * mirror the original "BOSE CONNECT" branding but the digits
+     * are bigger than the chrome ones. */
+    font-family: 'Cantarell', 'Inter', sans-serif;
+    font-weight: 800;
+    font-size: 96px;
+    letter-spacing: -2px;
+    color: alpha(@accentcolor, 0.95);
+    margin: 0;
+    padding: 0;
+}
+
+.hero-card .battery-display .percent {
+    /* Suppress the "%" sign a bit so the digits dominate. */
+    font-size: 36px;
+    font-weight: 600;
+    vertical-align: super;
+    color: alpha(@accentcolor, 0.55);
+    margin-left: 4px;
+}
+
+.hero-card .pulse {
+    /* A small pulse indicator next to the connection state. */
+    min-width: 10px;
+    min-height: 10px;
+    border-radius: 50%;
+    background: @success_color;
+    box-shadow: 0 0 0 0 alpha(@success_color, 0.6);
+    animation: pulse 1.6s ease-in-out infinite;
+}
+
+.hero-card .pulse.disconnected {
+    background: @error_color;
+    box-shadow: 0 0 0 0 alpha(@error_color, 0.4);
+    animation: none;
+}
+
+@keyframes pulse {
+    0%   { box-shadow: 0 0 0 0   alpha(@success_color, 0.55); }
+    70%  { box-shadow: 0 0 0 8px alpha(@success_color, 0.0); }
+    100% { box-shadow: 0 0 0 0   alpha(@success_color, 0.0); }
+}
+
+/* A short inline pill. We avoid label-ish background colours so it
+ * does not clash with the surrounding Adw.Avatar / library image. */
+.pill {
+    border-radius: 999px;
+    padding: 4px 12px;
+    background: alpha(@accentcolor, 0.10);
+    color: alpha(@accentcolor, 1.0);
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.pill.danger {
+    background: alpha(@error_color, 0.18);
+    color: @error_color;
+}
+
+.pill.idle {
+    background: alpha(@window_fg_color, 0.08);
+    color: alpha(@window_fg_color, 0.85);
+}
+
+/* Sparkline: a 1-pixel-tall horizontal battery history. We don't
+ * draw the path with a custom widget — we just stack `battery-bar`
+ * rectangles inside a GtkBox and let CSS hide the seams. */
+.sparkline {
+    background: alpha(@window_fg_color, 0.05);
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.sparkline .sparkline-bar {
+    background: alpha(@accentcolor, 0.55);
+    border-radius: 2px;
+    margin: 0 1px;
+}
+
+.sparkline .sparkline-bar.empty {
+    background: alpha(@window_fg_color, 0.10);
+}
+
+/* A setting tile (ANC, voice prompts, language) — basically a card
+ * with an icon and a label, plus an attached actionable row at the
+ * bottom. The CSS pulls double duty as a setting selector and as a
+ * status readout, depending on which children are present. */
+.tile {
+    background: @cardbg;
+    border-radius: 18px;
+    padding: 20px 22px;
+    border: 1px solid alpha(@window_fg_color, 0.06);
+}
+
+.tile > .tile-header {
+    margin-bottom: 12px;
+}
+
+.tile > .tile-header > .tile-icon {
+    color: alpha(@accentcolor, 0.9);
+}
+
+.tile > .tile-header > .tile-title {
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.tile > .tile-header > .tile-subtitle {
+    color: alpha(@window_fg_color, 0.55);
+    font-size: 12px;
+}
+
+.tile .segmented {
+    /* The segmented "Off / High / Low" row. */
+    background: alpha(@window_fg_color, 0.06);
+    border-radius: 999px;
+    padding: 4px;
+}
+
+.tile .segmented > .segmented-button {
+    border-radius: 999px;
+    padding: 6px 18px;
+    font-weight: 600;
+    color: alpha(@window_fg_color, 0.70);
+    background: transparent;
+    border: none;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.tile .segmented > .segmented-button.selected {
+    background: alpha(@accentcolor, 1.0);
+    color: white;
+}
+
+/* A small floating "HUD" overlay for transient notifications about
+ * the battery. We hide it on touch interfaces (relies on hover). */
+.battery-hud {
+    background: alpha(@window_bg_color, 0.95);
+    border-radius: 14px;
+    padding: 12px 16px;
+    box-shadow: 0 8px 30px alpha(#000, 0.18);
+    border: 1px solid alpha(@window_fg_color, 0.08);
+}
+
+/* A row in the activity log. The icon column has a fixed width so
+ * the timestamp column snaps. */
+.log-row {
+    padding: 8px 0;
+    border-bottom: 1px solid alpha(@window_fg_color, 0.06);
+}
+
+.log-row .log-time {
+    color: alpha(@window_fg_color, 0.45);
+    font-feature-settings: "tnum";
+    font-size: 11px;
+}
+
+.log-row .log-message.error {
+    color: @error_color;
+}
+
+.log-row .log-message.success {
+    color: @success_color;
+}
+
+/* The connection-state banner used at the top of the wizard view. */
+.connection-banner {
+    border-radius: 999px;
+    padding: 14px 20px;
+    background: alpha(@accentcolor, 0.12);
+    color: alpha(@accentcolor, 1);
+    font-weight: 600;
+}
+
+.connection-banner.error {
+    background: alpha(@error_color, 0.14);
+    color: @error_color;
+}
+
+/* Quick action button (refresh / scan) — small, no padding, and uses
+ * the accent colour so it doesn't compete with the primary "Apply"
+ * CTA further down the page. */
+.quick-action {
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: alpha(@accentcolor, 0.10);
+    color: @accentcolor;
+    border: none;
+    font-weight: 600;
+}
+
+.quick-action:hover {
+    background: alpha(@accentcolor, 0.18);
+}
+
+.quick-action:active {
+    background: alpha(@accentcolor, 0.28);
+}
+
+/* The device-card on the "paired devices" panel. Mirrors libadwaita's
+ * .card but with a chip on the right for the connection state. */
+.device-card {
+    background: alpha(@window_bg_color, 0.5);
+    border: 1px solid alpha(@window_fg_color, 0.07);
+    border-radius: 14px;
+    padding: 14px 16px;
+}
+
+.device-card.connected {
+    border-color: alpha(@success_color, 0.6);
+}
+
+/* The big "Quiet Mode" toggle pill. */
+.quiet-mode {
+    background: linear-gradient(135deg, #0e1a4f, #1e2a78);
+    color: #7df9ff;
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    transition: background 200ms ease, color 200ms ease;
+}
+
+.quiet-mode.active {
+    background: linear-gradient(135deg, #1e2a78, #3ab9ff);
+    color: white;
+    box-shadow: 0 0 14px alpha(#3ab9ff, 0.5);
+}

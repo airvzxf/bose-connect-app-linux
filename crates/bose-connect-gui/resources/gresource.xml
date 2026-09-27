@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/airvzxf/bose-connect-gui">
+    <file>icons/hicolor/symbolic/apps/bose-connect-gui.svg</file>
+    <file>icons/hicolor/scalable/apps/bose-connect-gui.svg</file>
+    <file>menus/app-menu.ui</file>
+    <file>style.css</file>
+  </gresource>
+</gresources>
