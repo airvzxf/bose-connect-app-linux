@@ -233,10 +233,38 @@ fn activate(
     // sender here because the GUI is a one-writer / one-reader
     // pump.
     let (tx, rx) = flume::unbounded::<AppMsg>();
+
+    // Tray icon — hand-rolled StatusNotifierItem. We always start
+    // it (even when running headless) so the smoke test can
+    // verify the `Register` call reaches the watcher. When the
+    // session bus isn't available (`DBusConnection::get` returns
+    // an error) we degrade silently and the GUI continues without
+    // a tray icon — KDE Plasma expects this for non-graphical
+    // sessions.
+    let mut tray_handle_opt = None;
+    let mut tray_rx_opt = None;
+    match bose_connect_gui::services::tray::TrayService::start("bose-connect-gui") {
+        Ok((handle, tray_rx)) => {
+            tray_handle_opt = Some(handle);
+            tray_rx_opt = Some(tray_rx);
+        }
+        Err(err) => {
+            tracing::warn!(
+                target: "tray",
+                "status-notifier-item unavailable: {err}; running without tray icon",
+            );
+        }
+    }
+    let _ = tray_handle_opt;
+    let tray_rx_opt = tray_rx_opt;
+
     let model_holder: std::rc::Rc<std::cell::RefCell<AppModel>> =
         std::rc::Rc::new(std::cell::RefCell::new(model));
     let model_for_pump = model_holder.clone();
     let service_clone = _service.clone();
+    let tx_for_widget_tray = tx.clone();
+
+    // Widget pump — drains the `flume` channel into the model.
     glib::MainContext::default().spawn_local(async move {
         loop {
             let msg = match rx.recv_async().await {
@@ -247,6 +275,26 @@ fn activate(
             apply(&service_clone, &mut guard, msg);
         }
     });
+
+    // Tray pump — drains the `TrayCommand` channel into the
+    // same message stream as the widgets, but on a fast glib
+    // poll (250 ms) so we can use the synchronous
+    // `try_recv`. The tokio mpsc receiver's async methods
+    // require a tokio runtime which we don't have on the
+    // glib main context, so polling is the simpler option.
+    if let Some(mut tray_rx) = tray_rx_opt {
+        let tx_for_tray = tx_for_widget_tray.clone();
+        glib::source::timeout_add_local(Duration::from_millis(250), move || {
+            while let Ok(cmd) = tray_rx.try_recv() {
+                let _ = tx_for_tray.send(AppMsg::TrayEvent(cmd));
+            }
+            glib::ControlFlow::Continue
+        });
+    } else {
+        // Drop the unused sender so the borrow checker doesn't
+        // panic on `None`.
+        let _ = tx_for_widget_tray;
+    }
 
     // Periodic battery tick — drives the sparkline redraws AND
     // fires desktop notifications when the battery crosses low /
