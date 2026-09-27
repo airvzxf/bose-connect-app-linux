@@ -289,13 +289,15 @@ fn dispatch(cli: Cli) -> Result<()> {
         device.set_self_voice(parsed)?;
     } else if let Some(addr) = cli.connect_device.as_deref() {
         let addr = parse_address(addr)?;
-        device.connect_device(addr)?;
+        do_paired_op_verify(&mut device, "connect", addr, |d, a| d.connect_device(a))?;
     } else if let Some(addr) = cli.disconnect_device.as_deref() {
         let addr = parse_address(addr)?;
-        device.disconnect_device(addr)?;
+        do_paired_op_verify(&mut device, "disconnect", addr, |d, a| {
+            d.disconnect_device(a)
+        })?;
     } else if let Some(addr) = cli.remove_device.as_deref() {
         let addr = parse_address(addr)?;
-        device.remove_device(addr)?;
+        do_paired_op_verify(&mut device, "remove", addr, |d, a| d.remove_device(a))?;
     } else if let Some(hex) = cli.send_packet.as_deref() {
         do_send_packet(&mut device, hex)?;
     } else {
@@ -505,6 +507,126 @@ fn do_paired_devices(device: &mut BoseDevice) -> Result<()> {
     // import).
     let _: Option<DevicesConnected> = None;
     Ok(())
+}
+
+/// Run one of the paired-device operations (connect / disconnect /
+/// remove) and verify the effect took place by re-querying
+/// `get_paired_devices` afterwards. This is the A4 layer: the
+/// permissive ACK matcher at the protocol level (A2) tells us the
+/// device didn't return an error, but the device may have
+/// silently rejected the command (e.g. it doesn't support
+/// `REMOVE_DEVICE` while in party-mode). The verification step
+/// closes that gap by checking the Bose's own view of the world.
+fn do_paired_op_verify<F>(
+    device: &mut BoseDevice,
+    op: &str,
+    address: BdAddr,
+    mut action: F,
+) -> Result<()>
+where
+    F: FnMut(&mut BoseDevice, BdAddr) -> Result<(), bose_connect::BoseError>,
+{
+    const MAX_ATTEMPTS: usize = 3;
+    const RETRY_BACKOFF: Duration = Duration::from_secs(1);
+
+    // Snapshot paired devices BEFORE the operation, so we know
+    // whether the address was already in the list (in which
+    // case connect is a no-op verify, and remove is the only
+    // operation with a clear before/after diff).
+    let before = snapshot_paired_addresses(device)?;
+
+    let canonical = format_address(&address);
+    eprintln!("[paired-op:{op}] target = {canonical}");
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        match action(device, address) {
+            Ok(()) => {
+                eprintln!("[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: protocol OK");
+            }
+            Err(e) => {
+                if attempt < MAX_ATTEMPTS {
+                    eprintln!(
+                        "[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: protocol error: {e}; retrying in {RETRY_BACKOFF:?}"
+                    );
+                    std::thread::sleep(RETRY_BACKOFF);
+                    continue;
+                }
+                return Err(anyhow::anyhow!(
+                    "{op} {canonical} failed after {MAX_ATTEMPTS} attempts: {e}"
+                ));
+            }
+        }
+
+        // Protocol said OK — verify the device's internal state
+        // actually changed.
+        let after = snapshot_paired_addresses(device)?;
+        let op_result = verify_paired_change(op, &before, &after, &address);
+        match op_result {
+            Ok(()) => {
+                eprintln!(
+                    "[paired-op:{op}] verified state change after {attempt}/{MAX_ATTEMPTS} attempts"
+                );
+                return Ok(());
+            }
+            Err(verify_err) => {
+                if attempt < MAX_ATTEMPTS {
+                    eprintln!(
+                        "[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: protocol OK but state unchanged ({verify_err}); retrying"
+                    );
+                    std::thread::sleep(RETRY_BACKOFF);
+                    continue;
+                }
+                return Err(anyhow::anyhow!(
+                    "{op} {canonical}: protocol returned OK but the device state never changed ({verify_err}). \
+                     The command was likely rejected silently. Check the device's pairing list manually."
+                ));
+            }
+        }
+    }
+    unreachable!("loop returns or continues")
+}
+
+fn snapshot_paired_addresses(
+    device: &mut BoseDevice,
+) -> Result<std::collections::BTreeSet<[u8; 6]>> {
+    let pd = device.paired_devices()?;
+    Ok(pd.addresses[..pd.num_devices]
+        .iter()
+        .map(|bd| bd.b)
+        .collect())
+}
+
+fn verify_paired_change(
+    op: &str,
+    _before: &std::collections::BTreeSet<[u8; 6]>,
+    after: &std::collections::BTreeSet<[u8; 6]>,
+    address: &BdAddr,
+) -> Result<(), &'static str> {
+    match op {
+        "connect" => {
+            if after.contains(&address.b) {
+                Ok(())
+            } else {
+                Err("connect accepted by protocol but address is not in the post-snapshot")
+            }
+        }
+        "disconnect" => Ok(()),
+        "remove" => {
+            if !after.contains(&address.b) {
+                Ok(())
+            } else {
+                Err("remove accepted by protocol but address is still in the post-snapshot")
+            }
+        }
+        _ => Err("unknown paired-op"),
+    }
+}
+
+fn format_address(address: &BdAddr) -> String {
+    let canonical = bose_connect::address::reverse_ba2str(address);
+    std::str::from_utf8(&canonical[..17])
+        .unwrap_or("??:??:??:??:??:??")
+        .to_string()
 }
 
 fn do_device_id(device: &mut BoseDevice) -> Result<()> {

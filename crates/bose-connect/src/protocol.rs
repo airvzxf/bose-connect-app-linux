@@ -97,12 +97,15 @@ const GET_DEVICE_INFO_SEND_PREFIX: [u8; 4] = [0x04, 0x05, 0x01, 6];
 const GET_DEVICE_INFO_ACK: [u8; 3] = [0x04, 0x05, 0x03];
 
 const CONNECT_DEVICE_SEND_PREFIX: [u8; 5] = [0x04, 0x01, 0x05, 6 + 1, 0x00];
+#[allow(dead_code)]
 const CONNECT_DEVICE_ACK_PREFIX: [u8; 4] = [0x04, 0x01, 0x07, 6];
 
 const DISCONNECT_DEVICE_SEND_PREFIX: [u8; 4] = [0x04, 0x02, 0x05, 6];
+#[allow(dead_code)]
 const DISCONNECT_DEVICE_ACK_PREFIX: [u8; 4] = [0x04, 0x02, 0x07, 6];
 
 const REMOVE_DEVICE_SEND_PREFIX: [u8; 4] = [0x04, 0x03, 0x05, 6];
+#[allow(dead_code)]
 const REMOVE_DEVICE_ACK_PREFIX: [u8; 4] = [0x04, 0x03, 0x06, 6];
 
 const BT_ADDR_LEN: usize = 6;
@@ -502,12 +505,7 @@ pub fn connect_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<()> 
     let mut send = [0u8; BYTES_POSITION_11];
     send[..5].copy_from_slice(&CONNECT_DEVICE_SEND_PREFIX);
     send[BYTES_POSITION_5..BYTES_POSITION_5 + BT_ADDR_LEN].copy_from_slice(&address.b);
-
-    let mut ack = [0u8; BYTES_POSITION_10];
-    ack[..4].copy_from_slice(&CONNECT_DEVICE_ACK_PREFIX);
-    ack[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
-
-    io.bose_write_check(&send, &ack)
+    write_paired(io, &send, &address.b)
 }
 
 /// `int disconnect_device(int sock, bdaddr_t address)` in `based.c`.
@@ -515,12 +513,7 @@ pub fn disconnect_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<(
     let mut send = [0u8; BYTES_POSITION_10];
     send[..4].copy_from_slice(&DISCONNECT_DEVICE_SEND_PREFIX);
     send[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
-
-    let mut ack = [0u8; BYTES_POSITION_10];
-    ack[..4].copy_from_slice(&DISCONNECT_DEVICE_ACK_PREFIX);
-    ack[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
-
-    io.bose_write_check(&send, &ack)
+    write_paired(io, &send, &address.b)
 }
 
 /// `int remove_device(int sock, bdaddr_t address)` in `based.c`.
@@ -528,17 +521,91 @@ pub fn remove_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<()> {
     let mut send = [0u8; BYTES_POSITION_10];
     send[..4].copy_from_slice(&REMOVE_DEVICE_SEND_PREFIX);
     send[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
-
-    let mut ack = [0u8; BYTES_POSITION_10];
-    ack[..4].copy_from_slice(&REMOVE_DEVICE_ACK_PREFIX);
-    ack[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
-
-    io.bose_write_check(&send, &ack)
+    write_paired(io, &send, &address.b)
 }
 
 // ---------------------------------------------------------------------------
 // Private helpers. Mirror the static C functions in `based.c`.
 // ---------------------------------------------------------------------------
+
+/// Send a paired-device packet and validate the response with a
+/// permissive matcher. This replaces the C `write_check` for the
+/// `connect_device` / `disconnect_device` / `remove_device` flows
+/// because the SLC II 4.0.1 firmware does not return the canonical
+/// 10-byte ACK that the original C code expects.
+///
+/// Observed SLC II responses (from `--send-packet` capture):
+///
+/// | Command          | Bytes sent                          | Bytes received                                          |
+/// |------------------|-------------------------------------|---------------------------------------------------------|
+/// | `CONNECT_DEVICE` | `04 01 05 07 00 + addr` (11)         | `04 01 04 07 0b + addr` (11) — opcode differs, length 7 |
+/// | `DISCONNECT_DEVICE` | `04 02 05 06 + addr` (10)         | `04 02 07 00 04 02 06 06 + addr` (14) — 2 packets     |
+/// | `REMOVE_DEVICE`  | `04 03 05 06 + addr` (10)            | empty — no response at all                               |
+///
+/// Acceptance rule (any of these = success):
+///
+/// 1. The response is **empty** — the device silently accepted the
+///    command (REMOVE_DEVICE on SLC II).
+/// 2. The first two bytes match the first two bytes of the sent
+///    packet (the Bose subsystem prefix, e.g. `04 02` for
+///    DISCONNECT_DEVICE), **and** the address bytes appear
+///    anywhere in the response. This catches both the
+///    canonical `prefix + addr` ACK and the SLC II's variant
+///    (`prefix + status + addr`) responses.
+///
+/// Anything else returns [`BoseError::AckMismatch`].
+pub(crate) fn write_paired<I: BoseIo>(
+    io: &mut I,
+    send: &[u8],
+    address: &[u8; 6],
+) -> BoseResult<()> {
+    io.bose_write_all(send)?;
+
+    // Read up to 64 bytes or until timeout. The SLC II has been
+    // observed to send between 0 and 14 bytes depending on the
+    // command; the Bose QC35 sends the canonical 10-byte ACK. 64
+    // bytes is plenty of headroom for both.
+    //
+    // We read incrementally (not with `bose_read_exact`) so an
+    // empty / partial response surfaces as the actual byte count,
+    // not as an error. `bose_read_exact` would treat anything
+    // shorter than the requested size as `ShortRead`, which would
+    // mask the SLC II's silent-accept behaviour for REMOVE_DEVICE.
+    let mut buf = vec![0u8; 64];
+    let mut total = 0usize;
+    while total < buf.len() {
+        match std::io::Read::read(io, &mut buf[total..]) {
+            Ok(0) => break,
+            Ok(n) => {
+                total += n;
+                if total == buf.len() {
+                    break;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    buf.truncate(total);
+
+    // Rule 1: silent acceptance.
+    if buf.is_empty() {
+        return Ok(());
+    }
+
+    // Rule 2: prefix + address-anywhere.
+    if buf.len() >= 2
+        && send.len() >= 2
+        && buf[0] == send[0]
+        && buf[1] == send[1]
+        && buf.windows(6).any(|w| w == address)
+    {
+        return Ok(());
+    }
+
+    Err(BoseError::AckMismatch)
+}
 
 /// `static int masked_memory_cmp(const uint8_t *ptr1, uint8_t *ptr2,
 /// size_t num, const uint8_t *mask)` in `based.c`. Returns 0 on
@@ -682,5 +749,165 @@ mod tests {
         assert!(has_noise_cancelling(0x400c));
         assert!(!has_noise_cancelling(0x1234));
         assert!(!has_noise_cancelling(0));
+    }
+
+    /// `write_paired` is the permissive ACK matcher used by
+    /// `connect_device`, `disconnect_device`, and `remove_device`.
+    /// It accepts three response shapes observed across Bose
+    /// firmwares: canonical QC35 ACK, SLC II variant with a
+    /// status byte, and the silent-accept (empty) response
+    /// observed on SLC II `REMOVE_DEVICE`. Each test below
+    /// drives `write_paired` over a `UnixStream` pair and asserts
+    /// the right `BoseResult`.
+    mod write_paired_tests {
+        use super::*;
+        use std::io::{Read, Write};
+        use std::os::unix::net::UnixStream;
+        use std::thread;
+
+        /// Build a pair, return (client, server) so the test can
+        /// drive the protocol side and the helper thread can
+        /// simulate the Bose device side.
+        fn pair() -> (UnixStream, UnixStream) {
+            UnixStream::pair().expect("UnixStream::pair")
+        }
+
+        /// Drain the `send` packet from the device side and
+        /// reply with `reply` (may be empty for silent-accept
+        /// tests).
+        fn reply_with(server: &mut UnixStream, reply: &[u8]) {
+            let mut len = [0u8; 1];
+            // The protocol layer reads up to 64 bytes; the test
+            // helper doesn't need to consume all of them, just
+            // enough to know what was sent.
+            let _ = server.read(&mut len);
+            let _ = server.read(&mut [0u8; 64]);
+            if !reply.is_empty() {
+                server.write_all(reply).unwrap();
+                server.flush().ok();
+            }
+        }
+
+        /// Run a closure on the client side while the server
+        /// side runs `device_side`.
+        fn with_pair<R, F, G>(device_side: G, client_op: F) -> R
+        where
+            F: FnOnce(&mut UnixStream) -> R + Send + 'static,
+            G: FnOnce(&mut UnixStream) + Send + 'static,
+            R: Send + 'static,
+        {
+            let (mut client, mut server) = pair();
+            let server_handle = thread::spawn(move || device_side(&mut server));
+            let result = client_op(&mut client);
+            server_handle.join().expect("server thread panicked");
+            result
+        }
+
+        #[test]
+        fn accepts_canonical_qc35_ack() {
+            // CONNECT_DEVICE canonical QC35 ACK: 10 bytes,
+            // opcode 0x07, length 6, then 6-byte address.
+            let addr = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+            let send = [
+                0x04, 0x01, 0x05, 0x07, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
+            ];
+            let ack = [0x04, 0x01, 0x07, 0x06, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+            let result = with_pair(
+                move |s| reply_with(s, &ack),
+                move |c| write_paired(c, &send, &addr),
+            );
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        }
+
+        #[test]
+        fn accepts_slc2_variant_with_status_byte() {
+            // Observed SLC II response: opcode differs (0x04 not
+            // 0x07), length differs (7 not 6), 1-byte status
+            // prefix (0x0b) before the address.
+            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let send = [
+                0x04, 0x01, 0x05, 0x07, 0x00, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
+            ];
+            let ack = [
+                0x04, 0x01, 0x04, 0x07, 0x0B, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
+            ];
+            let result = with_pair(
+                move |s| reply_with(s, &ack),
+                move |c| write_paired(c, &send, &addr),
+            );
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        }
+
+        #[test]
+        fn accepts_silent_empty_response() {
+            // Observed SLC II REMOVE_DEVICE: device sends no
+            // bytes back at all. The 1s SO_RCVTIMEO fires, the
+            // read loop breaks on timeout, and we treat silence
+            // as acceptance.
+            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let send = [0x04, 0x03, 0x05, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let result = with_pair(
+                move |s| {
+                    // Drain the sent packet but send nothing
+                    // back.
+                    let mut buf = [0u8; 64];
+                    let _ = std::io::Read::read(s, &mut buf);
+                },
+                move |c| write_paired(c, &send, &addr),
+            );
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        }
+
+        #[test]
+        fn accepts_disconnect_two_packet_response() {
+            // Observed SLC II DISCONNECT_DEVICE: device sends
+            // two concatenated responses. The prefix of the
+            // first matches the sent command's prefix, the
+            // address appears somewhere in the response, so the
+            // permissive matcher accepts.
+            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let send = [0x04, 0x02, 0x05, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let ack = [
+                0x04, 0x02, 0x07, 0x00, 0x04, 0x02, 0x06, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
+            ];
+            let result = with_pair(
+                move |s| reply_with(s, &ack),
+                move |c| write_paired(c, &send, &addr),
+            );
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        }
+
+        #[test]
+        fn rejects_response_with_wrong_prefix() {
+            // Response starts with `04 0f` (different subsystem)
+            // — must be rejected even though the address
+            // appears somewhere in the response.
+            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let send = [0x04, 0x02, 0x05, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let ack = [0x04, 0x0F, 0x07, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let result = with_pair(
+                move |s| reply_with(s, &ack),
+                move |c| write_paired(c, &send, &addr),
+            );
+            assert!(result.is_err(), "expected Err, got {:?}", result);
+            assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
+
+        #[test]
+        fn rejects_response_missing_address() {
+            // Response prefix matches but the address bytes
+            // don't appear anywhere in the response.
+            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
+            let send = [
+                0x04, 0x01, 0x05, 0x07, 0x00, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
+            ];
+            let ack = [0x04, 0x01, 0x07, 0x06, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
+            let result = with_pair(
+                move |s| reply_with(s, &ack),
+                move |c| write_paired(c, &send, &addr),
+            );
+            assert!(result.is_err(), "expected Err, got {:?}", result);
+            assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
     }
 }
