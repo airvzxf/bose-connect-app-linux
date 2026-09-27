@@ -348,9 +348,9 @@ int set_voice_prompts(int sock, int on) {
   }
 
   if (on) {
-    pl |= VP_MASK;
+    pl |= VP_ENABLE_BIT;
   } else {
-    pl &= ~VP_MASK;
+    pl &= ~VP_ENABLE_BIT;
   }
 
   return set_prompt_language(sock, pl);

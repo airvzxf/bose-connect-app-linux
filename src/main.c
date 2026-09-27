@@ -417,7 +417,7 @@ static int do_get_device_status(char *address) {
   }
 
   printf("\tLanguage: %s\n", language);
-  printf("\tVoice Prompts: %s\n", (promptLanguage & VP_MASK) ? "on" : "off");
+  printf("\tVoice Prompts: %s\n", (promptLanguage & VP_ENABLE_BIT) ? "on" : "off");
 
   printf("\tAuto-Off: ");
   if (autoOff) {
