@@ -409,6 +409,17 @@ fn do_battery_level(device: &mut BoseDevice) -> Result<()> {
 }
 
 fn do_paired_devices(device: &mut BoseDevice) -> Result<()> {
+    // Retry budget for each per-device query. The Bose SLC II
+    // occasionally takes more than the 1 s `SO_RCVTIMEO` to
+    // reply to one of the `GET_DEVICE_INFO` packets (especially
+    // for the currently-connected device, which is busy serving
+    // A2DP audio at the same time). Three retries per device
+    // with a 500 ms back-off is enough in practice; the original
+    // C code has no per-device retry and surfaces the EAGAIN as
+    // a hard failure on `--paired-devices`.
+    const PER_DEVICE_RETRIES: usize = 3;
+    const PER_DEVICE_BACKOFF: Duration = Duration::from_millis(500);
+
     let pd = device.paired_devices()?;
     println!("Paired devices: {}", pd.num_devices);
     let count = pd.connected.count().ok_or_else(|| {
@@ -420,7 +431,40 @@ fn do_paired_devices(device: &mut BoseDevice) -> Result<()> {
     println!("\tConnected: {}", count);
 
     for i in 0..pd.num_devices {
-        let info = device.device_info(pd.addresses[i])?;
+        // Retry the per-device query up to PER_DEVICE_RETRIES
+        // times. We log to stderr so the operator can see why
+        // the second/third attempt fired.
+        let info = {
+            let mut last_err: Option<bose_connect::BoseError> = None;
+            let mut result: Option<bose_connect::DeviceInfo> = None;
+            for attempt in 1..=PER_DEVICE_RETRIES {
+                match device.device_info(pd.addresses[i]) {
+                    Ok(info) => {
+                        result = Some(info);
+                        break;
+                    }
+                    Err(e) => {
+                        if attempt < PER_DEVICE_RETRIES {
+                            eprintln!(
+                                "[paired-devices] device {} attempt {}/{} failed: {e}; retrying in {:?}",
+                                i, attempt, PER_DEVICE_RETRIES, PER_DEVICE_BACKOFF
+                            );
+                            std::thread::sleep(PER_DEVICE_BACKOFF);
+                        }
+                        last_err = Some(e);
+                    }
+                }
+            }
+            result.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "device_info for paired device {} failed after {} attempts: {}",
+                    i,
+                    PER_DEVICE_RETRIES,
+                    last_err.expect("loop either sets result or last_err")
+                )
+            })?
+        };
+
         let canonical = bose_connect::address::reverse_ba2str(&info.address);
         let s = std::str::from_utf8(&canonical[..17]).unwrap_or("??:??:??:??:??:??");
         let glyph = match info.status {
