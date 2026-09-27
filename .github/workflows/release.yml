@@ -4,8 +4,12 @@ on:
   push:
     # Conventional SemVer tag. The 'v' prefix is required because
     # the AGENTS.md release flow uses `git tag -s vX.Y.Z` locally.
+    # NOTE: GitHub Actions tag filter uses GLOB syntax (not
+    # regex), so 'v[0-9]+...' would be interpreted as 'one digit
+    # followed by literal +' and never match real SemVer tags.
+    # The correct SemVer-like glob is below.
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v[0-9]*.[0-9]*.[0-9]*'
   workflow_dispatch:
     inputs:
       tag:
