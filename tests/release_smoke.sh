@@ -7,12 +7,14 @@
 #   - reports its version cleanly (`name version`, no author)
 #   - emits real libnotify log lines when the battery mock
 #     crosses the 25%/5% thresholds
+#   - calls Register on org.kde.StatusNotifierWatcher with our
+#     unique bus name so KDE Plasma picks up the tray icon
 #
 # Designed to be runnable on a CI host with a D-Bus session
 # bus already available (the case for every GitHub Actions
-# linux-runner). The D-Bus *capture* is verified manually
-# with `dbus-monitor` on this host; this script just checks
-# the in-process log line.
+# linux-runner). The D-Bus *capture* of `Register` is asserted
+# here with `dbus-monitor --session`; the libnotify log line is
+# checked in the in-process log.
 set -euo pipefail
 
 # Resolve the repo root from the script's location so the test
@@ -26,7 +28,15 @@ cargo build --workspace --release --locked
 # 2. Spot-check the version output.
 ./target/release/bose-connect-gui --version | grep -q '^bose-connect-gui 0\.1\.0$'
 
-# 3. Run the low-battery mock; the test should emit at least
+# 3. Capture the StatusNotifierWatcher `Register` call on the
+#    session bus. Run `dbus-monitor` in the background so it
+#    can survive the very short lifetime of the smoke binary.
+dbus-monitor --session "interface='org.kde.StatusNotifierWatcher'" \
+    > /tmp/bose-sni.log 2>&1 &
+MON=$!
+sleep 1
+
+# 4. Run the low-battery mock; the test should emit at least
 #    one libnotify log line. We force `--headless` and wrap
 #    the run with `timeout` so this stays well-behaved on CI
 #    boxes where the binary would otherwise try to open a
@@ -38,7 +48,13 @@ timeout 30s env RUST_LOG=info ./target/release/bose-connect-gui \
     --run-secs 7 \
     > /tmp/bose-rel.log 2>&1
 
-# 4. Confirm a low-battery notification fired in the log.
+# 5. Stop the monitor and confirm we asked the watcher to
+#    register our tray icon.
+kill $MON 2>/dev/null || true
+wait $MON 2>/dev/null || true
+grep -q 'Register' /tmp/bose-sni.log
+
+# 6. Confirm a low-battery notification fired in the log.
 # We grep for the `cross band` trace because libnotify's Notify
 # call body is captured by zbus but not echoed in the log; the
 # `cross band N -> M` line is the in-process proof that the
