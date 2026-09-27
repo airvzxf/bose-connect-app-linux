@@ -74,7 +74,7 @@ fn parse_cli() -> CliArgs {
                 println!("  --real, --real-bluetooth  Use the real RFCOMM transport");
                 println!("  --mock                    Use the in-process mock device");
                 println!("  --headless                Render once and exit (smoke tests)");
-                println!("  --screenshot PATH         Save a PNG of the first frame (headless)");
+                println!("  --screenshot PATH         Save a PPM of the first frame (headless)");
                 println!("  --address AA:BB:CC:DD:EE:FF  Override the persisted address");
                 println!("  --mock-tick-ms MS        Battery-drain interval (default 4000)");
                 println!("  --run-secs SECONDS        After running for N s, exit cleanly");
@@ -86,12 +86,7 @@ fn parse_cli() -> CliArgs {
                 std::process::exit(0);
             }
             "-V" | "--version" => {
-                println!(
-                    "{} {} ({})",
-                    env!("CARGO_PKG_NAME"),
-                    env!("CARGO_PKG_VERSION"),
-                    env!("CARGO_PKG_AUTHORS")
-                );
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
             }
             other => eprintln!("warning: unknown argument: {other}"),
