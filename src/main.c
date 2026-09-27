@@ -403,7 +403,12 @@ static int do_get_device_status(char *address) {
   printf("\tName: %s\n", name);
 
   char  unknown_language[] = "Unknown [0x00]";
-  char *language           = get_language_string((promptLanguage & VP_MASK));
+  // Strip the echo status flag (bit 7) and force the voice-prompt bit
+  // (bit 5) on before looking up the language. The Bose SLC II echoes
+  // the prompt-language byte with bit 7 set as a status indicator, and
+  // encodes the actual language in the lower 5 bits; without the AND+OR
+  // the lookup would fall through to 'Unknown' for every successful read.
+  char *language           = get_language_string(((promptLanguage & VP_MASK) | VP_ENABLE_BIT));
 
   if (strcmp("", language) == 0) {
     char      language_value[4]  = "";
