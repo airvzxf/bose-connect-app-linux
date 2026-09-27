@@ -26,12 +26,34 @@ jobs:
           gh-code-scanning-compat: true
           max-allowed-issues: 2147483647
 
+      # Since the 2025-07-22 GitHub Code Scanning change, the upload-sarif
+      # action rejects SARIF files whose `runs[]` entries are not unique by
+      # (automationDetails.id, tool.driver.name). With gh-code-scanning-compat
+      # enabled, the Codacy CLI emits one `runs[]` entry per internal tool
+      # (clang-tidy, semgrep, eslint, ...) but they all share
+      # tool.driver.name="Codacy". Stamp a unique automationDetails.id on
+      # every run before uploading so the action accepts the SARIF. See
+      # https://github.blog/changelog/2025-07-21-code-scanning-will-stop-combining-multiple-sarif-runs-uploaded-in-the-same-sarif-file/
+      - name: Stamp unique automationDetails.id per SARIF run
+        run: |
+          set -euo pipefail
+          jq '
+            .runs |= (
+              [ range(0; length) as $i | .[$i]
+                | .automationDetails = {
+                    id: ("codacy/"
+                          + (.tool.driver.name // "codacy")
+                          + "/" + ($i | tostring))
+                  }
+              ]
+            )
+          ' results.sarif > results-fixed.sarif
+          mv results-fixed.sarif results.sarif
+
       - name: Upload SARIF results file
         uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4
         with:
           sarif_file: results.sarif
-          # Use a dedicated category so the Codacy run does not collide with
-          # the CodeQL workflow (which uploads to the default `codeql`
-          # category). GitHub refuses multiple SARIF runs sharing the same
-          # category since July 2025.
+          # Dedicated category so the Codacy run does not collide with the
+          # CodeQL workflow (which uploads to the default `codeql` category).
           category: codacy
