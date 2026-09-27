@@ -197,6 +197,7 @@ static int do_set_prompt_language(char *address, const char *arg) {
   if (pl == PL_UNKNOWN) {
     fprintf(stderr, "Invalid prompt language argument: %s\n", arg);
     usage();
+    close(sock);
     return 1;
   }
 
@@ -228,6 +229,7 @@ static int do_set_voice_prompts(char *address, const char *arg) {
   if (voice_status == -1) {
     fprintf(stderr, "Invalid voice prompt argument: %s\n", arg);
     usage();
+    close(sock);
     return 1;
   }
 
@@ -248,11 +250,13 @@ static int do_set_auto_off(char *address, const char *arg) {
 
   if (errno != 0) {
     perror("Error trying to set auto off.\n");
+    close(sock);
     return 1;
   }
 
   if (end_pointer == arg) {
     fprintf(stderr, "No digits were found.\n");
+    close(sock);
     return 1;
   }
 
@@ -305,6 +309,7 @@ static int do_set_noise_cancelling(char *address, const char *arg) {
   if (nc == NC_UNKNOWN) {
     fprintf(stderr, "Invalid noise cancelling argument: %s\n", arg);
     usage();
+    close(sock);
     return 1;
   }
 
@@ -312,12 +317,14 @@ static int do_set_noise_cancelling(char *address, const char *arg) {
   unsigned int index     = 0;
   int          status    = get_device_id(sock, &device_id, &index);
   if (status) {
+    close(sock);
     return status;
   }
 
   if (!has_noise_cancelling(device_id)) {
     fprintf(stderr, "This device does not have noise cancelling.\n");
     usage();
+    close(sock);
     return 1;
   }
 
@@ -397,6 +404,7 @@ static int do_get_device_status(char *address) {
   int status = get_device_status(sock, name, &promptLanguage, &autoOff,
                                  &noiseCancelling);
   if (status) {
+    close(sock);
     return status;
   }
 
@@ -476,6 +484,7 @@ static int do_set_pairing(char *address, const char *arg) {
   if (p == P_UNKNOWN) {
     fprintf(stderr, "Invalid pairing argument: %s\n", arg);
     usage();
+    close(sock);
     return 1;
   }
 
@@ -514,6 +523,7 @@ static int do_set_self_voice(char *address, const char *arg) {
   if (p == SV_UNKNOWN) {
     fprintf(stderr, "Invalid self voice argument: %s\n", arg);
     usage();
+    close(sock);
     return 1;
   }
 
@@ -532,6 +542,7 @@ static int do_get_firmware_version(char *address) {
   int  status = get_firmware_version(sock, version);
 
   if (status) {
+    close(sock);
     return status;
   }
 
@@ -551,6 +562,7 @@ static int do_get_serial_number(char *address) {
   int  status = get_serial_number(sock, serial);
 
   if (status) {
+    close(sock);
     return status;
   }
 
@@ -570,6 +582,7 @@ static int do_get_battery_level(char *address) {
   int          status = get_battery_level(sock, &level);
 
   if (status) {
+    close(sock);
     return status;
   }
 
@@ -618,6 +631,7 @@ static int do_get_paired_devices(char *address) {
 
   int status = get_paired_devices(sock, devices, &num_devices, &connected);
   if (status) {
+    close(sock);
     return status;
   }
 
@@ -627,6 +641,7 @@ static int do_get_paired_devices(char *address) {
            "(0x01 and 0x03)."
            "\n",
            connected);
+    close(sock);
     return 1;
   }
 
@@ -639,6 +654,7 @@ static int do_get_paired_devices(char *address) {
     struct Device device;
     status = get_device_info(sock, devices[i], &device);
     if (status) {
+      close(sock);
       return status;
     }
 
@@ -649,6 +665,7 @@ static int do_get_paired_devices(char *address) {
     char status_symbol = get_paired_device_status(device.status);
 
     if (status_symbol == ':') {
+      close(sock);
       return 1;
     }
 
