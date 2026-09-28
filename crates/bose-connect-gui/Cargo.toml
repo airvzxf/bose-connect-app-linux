@@ -57,6 +57,10 @@ real-bluetooth = []
 [build-dependencies]
 glib-build-tools = "0.20"
 
+[dev-dependencies]
+# `assets` module tests use a tempdir-backed $XDG_DATA_HOME.
+tempfile = "3"
+
 [lib]
 name = "bose_connect_gui"
 path = "src/lib.rs"

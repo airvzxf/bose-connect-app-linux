@@ -7,7 +7,7 @@ Comment=GTK4 + libadwaita front-end for the bose_connect RFCOMM library
 # Icon shipped as a GResource; load via the resource URI that the
 # binary registers. If the resource isn't reachable the desktop
 # environment falls back to a theme icon.
-Icon=com.airvzxf.bose-connect-gui
+Icon=bose-connect-gui
 Exec=bose-connect-gui
 Terminal=false
 Categories=AudioVideo;Settings;
