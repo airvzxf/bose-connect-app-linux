@@ -276,6 +276,7 @@ dependencies = [
  "chrono",
  "directories",
  "flume",
+ "gdk-pixbuf",
  "glib-build-tools",
  "gtk4",
  "libadwaita",

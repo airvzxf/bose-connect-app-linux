@@ -41,7 +41,7 @@ struct Asset {
 
 const DESKTOP_FILE: Asset = Asset {
     relative_target: "applications/bose-connect-gui.desktop",
-    bytes: include_bytes!("../../../../packaging/linux/bose-connect-gui.desktop"),
+    bytes: include_bytes!("../../../../packaging/linux/desktop/bose-connect-gui.desktop"),
 };
 
 const SCALABLE_SVG: Asset = Asset {

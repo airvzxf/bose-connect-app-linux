@@ -38,6 +38,9 @@ notify-rust = { version = "4", default-features = false, features = ["z", "z-wit
 # GUI core. We pin the stack together so `gtk4-sys` doesn't mismatch.
 gtk = { package = "gtk4", version = "0.11", features = ["v4_22", "gnome_50"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
+# Image loading for the SNI IconPixmap. We render the SVG from
+# the GResource bundle at tray size and 2× for HiDPI.
+gdk-pixbuf = "0.22"
 
 once_cell = "1"
 parking_lot = "0.12"

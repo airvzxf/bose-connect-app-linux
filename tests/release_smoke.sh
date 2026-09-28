@@ -49,10 +49,14 @@ timeout 30s env RUST_LOG=info ./target/release/bose-connect-gui \
     > /tmp/bose-rel.log 2>&1
 
 # 5. Stop the monitor and confirm we asked the watcher to
-#    register our tray icon.
+#    register our tray icon. KDE Plasma 6's watcher
+#    exposes `RegisterStatusNotifierItem(in s service)`,
+#    NOT a plain `Register`. The grep has to be exact;
+#    matching the substring would silently let a typo'd
+#    method name through and the icon would never appear.
 kill $MON 2>/dev/null || true
 wait $MON 2>/dev/null || true
-grep -q 'Register' /tmp/bose-sni.log
+grep -q 'RegisterStatusNotifierItem' /tmp/bose-sni.log
 
 # 6. Confirm a low-battery notification fired in the log.
 # We grep for the `cross band` trace because libnotify's Notify

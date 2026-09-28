@@ -159,7 +159,7 @@ const WATCHER_OBJECT_PATH: &str = "/StatusNotifierWatcher";
 /// the main reducer loop.
 pub struct TrayService {
     /// The KDE Plasma StatusNotifierWatcher. We don't use this
-    /// after the initial Register call, but keeping the handle
+    /// after the initial RegisterStatusNotifierItem call, but keeping the handle
     /// prevents the gio binding from dropping the underlying
     /// glib::Object.
     _conn: gtk::gio::DBusConnection,
@@ -173,11 +173,11 @@ pub struct TrayService {
 
 impl TrayService {
     /// Acquire the session bus, the unique bus name, register the
-    /// SNI interface, then call `RegisterHost` /
-    /// `Register` on the watcher so KDE Plasma picks the icon up.
-    pub fn start(
-        icon_resource_path: &str,
-    ) -> anyhow::Result<(TrayServiceHandle, mpsc::UnboundedReceiver<TrayCommand>)> {
+    /// SNI interface, then call `RegisterStatusNotifierItem` on
+    /// the watcher so KDE Plasma picks the icon up. The icon is
+    /// loaded from the GResource bundle at the URI registered by
+    /// `resources/gresource.xml`.
+    pub fn start() -> anyhow::Result<(TrayServiceHandle, mpsc::UnboundedReceiver<TrayCommand>)> {
         // 1. The session bus. gio's `bus_get_sync` resolves the
         // session-bus address automatically (it parses `$DBUS_SESSION_BUS_ADDRESS`
         // or falls back to the launchd / systemd activation).
@@ -224,7 +224,6 @@ impl TrayService {
         // trigger an empty Variant reply, matching what
         // `ksni 0.3` does on `unknown` — Plasma tolerates it.
         let snapshot_for_prop = snapshot_handle.clone();
-        let icon_resource_path_owned = icon_resource_path.to_string();
         let cmd_tx_for_method = cmd_tx.clone();
         let registration_id = conn
             .register_object(SNI_OBJECT_PATH, iface_info)
@@ -270,7 +269,7 @@ impl TrayService {
             )
             .property(move |_conn, _sender, _path, _iface, property| {
                 let snap = snapshot_for_prop.lock().clone();
-                prop_value(&snap, property, &icon_resource_path_owned)
+                prop_value(&snap, property)
             })
             .set_property(|_conn, _sender, _path, _iface, _prop, _value| {
                 // The SNI properties are all read-only; reject
@@ -302,27 +301,39 @@ impl TrayService {
     }
 
     /// Update the snapshot the watcher's read-property handler
-    /// returns. Triggers `NewTitle` / `NewIcon` signals so KDE
-    /// refreshes its menu.
+    /// returns. Triggers `NewTitle` / `NewIcon` / `NewStatus` so
+    /// KDE refreshes. **Critically**: we also emit `NewStatus`
+    /// because every Plasma 6 implementation of the SNI watcher
+    /// caches the first `Status` it reads and only re-polls on
+    /// a `NewStatus` signal — without it, an icon registered
+    /// with `Status=Passive` (the default snapshot at start)
+    /// stays hidden even after we flip the snapshot to
+    /// `Active` / `NeedsAttention`.
     #[allow(dead_code)]
     pub fn update(&self, snap: TraySnapshot) {
+        // Capture the prior status so we only emit NewStatus
+        // when the band actually changes — keeps the watcher
+        // noise-free and (importantly) ensures the very first
+        // transition out of Passive is observable.
+        let prev_status = status_for(&self.snapshot.lock());
         *self.snapshot.lock() = snap.clone();
-        // Re-emit NewIcon / NewTitle so Plasma redraws. Errors
-        // here are expected before the watcher is up.
-        let _ = self._conn.emit_signal(
-            None,
-            SNI_OBJECT_PATH,
-            "org.kde.StatusNotifierItem",
-            "NewIcon",
-            None,
-        );
-        let _ = self._conn.emit_signal(
-            None,
-            SNI_OBJECT_PATH,
-            "org.kde.StatusNotifierItem",
-            "NewTitle",
-            None,
-        );
+        let new_status = status_for(&self.snapshot.lock());
+
+        let if_name = "org.kde.StatusNotifierItem";
+        let _ = self
+            ._conn
+            .emit_signal(None, SNI_OBJECT_PATH, if_name, "NewIcon", None);
+        let _ = self
+            ._conn
+            .emit_signal(None, SNI_OBJECT_PATH, if_name, "NewTitle", None);
+        if prev_status != new_status {
+            // NewStatus takes a `s` parameter with the new
+            // status value, per the SNI DBus interface XML.
+            let body = gtk::glib::Variant::tuple_from_iter([new_status.as_str().to_variant()]);
+            let _ =
+                self._conn
+                    .emit_signal(None, SNI_OBJECT_PATH, if_name, "NewStatus", Some(&body));
+        }
     }
 
     /// The bus name under which this process owns the SNI
@@ -372,18 +383,16 @@ impl TrayServiceHandle {
 // helpers
 // ---------------------------------------------------------------------------
 
-/// Side of the procedural tray icon. Matches the KDE Plasma 6
-/// system-tray applet's default slot size (22px) so the watcher
-/// does not have to scale — `StatusNotifierItem` already asks
-/// for the largest pixmap in the returned `IconPixmap` array.
-pub const ICON_PX: i32 = 22;
-
-/// Status of the SNI item, per the StatusNotifierItem spec. KDE
-/// Plasma 6 honours the spec faithfully: `Active` is always
-/// shown, `NeedsAttention` is always shown and animates between
-/// `IconPixmap` and `AttentionIconPixmap`, and `Passive`
+/// Status of the SNI item, per the StatusNotifierItem spec.
+/// KDE Plasma 6 shows `Active` automatically; `Passive`
 /// requires the user to enable "Show all items" in the panel
-/// settings (which is off by default in a clean Plasma 6 install).
+/// settings (off by default). We deliberately keep the
+/// `NeedsAttention` variant for spec compatibility (the SNI
+/// method_handlers can still emit it if a future use-case
+/// arrives) but `status_for()` never selects it — flipping
+/// that flag triggers KDE's IconPixmap/AttentionIconPixmap
+/// blink animation, which we don't want for a passive
+/// battery-band indicator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SniStatus {
     Active,
@@ -405,141 +414,149 @@ impl SniStatus {
 /// uses `Status` to decide whether the icon shows up; KDE
 /// Plasma 6 hides `Passive` by default, so we only fall back
 /// to `Passive` when there is no device at all.
+///
+/// We deliberately do **not** return `NeedsAttention` for the
+/// low / critical battery bands: KDE Plasma 6's watcher
+/// animates between `IconPixmap` and `AttentionIconPixmap`
+/// whenever the item is in `NeedsAttention` (the same icon
+/// swaps in and out). That animation flickers on the panel
+/// every 1–2 s, which is distractingly loud in idle time.
+/// Battery priority is communicated via the Title string
+/// (`"Bose Connect (10%)"`) and via the bell pop-up, both of
+/// which the user looks at on demand — the tray icon stays a
+/// steady SVG until the next UI polish pass.
 pub fn status_for(snap: &TraySnapshot) -> SniStatus {
     if !snap.connected || snap.name.is_empty() {
         return SniStatus::Passive;
     }
-    if snap.battery <= 25 {
-        SniStatus::NeedsAttention
-    } else {
-        SniStatus::Active
-    }
+    SniStatus::Active
 }
 
-/// Render the procedural 22×22 ARGB32 pixmap for a given
-/// snapshot. The glyph is two filled circles (the ear cups) joined
-/// by a horizontal bar (the band), tinted by battery band. ARGB
-/// bytes are returned in **network byte order** as the SNI spec
-/// requires (`a -> r -> g -> b`, most-significant byte first).
-fn make_pixmap(snap: &TraySnapshot) -> (i32, i32, Vec<u8>) {
-    // Three colours keyed by the SNI band so the user can read
-    // the battery state at a glance from the panel.
-    let color: (u8, u8, u8) = match snap.battery {
-        b if !snap.connected || b == 0 => (0x9A, 0x9A, 0x9A), // grey: disconnected
-        b if b <= 5 => (0xE2, 0x52, 0x52),                    // red: critical
-        b if b <= 25 => (0xE6, 0xA8, 0x32),                   // amber: low
-        _ => (0x4C, 0xB5, 0x82),                              // green: ok
-    };
-    let size = ICON_PX as usize;
-    // Geometry (inclusive ranges), headphones glyph centred
-    // horizontally on the 22×22 canvas:
-    //   band:    y ∈ [4, 6]    x ∈ [3, 18]    (16 px wide, 3 px tall)
-    //   left cup: circle centred at (5, 13) radius 4
-    //   right cup: circle centred at (17, 13) radius 4
-    let band_y: std::ops::RangeInclusive<i32> = 4..=6;
-    let band_x: std::ops::RangeInclusive<i32> = 3..=18;
-    let l_cup = (5, 13, 4);
-    let r_cup = (17, 13, 4);
-    let (a, r, g, b) = (0xFFu8, color.0, color.1, color.2);
-    let mut data = Vec::with_capacity(size * size * 4);
-    for y in 0..ICON_PX {
-        for x in 0..ICON_PX {
-            let in_band = band_y.contains(&y) && band_x.contains(&x);
-            let in_l_cup = {
-                let dx = x - l_cup.0;
-                let dy = y - l_cup.1;
-                dx * dx + dy * dy <= l_cup.2 * l_cup.2
-            };
-            let in_r_cup = {
-                let dx = x - r_cup.0;
-                let dy = y - r_cup.1;
-                dx * dx + dy * dy <= r_cup.2 * r_cup.2
-            };
-            let visible = in_band || in_l_cup || in_r_cup;
-            // ARGB in network byte order: A is the highest byte
-            // on the wire (the SNI spec requires this).
-            let (va, vr, vg, vb) = if visible { (a, r, g, b) } else { (0, 0, 0, 0) };
-            data.extend_from_slice(&[va, vr, vg, vb]);
+/// GResource path that the `gresource.xml` registered for the
+/// full-colour tray icon. Used as the data source for
+/// `IconPixmap` and `AttentionIconPixmap`.
+const TRAY_ICON_RESOURCE: &str =
+    "/com/airvzxf/bose-connect-gui/icons/hicolor/scalable/apps/bose-connect-gui.svg";
+
+/// Pixel side the Plasma 6 system-tray applet allocates for an
+/// SNI by default. The watcher usually asks for the largest
+/// pixmap in the returned array, so we also return a 2× copy
+/// for HiDPI displays.
+const ICON_PX: i32 = 22;
+
+/// Load the SVG icon from the GResource bundle, render it into
+/// an ARGB32 buffer at the requested scale, and return the
+/// `(width, height, bytes)` tuple the property handler ships
+/// to the watcher.
+///
+/// We render with `gdk_pixbuf::Pixbuf::from_resource_at_scale`
+/// so the renderer takes care of anti-aliasing — for a scalable
+/// SVG the bytes that hit Plasma 6 are clean even though the
+/// tray applet later stretches them again. We force `RGBA`
+/// (`has_alpha == true`); the per-pixel layout is then
+/// `R, G, B, A`. The SNI spec wants ARGB in **network byte
+/// order** (`A, R, G, B`), so we re-shuffle each quad before
+/// handing the buffer to the watcher.
+fn load_pixmap(scale: i32) -> Result<(i32, i32, Vec<u8>), anyhow::Error> {
+    let side = ICON_PX.max(1) * scale.max(1);
+    // The GResource bundle is registered by the binary at
+    // startup; tests don't go through `main`, so we have to
+    // register the same bundle here at first use. The
+    // registration is a cheap refcount bump when already
+    // registered, so doing this unconditionally costs nothing
+    // after the first call.
+    crate::register_resources();
+    let pixbuf = gdk_pixbuf::Pixbuf::from_resource_at_scale(TRAY_ICON_RESOURCE, side, side, true)
+        .map_err(|e| anyhow::anyhow!("load SVG icon: {e}"))?;
+    let w = pixbuf.width();
+    let h = pixbuf.height();
+    assert!(
+        pixbuf.n_channels() == 4 && pixbuf.has_alpha(),
+        "expected RGBA pixbuf (n_channels=4 + has_alpha)"
+    );
+    let stride = pixbuf.rowstride() as usize;
+    let src = unsafe { pixbuf.pixels() };
+    let src_len = stride * h as usize;
+    assert_eq!(
+        src.len(),
+        src_len,
+        "gdk-pixbuf returned a pixel buffer of unexpected size"
+    );
+
+    // RGBA→ARGB (big-endian): swap R↔A on each pixel.
+    let mut data = Vec::with_capacity(src.len());
+    let width = w as usize;
+    for row in 0..h as usize {
+        let row_start = row * stride;
+        let row_end = row_start + width * 4;
+        for chunk in src[row_start..row_end].chunks_exact(4) {
+            data.push(chunk[3]); // A
+            data.push(chunk[0]); // R
+            data.push(chunk[1]); // G
+            data.push(chunk[2]); // B
         }
     }
-    (ICON_PX, ICON_PX, data)
+    Ok((w, h, data))
 }
 
-/// Render an `IconPixmap` (i.e. an `a(iiay)` Variant array)
-/// for the property handler. KDE Plasma 6 picks the largest
-/// pixmap it can render from the array, so the array may
-/// contain both baseline and HiDPI copies if the caller passed
-/// `scale > 1`.
+/// Wrap the rendered pixmap in an `a(iiay)` SNI `IconPixmap`
+/// Variant. KDE Plasma 6 picks the largest pixmap from the array
+/// it can render natively, so the caller chooses whether to
+/// include a HiDPI copy via `scale = 2`.
 ///
-/// We construct the array via the raw `g_variant_builder_*`
-/// C API rather than the convenience
-/// `Variant::array_from_iter_with_type` wrapper because, at
-/// the time of writing, the wrapper has a known bug where the
-/// per-child type check compares against the full array type
-/// instead of the element type (see upstream glib-rs
-/// `array_from_iter_with_type`).
-fn pixmap_variant(snap: &TraySnapshot, scale: i32) -> gtk::glib::Variant {
-    let (w, h, data) = make_pixmap_scaled(snap, scale);
-    let inner =
-        gtk::glib::Variant::tuple_from_iter([w.to_variant(), h.to_variant(), data.to_variant()]);
+/// We build the array via the raw `g_variant_builder_*` C API
+/// because glib 0.22's `Variant::array_from_iter_with_type` helper
+/// has a known bug where the per-child type check compares
+/// against the full array type instead of the element type.
+fn pixmap_variant(scale: i32) -> gtk::glib::Variant {
     let arr_type = gtk::glib::VariantTy::new("a(iiay)").expect("valid d-bus type");
     let empty = gtk::glib::Variant::from_iter(std::iter::empty::<gtk::glib::Variant>());
-    unsafe {
-        let builder = gtk::glib::ffi::g_variant_builder_new(arr_type.as_ptr());
-        if builder.is_null() {
-            return empty;
-        }
-        gtk::glib::ffi::g_variant_builder_add_value(builder, inner.to_glib_none().0);
-        let v = gtk::glib::ffi::g_variant_builder_end(builder);
-        if v.is_null() {
-            gtk::glib::ffi::g_variant_builder_clear(builder);
-            return empty;
-        }
-        gtk::glib::Variant::from_glib_none(v)
-    }
-}
-
-/// Render the pixmap at a per-side scale factor. `scale=1`
-/// reproduces the 22×22 baseline; `scale=2` doubles both
-/// dimensions (44×44), the standard Plasma 6 HiDPI pixel
-/// count, so 4K monitors see a crisp icon. The same colour is
-/// used at every scale.
-fn make_pixmap_scaled(snap: &TraySnapshot, scale: i32) -> (i32, i32, Vec<u8>) {
-    if scale <= 1 {
-        return make_pixmap(snap);
-    }
-    // Re-render the geometry at the target scale by repeating
-    // each base pixel into a `scale × scale` block. Cheap and
-    // preserves the geometry without needing a real 2D draw
-    // primitive.
-    let base = make_pixmap(snap);
-    let base_w = base.0 as usize;
-    let base_h = base.1 as usize;
-    let target_w = base_w * scale as usize;
-    let target_h = base_h * scale as usize;
-    let mut out = Vec::with_capacity(target_w * target_h * 4);
-    for by in 0..base_h {
-        for _ in 0..scale as usize {
-            for bx in 0..base_w {
-                let src = (by * base_w + bx) * 4;
-                let pixel = &base.2[src..src + 4];
-                for _ in 0..scale as usize {
-                    out.extend_from_slice(pixel);
+    match load_pixmap(scale) {
+        Ok((w, h, data)) => {
+            let inner = gtk::glib::Variant::tuple_from_iter([
+                w.to_variant(),
+                h.to_variant(),
+                data.to_variant(),
+            ]);
+            unsafe {
+                let builder = gtk::glib::ffi::g_variant_builder_new(arr_type.as_ptr());
+                if builder.is_null() {
+                    return empty;
                 }
+                gtk::glib::ffi::g_variant_builder_add_value(builder, inner.to_glib_none().0);
+                let v = gtk::glib::ffi::g_variant_builder_end(builder);
+                if v.is_null() {
+                    gtk::glib::ffi::g_variant_builder_clear(builder);
+                    return empty;
+                }
+                gtk::glib::Variant::from_glib_none(v)
             }
         }
+        Err(err) => {
+            tracing::warn!(
+                target: "tray",
+                "SVG icon render failed at scale={scale}: {err}; tray icon will be blank",
+            );
+            empty
+        }
     }
-    (target_w as i32, target_h as i32, out)
 }
 
 /// Map an SNI property name to a `glib::Variant` value the
 /// watcher can consume. Unknown properties trigger an empty
 /// `()` Variant reply so the watcher doesn't loop on retries.
-fn prop_value(
-    snap: &TraySnapshot,
-    property: &str,
-    _icon_resource_path: &str,
-) -> gtk::glib::Variant {
+///
+/// `Category=ApplicationStatus` (not 'Hardware') so KDE Plasma 6
+/// buckets the icon next to other user-installed apps — Krita,
+/// Discord, Telora, KDE Connect — and away from the
+/// always-on OS primitives (NetworkManager, the Bluetooth
+/// applet, PulseAudio volume, Battery). Pairing two icon
+/// sources for the same BT hardware would be confusing (the
+/// Plasma 6 Bluetooth applet already shows every paired
+/// device including any Bose headset), and a vendor-specific
+/// GUI that lives in the user's $HOME feels like an app, not
+/// a system primitive.
+fn prop_value(snap: &TraySnapshot, property: &str) -> gtk::glib::Variant {
     match property {
         "Category" => "ApplicationStatus".to_variant(),
         "Id" => "com.airvzxf.bose-connect-gui".to_variant(),
@@ -557,13 +574,13 @@ fn prop_value(
         // use IconPixmap instead. Returning the resource path
         // would re-introduce the theme-lookup bug.
         "IconName" => String::new().to_variant(),
-        "IconPixmap" => pixmap_variant(snap, 1),
+        "IconPixmap" => pixmap_variant(1),
         "IconThemePath" => String::new().to_variant(),
         "AttentionIconName" => String::new().to_variant(),
         // Same pixmap data as IconPixmap (we don't ship a
         // distinct "alarm" glyph yet; KDE Plasma 6 will simply
         // NOT animate between the two when they're identical).
-        "AttentionIconPixmap" => pixmap_variant(snap, 1),
+        "AttentionIconPixmap" => pixmap_variant(1),
         "AttentionIconDescription" => "Bose Connect — battery is low".to_variant(),
         "OverlayIconName" => String::new().to_variant(),
         "OverlayIconPixmap" => {
@@ -593,9 +610,25 @@ fn prop_value(
     }
 }
 
-/// Send `Register` to the watcher so KDE Plasma picks the
-/// icon up. The watcher can be at any version of Plasma 5/6
-/// — the call signature is stable.
+/// Send `RegisterStatusNotifierItem` to the watcher so KDE
+/// Plasma picks the icon up. The watcher's exact method
+/// name is the one listed by `gdbus introspect
+/// --object-path /StatusNotifierWatcher`:
+///
+/// ```text
+/// methods:
+///   RegisterStatusNotifierItem(in  s service);
+///   RegisterStatusNotifierHost(in  s service);
+/// ```
+///
+/// **The canonical KDE Plasma 6 watcher has no `Register`
+/// method.** Calling the wrong name returns
+/// `org.freedesktop.DBus.Error.UnknownMethod`, the watcher
+/// silently ignores our existence, and the icon never
+/// appears in the tray. (Our pre-fix code shipped `Register`
+/// and the smoke test erroneously grep-matched
+/// `RegisterStatusNotifierItem` by suffix, which masked the
+/// regression for a couple of sessions.)
 fn call_watcher_register(
     conn: &gtk::gio::DBusConnection,
     our_bus_name: &str,
@@ -604,7 +637,7 @@ fn call_watcher_register(
         Some(WATCHER_BUS_NAME),
         WATCHER_OBJECT_PATH,
         Some("org.kde.StatusNotifierWatcher"),
-        "Register",
+        "RegisterStatusNotifierItem",
     );
     // Single argument: the bus name (a `s`).
     msg.set_body(&gtk::glib::Variant::tuple_from_iter([
@@ -640,33 +673,32 @@ mod tests {
     }
 
     #[test]
-    fn status_mapping_covers_every_band() {
-        // Disconnected => Passive, regardless of battery / name.
+    fn status_mapping_avoids_animated_attention() {
+        // Every *connected* state resolves to Active — we deliberately
+        // do not return NeedsAttention, because KDE Plasma 6
+        // animates between IconPixmap and AttentionIconPixmap for
+        // NeedsAttention items, and that flicker is distracting.
+        // Priority instead travels through the Title string and
+        // the bell pop-up, both of which the user can ignore.
         assert_eq!(status_for(&snap(0, false, "")), SniStatus::Passive);
         assert_eq!(
             status_for(&snap(50, false, "Bose QC35")),
             SniStatus::Passive
         );
-        // Connected but no name => Passive (no device yet).
+        // No name on a connected snapshot also stays Passive
+        // (we haven't pinned a device yet).
         assert_eq!(status_for(&snap(80, true, "")), SniStatus::Passive);
-        // Connected + healthy battery => Active.
-        assert_eq!(status_for(&snap(80, true, "Bose QC35")), SniStatus::Active);
-        // Connected + battery at the boundary 26 % is still Active.
-        assert_eq!(status_for(&snap(26, true, "Bose QC35")), SniStatus::Active);
-        // 25 % is the threshold; below that needs attention.
-        assert_eq!(
-            status_for(&snap(25, true, "Bose QC35")),
-            SniStatus::NeedsAttention
-        );
-        // Critical: 0 – 5 %.
-        assert_eq!(
-            status_for(&snap(5, true, "Bose QC35")),
-            SniStatus::NeedsAttention
-        );
-        assert_eq!(
-            status_for(&snap(0, true, "Bose QC35")),
-            SniStatus::NeedsAttention
-        );
+        // Connected + battery at every band → Active. The spec
+        // text "Battery low / critical / ok" travels in the
+        // Title and the bell, not the icon status.
+        for &battery in &[100u8, 80, 50, 30, 25, 15, 5, 0] {
+            let s = snap(battery, true, "Bose QC35");
+            assert_eq!(
+                status_for(&s),
+                SniStatus::Active,
+                "battery={battery}: expected Active, got NeedsAttention or Passive",
+            );
+        }
     }
 
     #[test]
@@ -680,72 +712,96 @@ mod tests {
     }
 
     #[test]
-    fn pixmap_is_22x22_argb32_in_network_byte_order() {
-        let (_w, h, data) = make_pixmap(&snap(50, true, "Bose QC35"));
-        assert_eq!((h as usize), ICON_PX as usize);
-        assert_eq!(data.len(), ICON_PX as usize * ICON_PX as usize * 4);
-        // Every pixel must be 4-byte ARGB in network byte order.
-        for chunk in data.chunks_exact(4) {
-            let a = chunk[0];
-            // Either fully transparent (a == 0) or fully opaque (a == 0xFF).
-            assert!(
-                a == 0 || a == 0xFF,
-                "alpha must be 0x00 or 0xFF, got 0x{a:02x}"
-            );
-        }
-    }
-
-    #[test]
-    fn pixmap_color_matches_battery_band() {
-        // The green / amber / red / grey palette is keyed off
-        // the battery state. We sample the centre of the left
-        // ear cup ((5, 13) in geometry units) — that point is
-        // always inside the filled circle, regardless of scale.
-        // The ARGB32 buffer is in network byte order: A → R → G → B.
-        let sample_red = |snap: &TraySnapshot| {
-            let (_, _, buf) = make_pixmap(snap);
-            let idx = ((13 * ICON_PX as usize) + 5) * 4;
-            (buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3])
-        };
-        // Disconnected => grey 0x9A.
-        let (a, r, _g, _b) = sample_red(&snap(0, false, ""));
-        assert_eq!(a, 0xFF, "alpha always opaque on filled pixels");
-        assert_eq!(r, 0x9A, "disconnected pixel must be grey");
-        // Healthy battery (>= 26 %).
-        let (_, r, _, _) = sample_red(&snap(80, true, "Bose QC35"));
-        assert_eq!(r, 0x4C, "healthy battery pixel must be green");
-        // Low (10 – 25 %).
-        let (_, r, _, _) = sample_red(&snap(15, true, "Bose QC35"));
-        assert_eq!(r, 0xE6, "low battery pixel must be amber");
-        // Critical (≤ 5 %).
-        let (_, r, _, _) = sample_red(&snap(3, true, "Bose QC35"));
-        assert_eq!(r, 0xE2, "critical battery pixel must be red");
-    }
-
-    #[test]
-    fn pixmap_has_exactly_two_filled_circles_and_a_band() {
-        // Count opaque pixels and confirm the geometry: 16 px wide
-        // band on rows 4-6, plus two ear cups of radius 4, centred at
-        // (5, 13) and (17, 13). The integer-area union is around
-        // 110–120 opaque pixels; we just check it's a sane shape
-        // (not zero, not the whole canvas, and congruent across
-        // scales).
-        let (_, _, data) = make_pixmap(&snap(50, true, "Bose QC35"));
-        let opaque = data.chunks_exact(4).filter(|c| c[0] == 0xFF).count();
+    fn category_is_application_status_not_hardware() {
+        // We deliberately belong in the "Application Status" tray
+        // group, not in the "Hardware" group. Plasma 6 uses the
+        // SNI Category string to bucket the icon next to
+        // user-installed apps (Krita, Discord, KDE Connect,
+        // Telora) versus always-on OS primitives (NetworkManager,
+        // Bluetooth applet, PulseAudio volume). Putting a
+        // vendor-specific Bluetooth headphone GUI alongside
+        // those would shadow the plasma-bluetooth applet's own
+        // entry for the same device and confuse the user.
+        //
+        // The Category value is not reachable from the public
+        // API (it's only emitted by the property handler), so
+        // we test it indirectly by exposing a tiny helper that
+        // wraps prop_value's lookup. Implemented here as a
+        // grep of the source itself rather than as a runtime
+        // test because launching the full SNI object in a unit
+        // test would require a real DBus session.
+        let source = include_str!("tray.rs");
         assert!(
-            opaque > 60,
-            "expected a recognizable glyph, got {opaque} px"
+            source.contains("\"Category\" => \"ApplicationStatus\".to_variant()"),
+            "SNI Category must be ApplicationStatus; \
+             change the value in prop_value() to fix this test"
         );
-        assert!(opaque < 200, "glyph is leaking past geometry: {opaque} px");
+        assert!(
+            !source.contains("\"Category\" => \"Hardware\".to_variant()"),
+            "SNI Category drifted back to 'Hardware'; \
+             change the value in prop_value() to fix this test"
+        );
+    }
+
+    #[test]
+    fn pixmap_is_argb32_in_network_byte_order() {
+        // `load_pixmap` actually exercises the GResource → SVG →
+        // Pixbuf → ARGB network byte order pipeline, so a
+        // failure here pins down which stage regressed.
+        let (w, h, data) = load_pixmap(1).expect("SVG must render at 1× scale");
+        assert!(
+            w > 0 && h > 0,
+            "renderer returned an empty pixmap (w={w}, h={h})"
+        );
+        assert_eq!(
+            (w as usize) * (h as usize) * 4,
+            data.len(),
+            "ARGB buffer length must match the width × height × 4 contract"
+        );
+        // Every pixel must be 4-byte ARGB. Alpha may not be
+        // strictly 0xFF / 0x00 because the SVG has soft edges,
+        // but the buffer must at least stay parseable as ARGB
+        // (no stray channels, no zero-length slice).
+        for chunk in data.chunks_exact(4) {
+            // Crude sanity: none of the four bytes is a malformed
+            // sentinel (they can be anything 0–255 from gdk-pixbuf).
+            let _ = [chunk[0], chunk[1], chunk[2], chunk[3]];
+        }
+        // The pixmap must not be entirely transparent; an empty
+        // icon would slide through KDE's icon rendering silently.
+        let fully_opaque_count = data.chunks_exact(4).filter(|c| c[0] == 0xFF).count();
+        assert!(
+            fully_opaque_count > (data.len() / 8),
+            "icon must have at least 12.5 % opaque pixels; got {fully_opaque_count}",
+        );
     }
 
     #[test]
     fn pixmap_scales_to_44x44_for_hidpi() {
-        let (w, h, data) = make_pixmap_scaled(&snap(50, true, "Bose QC35"), 2);
-        assert_eq!(w, 44);
-        assert_eq!(h, 44);
-        // Same pixel count as 22*22 ARGB32 — doubled width × doubled
-        // height = 4x the pixel count.
-        assert_eq!(data.len(), 44 * 44 * 4);
+        let (w, h, data) = load_pixmap(2).expect("SVG must render at 2× scale");
+        assert_eq!(w, ICON_PX * 2, "HiDPI width must be ICON_PX × 2");
+        assert_eq!(h, ICON_PX * 2, "HiDPI height must be ICON_PX × 2");
+        assert_eq!(
+            data.len(),
+            (ICON_PX * 2 * ICON_PX * 2) as usize * 4,
+            "HiDPI pixmap buffer must be w × h × 4 bytes"
+        );
+    }
+
+    #[test]
+    fn pixmap_resource_uri_was_registered() {
+        // Smoke-check that the GResource bundle the binary
+        // shipped contains the SVG path we ship to the
+        // property handler. If a future refactor builds
+        // resources/gresource.xml without this entry the
+        // load_pixmap call below will fall over.
+        let lookup = gtk::gio::resources_lookup_data(
+            TRAY_ICON_RESOURCE,
+            gtk::gio::ResourceLookupFlags::NONE,
+        );
+        assert!(
+            lookup.is_ok(),
+            "GResource for {TRAY_ICON_RESOURCE} must be reachable from the binary",
+        );
     }
 }

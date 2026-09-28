@@ -131,6 +131,12 @@ fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .try_init();
 
+    // Register the compiled GResource bundle (icons, CSS, GMenu)
+    // with gio so `gtk::gio::resources_lookup_data(...)` resolves
+    // the URI of the SVG the SNI IconPixmap property reads.
+    // The registration is a one-shot, idempotent refcount bump.
+    bose_connect_gui::register_resources();
+
     let cli = parse_cli();
 
     // Build the device service eagerly so the background ticker
@@ -260,14 +266,14 @@ fn activate(
 
     // Tray icon — hand-rolled StatusNotifierItem. We always start
     // it (even when running headless) so the smoke test can
-    // verify the `Register` call reaches the watcher. When the
-    // session bus isn't available (`DBusConnection::get` returns
-    // an error) we degrade silently and the GUI continues without
-    // a tray icon — KDE Plasma expects this for non-graphical
-    // sessions.
+    // verify the `RegisterStatusNotifierItem` call reaches
+    // the watcher. When the session bus isn't available
+    // (`DBusConnection::get` returns an error) we degrade
+    // silently and the GUI continues without a tray icon —
+    // KDE Plasma expects this for non-graphical sessions.
     let mut tray_handle_opt = None;
     let mut tray_rx_opt = None;
-    match bose_connect_gui::services::tray::TrayService::start("bose-connect-gui") {
+    match bose_connect_gui::services::tray::TrayService::start() {
         Ok((handle, tray_rx)) => {
             tray_handle_opt = Some(handle);
             tray_rx_opt = Some(tray_rx);
