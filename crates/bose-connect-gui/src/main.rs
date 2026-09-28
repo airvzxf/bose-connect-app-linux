@@ -9,8 +9,8 @@ use gtk::glib;
 use gtk::prelude::*;
 use once_cell::sync::OnceCell;
 
-use bose_connect_gui::app::model::{AppModel, AppMsg, ConnectionState, TICK_INTERVAL_MS};
-use bose_connect_gui::app::view::build_root;
+use bose_connect_gui::app::model::{AppModel, AppMsg, ConnectionState, Page, TICK_INTERVAL_MS};
+use bose_connect_gui::app::view::{build_root, RenderHandle};
 use bose_connect_gui::services::device::{DeviceService, MockService, RealService};
 use bose_connect_gui::services::notifications::{NotificationLevel, Notifications};
 use bose_connect_gui::transport;
@@ -49,6 +49,11 @@ struct CliArgs {
     /// GUI is fully painted but the notification is the deliverable
     /// being tested.
     low_battery_test: bool,
+    /// Cycle through every sidebar page on a fixed interval and
+    /// dump the widget tree on each step. Used to verify that
+    /// `AppMsg::NavigateTo` actually swaps the content area, even
+    /// without a display server.
+    tour: bool,
 }
 
 fn parse_cli() -> CliArgs {
@@ -65,6 +70,7 @@ fn parse_cli() -> CliArgs {
             "--mock-tick-ms" => cli.mock_tick_ms = args.next().and_then(|s| s.parse().ok()),
             "--run-secs" => cli.run_secs = args.next().and_then(|s| s.parse().ok()),
             "--low-battery-test" => cli.low_battery_test = true,
+            "--tour" => cli.tour = true,
             "-h" | "--help" => {
                 println!("bose-connect-gui — GTK4 + Relm4 GUI for Bose headphones");
                 println!();
@@ -83,6 +89,9 @@ fn parse_cli() -> CliArgs {
                 );
                 println!("  --version, -V             Print version and exit");
                 println!("  --dump-tree               Print the GTK widget tree to stdout");
+                println!(
+                    "  --tour                    Cycle through every page and dump its widget tree"
+                );
                 std::process::exit(0);
             }
             "-V" | "--version" => {
@@ -223,6 +232,16 @@ fn activate(
     // isn't necessary for the very first iteration because every
     // widget mutates the AppModel directly.
     let mut model = AppModel::new(_service.clone());
+    // Resume on the last page the user was on, if any. Defaults
+    // to Page::MyBose for a fresh install.
+    if let Some(last_page) = model
+        .persisted
+        .last_page
+        .as_deref()
+        .and_then(Page::from_key)
+    {
+        model.current_page = last_page;
+    }
     model.connection = ConnectionState::Connected;
     let snapshot = bose_connect_gui::services::device::DeviceSnapshot {
         address: bose_connect::BdAddr::ANY,
@@ -313,15 +332,43 @@ fn activate(
     let service_clone = _service.clone();
     let tx_for_widget_tray = tx.clone();
 
-    // Widget pump — drains the `flume` channel into the model.
+    // Render-trigger — a closure we can call from inside the
+    // widget pump to rebuild the content tree after the model
+    // changes (e.g. on `NavigateTo`). We swap the page content
+    // box's only child rather than rebuilding the whole window
+    // so the headerbar / sidebar / connection banner survive.
+    let render_state: std::rc::Rc<std::cell::RefCell<Option<RenderHandle>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(None));
+
+    // Widget pump — drains the `flume` channel into the model
+    // and re-renders the content area whenever `current_page`
+    // (or anything visible) is touched by the reducer.
+    let pump_model = model_for_pump.clone();
+    let pump_service = service_clone.clone();
+    let pump_render = render_state.clone();
     glib::MainContext::default().spawn_local(async move {
         loop {
             let msg = match rx.recv_async().await {
                 Ok(m) => m,
                 Err(_) => break,
             };
-            let mut guard = model_for_pump.borrow_mut();
-            apply(&service_clone, &mut guard, msg);
+            // Capture the page *before* applying the message so
+            // we know whether the user navigated away from it.
+            let prev_page = pump_model.borrow().current_page;
+            let prev_snapshot = pump_model.borrow().snapshot.is_some();
+            {
+                let mut guard = pump_model.borrow_mut();
+                apply(&pump_service, &mut guard, msg);
+            }
+            let model_snapshot = pump_model.borrow();
+            let page_changed = model_snapshot.current_page != prev_page;
+            let snap_changed = model_snapshot.snapshot.is_some() != prev_snapshot;
+            drop(model_snapshot);
+            if page_changed || snap_changed {
+                if let Some(handle) = pump_render.borrow().as_ref() {
+                    handle.rebuild();
+                }
+            }
         }
     });
 
@@ -491,10 +538,50 @@ fn activate(
         .build();
 
     // Build the full widget tree on top of the seeded model.
-    let root_widget = build_root(&application, &model_holder.borrow(), &tx);
+    // We split the tree into the chrome (toolbar view + sidebar)
+    // and the swappable content box so `RenderHandle::rebuild`
+    // can swap pages without re-creating the headerbar / sidebar.
+    let (root_widget, content_box, render_handle) =
+        build_root(&application, &model_holder.borrow(), &tx, &model_holder);
+    *render_state.borrow_mut() = Some(render_handle);
 
     window.set_content(Some(&root_widget));
     window.set_visible(true);
+
+    // Debug keyboard shortcuts for verifying the navigation pump
+    // when we can't simulate real mouse clicks. Ctrl+1..6 jump
+    // straight to the corresponding sidebar page.
+    let key_tx = tx.clone();
+    let key_controller = gtk::EventControllerKey::new();
+    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
+    key_controller.connect_key_pressed(move |_controller, _key, keycode, state| {
+        if !(state == gtk::gdk::ModifierType::CONTROL_MASK) {
+            return glib::Propagation::Proceed;
+        }
+        let page = match keycode {
+            v if v == b'1' as u32 => Some(Page::Overview),
+            v if v == b'2' as u32 => Some(Page::MyBose),
+            v if v == b'3' as u32 => Some(Page::Audio),
+            v if v == b'4' as u32 => Some(Page::Device),
+            v if v == b'5' as u32 => Some(Page::Multipoint),
+            v if v == b'6' as u32 => Some(Page::Advanced),
+            _ => None,
+        };
+        let _ = _controller;
+        if let Some(p) = page {
+            tracing::info!(
+                target: "debug-keys",
+                "Ctrl+{} (scancode={}) → NavigateTo({})",
+                char::from_u32(keycode).unwrap_or('?'),
+                keycode,
+                p.title()
+            );
+            let _ = key_tx.send(AppMsg::NavigateTo(p));
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
+    });
+    window.add_controller(key_controller);
 
     // Optional tree dump for smoke tests / debugging.
     if std::env::args().any(|a| a == "--dump-tree") {
@@ -502,6 +589,8 @@ fn activate(
         dump_widget_tree(&root_widget, 0, &mut out);
         println!("{}", out);
     }
+
+    let _ = content_box;
 
     let _ = application;
 
@@ -537,6 +626,44 @@ fn activate(
             let path_clone = std::path::PathBuf::from(path);
             glib::source::timeout_add_local_once(Duration::from_millis(1500), move || {
                 capture_widget_ppm(&widget, &path_clone);
+            });
+        }
+
+        // `--tour` cycles through every sidebar page once and
+        // dumps the widget tree after each step. This proves the
+        // `AppMsg::NavigateTo` plumbing actually swaps the
+        // content area, even on a headless host with no display
+        // server. We pick up the sender that lives in
+        // `activate()` (cloned into `tx_for_widget_tray`); in
+        // headless mode the tray pump never fires so `tx_for_tray`
+        // is dropped and we own the original `tx`.
+        if cli.tour {
+            let tour_tx = tx.clone();
+            let tour_widget = root_widget.clone();
+            let mut iter = Page::ALL.iter().copied().cycle();
+            let step_count = std::rc::Rc::new(std::cell::Cell::new(0usize));
+            glib::source::timeout_add_local(Duration::from_millis(1500), move || {
+                let next = iter.next().unwrap_or(Page::Overview);
+                let _ = tour_tx.send(AppMsg::NavigateTo(next));
+                let n = step_count.get() + 1;
+                step_count.set(n);
+                let widget_clone = tour_widget.clone();
+                let page_label = next.title().to_string();
+                glib::source::timeout_add_local_once(Duration::from_millis(500), move || {
+                    tracing::info!(
+                        target: "tour",
+                        "tour step {n}: navigated to {page_label}; widget tree:"
+                    );
+                    let mut out = String::new();
+                    dump_widget_tree(&widget_clone, 0, &mut out);
+                    for line in out.lines() {
+                        tracing::info!(target: "tour-tree", "{line}");
+                    }
+                });
+                if n >= Page::ALL.len() {
+                    return glib::ControlFlow::Break;
+                }
+                glib::ControlFlow::Continue
             });
         }
 
@@ -698,6 +825,15 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
         M::Acknowledge => model.log.clear(),
         M::BatteryTick(_) => {
             tracing::trace!("battery tick");
+        }
+        M::NavigateTo(page) if model.current_page != page => {
+            // Only mark the page as dirty when it actually
+            // changes, so a duplicate NavigateTo doesn't trigger
+            // a no-op render.
+            model.current_page = page;
+            model.persisted.last_page = Some(page.key().to_string());
+            model.persisted.save();
+            model.log_info(format!("navigated to {}", page.title()));
         }
         _ => {}
     }

@@ -52,6 +52,76 @@ pub enum ConnectionState {
     Error(String),
 }
 
+/// Identifies which page of the main view the user is looking at.
+/// We store it as a string so the persisted state file is
+/// human-readable; the actual rendering looks up the matching
+/// `Page` value via `Page::from_key`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Page {
+    MyBose,
+    Overview,
+    Audio,
+    Device,
+    Multipoint,
+    Advanced,
+}
+
+impl Page {
+    /// Sidebar order — Position 1 (`Page::Overview`) is the home
+    /// page users land on. The 🏠 icon for `Overview` (in
+    /// `widgets::page_icon`) reinforces the affordance: clicking
+    /// the first sidebar item always returns to the main view.
+    pub const ALL: &'static [Page] = &[
+        Page::Overview,
+        Page::MyBose,
+        Page::Audio,
+        Page::Device,
+        Page::Multipoint,
+        Page::Advanced,
+    ];
+
+    /// Stable string key used in the URL fragment and persisted
+    /// state. Keep these snake_case so they survive locale changes.
+    pub fn key(self) -> &'static str {
+        match self {
+            Page::MyBose => "mybose",
+            Page::Overview => "overview",
+            Page::Audio => "audio",
+            Page::Device => "device",
+            Page::Multipoint => "paired",
+            Page::Advanced => "advanced",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Page> {
+        Self::ALL.iter().copied().find(|p| p.key() == key)
+    }
+
+    /// Display title for the page header and window title.
+    pub fn title(self) -> &'static str {
+        match self {
+            Page::MyBose => "Paired devices",
+            Page::Overview => "Device overview",
+            Page::Audio => "Audio",
+            Page::Device => "Device settings",
+            Page::Multipoint => "Multipoint",
+            Page::Advanced => "Advanced",
+        }
+    }
+
+    /// Short helper text shown under the page title.
+    pub fn subtitle(self) -> &'static str {
+        match self {
+            Page::MyBose => "Bluetooth pairing between this laptop and your Bose devices",
+            Page::Overview => "Battery, identity and quick actions",
+            Page::Audio => "Active noise cancellation and own-voice level",
+            Page::Device => "Rename, language, auto-off and voice prompts",
+            Page::Multipoint => "Other machines connected to this Bose right now",
+            Page::Advanced => "Debug helpers for the RFCOMM protocol",
+        }
+    }
+}
+
 /// Top-level GUI state.
 pub struct AppModel {
     /// The Bose device service.
@@ -72,6 +142,8 @@ pub struct AppModel {
     pub history: Vec<u8>,
     /// Discovery list (BlueZ events). Empty in mock.
     pub discovery: Vec<(String, String)>,
+    /// Currently selected page in the sidebar.
+    pub current_page: Page,
 }
 
 impl AppModel {
@@ -90,6 +162,7 @@ impl AppModel {
             quiet_mode: false,
             history: Vec::new(),
             discovery: Vec::new(),
+            current_page: Page::Overview,
         }
     }
 
@@ -209,6 +282,10 @@ pub enum AppMsg {
 
     /// Dismiss an error or warning.
     Acknowledge,
+
+    /// Navigate to a different sidebar page. Persisted so the
+    /// next launch reopens on the same view.
+    NavigateTo(Page),
 }
 
 /// The unified view-state projected from the model. We don't keep

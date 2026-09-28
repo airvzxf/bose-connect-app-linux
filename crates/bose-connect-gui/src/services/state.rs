@@ -20,6 +20,10 @@ pub struct PersistedState {
     pub last_address: Option<String>,
     #[serde(default)]
     pub active_profile: Option<ProfileName>,
+    /// Last page the user was on, so the window reopens on the
+    /// same view. Stored as the stable string key of the enum.
+    #[serde(default)]
+    pub last_page: Option<String>,
 }
 
 impl PersistedState {

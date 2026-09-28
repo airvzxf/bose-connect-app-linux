@@ -1,110 +1,154 @@
 /*
  * Bose Connect for Linux — GTK4 custom CSS.
  *
- * We intentionally keep this file small: libadwaita owns the heavy
- * lifting (rounded corners, dark/light handling, accent colour), and
- * we layer only the bits that are project-specific:
+ * Visual language: libadwaita dark by default, with sidebar nav
+ * (My Bose / Overview / Audio / Device / Multipoint / Advanced),
+ * boxed lists for settings, action rows with leading icon and
+ * trailing widget, segmented controls for tri-state choices,
+ * and a hero card with a battery ring on the overview page.
  *
- *   - hero card         : the big battery readout
- *   - pill              : status / firmware chips
- *   - sparkline         : battery history bar chart
- *   - tile              : the ANC / voice / language setting cards
- *   - quick-action      : the small action buttons (refresh, etc.)
- *   - log-row           : the activity log
- *
- * Everything here responds to the user's light/dark preference via
- * the `accentcolor`, `accentbg`, `cardbg`, and `window-bg` named
- * colours so libadwaita re-themes it for free.
+ * Most styling here responds to @accentcolor / @cardbg so the
+ * user's accent colour choice (blue by default) flows through
+ * the active sidebar row, the segmented "selected" pill, the
+ * status dot, etc.
  */
 
-/* ------ Project colour tokens (used through @define-color) ------ */
-@define-color quiet_cyan   #3ab9ff;
-@define-color quiet_ink    #0b1437;
-@define-color quiet_paper  #f6f7fb;
-@define-color quiet_dim    #d1d6e6;
-@define-color quiet_accent #ff7a59;
+/* -------------------------------------------------------------------------
+ * Root window + chrome
+ * ------------------------------------------------------------------------- */
 
-/* The hero card uses a tint of the accent colour and a soft drop
- * shadow so it reads as "important", but never shouty. */
+window.bose-window {
+    background: @window_bg_color;
+}
+
+/* -------------------------------------------------------------------------
+ * Sidebar
+ * ------------------------------------------------------------------------- */
+
+.sidebar-frame {
+    background: alpha(@window_fg_color, 0.04);
+    border-right: 1px solid alpha(@window_fg_color, 0.08);
+}
+
+.sidebar-list {
+    background: transparent;
+    border: none;
+    padding: 8px 6px;
+}
+
+.sidebar-row {
+    border-radius: 8px;
+    margin: 1px 0;
+    padding: 0;
+    background: transparent;
+    transition: background 120ms ease;
+}
+
+.sidebar-row:hover {
+    background: alpha(@window_fg_color, 0.06);
+}
+
+.sidebar-row.selected {
+    background: @accentcolor;
+}
+
+.sidebar-row.selected .sidebar-icon,
+.sidebar-row.selected .row-title,
+.sidebar-row.selected label {
+    color: white;
+}
+
+.sidebar-icon {
+    font-size: 14px;
+    color: alpha(@window_fg_color, 0.7);
+}
+
+.sidebar-row > box > label {
+    font-weight: 600;
+    font-size: 13px;
+    color: @window_fg_color;
+}
+
+/* -------------------------------------------------------------------------
+ * Content frame
+ * ------------------------------------------------------------------------- */
+
+.content-frame {
+    background: @window_bg_color;
+}
+
+/* -------------------------------------------------------------------------
+ * Connection banner (slim status strip at the top of the window)
+ * ------------------------------------------------------------------------- */
+
+.connection-banner {
+    padding: 8px 14px;
+    background: alpha(@window_fg_color, 0.04);
+    border-bottom: 1px solid alpha(@window_fg_color, 0.08);
+}
+
+.connection-banner .status-dot {
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px alpha(@window_fg_color, 0.10);
+}
+
+.connection-banner .status-dot.status-dot-on {
+    background: @success_color;
+    box-shadow: 0 0 0 3px alpha(@success_color, 0.18);
+}
+
+.connection-banner .status-dot.status-dot-idle {
+    background: alpha(@window_fg_color, 0.35);
+}
+
+.connection-banner .status-dot.status-dot-error {
+    background: @error_color;
+    box-shadow: 0 0 0 3px alpha(@error_color, 0.20);
+}
+
+.connection-banner .status-label {
+    font-weight: 600;
+    font-size: 12.5px;
+}
+
+/* -------------------------------------------------------------------------
+ * Hero card
+ * ------------------------------------------------------------------------- */
+
 .hero-card {
     background: linear-gradient(135deg,
         alpha(@accentcolor, 0.10),
         alpha(@accentcolor, 0.03));
-    border-radius: 22px;
-    padding: 28px 32px;
-    box-shadow: 0 4px 12px alpha(#000, 0.04);
+    border-radius: 16px;
+    padding: 20px 22px;
+    border: 1px solid alpha(@window_fg_color, 0.06);
+    box-shadow: 0 4px 16px alpha(#000, 0.04);
 }
 
-.hero-card .battery-display {
-    /* The big "%" number. We deliberately use a heavy weight to
-     * mirror the original "BOSE CONNECT" branding but the digits
-     * are bigger than the chrome ones. */
-    font-family: 'Cantarell', 'Inter', sans-serif;
-    font-weight: 800;
-    font-size: 96px;
-    letter-spacing: -2px;
-    color: alpha(@accentcolor, 0.95);
-    margin: 0;
-    padding: 0;
-}
-
-.hero-card .battery-display .percent {
-    /* Suppress the "%" sign a bit so the digits dominate. */
-    font-size: 36px;
-    font-weight: 600;
-    vertical-align: super;
-    color: alpha(@accentcolor, 0.55);
-    margin-left: 4px;
-}
-
-.hero-card .pulse {
-    /* A small pulse indicator next to the connection state. */
-    min-width: 10px;
-    min-height: 10px;
+.hero-avatar {
+    background: @accentcolor;
     border-radius: 50%;
-    background: @success_color;
-    box-shadow: 0 0 0 0 alpha(@success_color, 0.6);
-    animation: pulse 1.6s ease-in-out infinite;
 }
 
-.hero-card .pulse.disconnected {
-    background: @error_color;
-    box-shadow: 0 0 0 0 alpha(@error_color, 0.4);
-    animation: none;
+.battery-ring {
+    background: conic-gradient(
+        @accentcolor 0deg 270deg,
+        alpha(@window_fg_color, 0.10) 270deg 360deg);
+    border-radius: 50%;
+    box-shadow: 0 2px 8px alpha(#000, 0.12);
 }
 
-@keyframes pulse {
-    0%   { box-shadow: 0 0 0 0   alpha(@success_color, 0.55); }
-    70%  { box-shadow: 0 0 0 8px alpha(@success_color, 0.0); }
-    100% { box-shadow: 0 0 0 0   alpha(@success_color, 0.0); }
+.battery-ring label {
+    background: @cardbg;
+    color: @window_fg_color;
+    border-radius: 50%;
+    padding: 0;
+    min-width: 80px;
+    min-height: 80px;
 }
 
-/* A short inline pill. We avoid label-ish background colours so it
- * does not clash with the surrounding Adw.Avatar / library image. */
-.pill {
-    border-radius: 999px;
-    padding: 4px 12px;
-    background: alpha(@accentcolor, 0.10);
-    color: alpha(@accentcolor, 1.0);
-    font-weight: 600;
-    font-size: 11px;
-}
-
-.pill.danger {
-    background: alpha(@error_color, 0.18);
-    color: @error_color;
-}
-
-.pill.idle {
-    background: alpha(@window_fg_color, 0.08);
-    color: alpha(@window_fg_color, 0.85);
-}
-
-/* Sparkline: a 1-pixel-tall horizontal battery history. We don't
- * draw the path with a custom widget — we just stack `battery-bar`
- * rectangles inside a GtkBox and let CSS hide the seams. */
 .sparkline {
-    background: alpha(@window_fg_color, 0.05);
+    background: alpha(@window_fg_color, 0.06);
     border-radius: 6px;
     padding: 4px;
 }
@@ -119,45 +163,67 @@
     background: alpha(@window_fg_color, 0.10);
 }
 
-/* A setting tile (ANC, voice prompts, language) — basically a card
- * with an icon and a label, plus an attached actionable row at the
- * bottom. The CSS pulls double duty as a setting selector and as a
- * status readout, depending on which children are present. */
-.tile {
+/* -------------------------------------------------------------------------
+ * Boxed lists + action rows (Adwaita settings-style)
+ * ------------------------------------------------------------------------- */
+
+.boxed-list {
     background: @cardbg;
-    border-radius: 18px;
-    padding: 20px 22px;
-    border: 1px solid alpha(@window_fg_color, 0.06);
+    border-radius: 12px;
+    border: 1px solid alpha(@window_fg_color, 0.08);
 }
 
-.tile > .tile-header {
-    margin-bottom: 12px;
+.boxed-list > .action-row {
+    padding: 0;
+    transition: background 120ms ease;
 }
 
-.tile > .tile-header > .tile-icon {
-    color: alpha(@accentcolor, 0.9);
+.boxed-list > .action-row:hover {
+    background: alpha(@window_fg_color, 0.04);
 }
 
-.tile > .tile-header > .tile-title {
-    font-weight: 700;
+.boxed-list > .action-row .row-icon {
+    color: alpha(@window_fg_color, 0.55);
     font-size: 15px;
 }
 
-.tile > .tile-header > .tile-subtitle {
+.boxed-list > .action-row .row-title {
+    font-weight: 600;
+    font-size: 13.5px;
+}
+
+.boxed-list > .action-row .row-desc {
     color: alpha(@window_fg_color, 0.55);
-    font-size: 12px;
+    font-size: 11.5px;
 }
 
-.tile .segmented {
-    /* The segmented "Off / High / Low" row. */
+.boxed-list > .action-row .row-value {
+    color: alpha(@window_fg_color, 0.75);
+    font-weight: 600;
+    font-size: 12.5px;
+}
+
+/* Wraps a single widget in a "boxed card" (rounded card around
+ * one row, used for scan / send hex / quiet mode shortcuts). */
+.boxed-card {
+    background: @cardbg;
+    border-radius: 12px;
+    border: 1px solid alpha(@window_fg_color, 0.08);
+}
+
+/* -------------------------------------------------------------------------
+ * Segmented control (Off / Low / High)
+ * ------------------------------------------------------------------------- */
+
+.segmented {
     background: alpha(@window_fg_color, 0.06);
-    border-radius: 999px;
-    padding: 4px;
+    border-radius: 10px;
+    padding: 3px;
 }
 
-.tile .segmented > .segmented-button {
-    border-radius: 999px;
-    padding: 6px 18px;
+.segmented > .segmented-button {
+    border-radius: 8px;
+    padding: 8px 12px;
     font-weight: 600;
     color: alpha(@window_fg_color, 0.70);
     background: transparent;
@@ -165,102 +231,139 @@
     transition: background 120ms ease, color 120ms ease;
 }
 
-.tile .segmented > .segmented-button.selected {
-    background: alpha(@accentcolor, 1.0);
+.segmented > .segmented-button:hover {
+    background: alpha(@window_fg_color, 0.06);
+}
+
+.segmented > .segmented-button.selected {
+    background: @accentcolor;
     color: white;
+    box-shadow: 0 1px 3px alpha(#000, 0.18);
 }
 
-/* A small floating "HUD" overlay for transient notifications about
- * the battery. We hide it on touch interfaces (relies on hover). */
-.battery-hud {
-    background: alpha(@window_bg_color, 0.95);
-    border-radius: 14px;
-    padding: 12px 16px;
-    box-shadow: 0 8px 30px alpha(#000, 0.18);
-    border: 1px solid alpha(@window_fg_color, 0.08);
+/* -------------------------------------------------------------------------
+ * Pills (status / mode chips)
+ * ------------------------------------------------------------------------- */
+
+.pill {
+    border-radius: 999px;
+    padding: 3px 10px;
+    background: alpha(@accentcolor, 0.10);
+    color: alpha(@accentcolor, 1.0);
+    font-weight: 700;
+    font-size: 10.5px;
 }
 
-/* A row in the activity log. The icon column has a fixed width so
- * the timestamp column snaps. */
-.log-row {
-    padding: 8px 0;
-    border-bottom: 1px solid alpha(@window_fg_color, 0.06);
-}
-
-.log-row .log-time {
-    color: alpha(@window_fg_color, 0.45);
-    font-feature-settings: "tnum";
-    font-size: 11px;
-}
-
-.log-row .log-message.error {
+.pill.danger {
+    background: alpha(@error_color, 0.18);
     color: @error_color;
 }
 
-.log-row .log-message.success {
+.pill.idle {
+    background: alpha(@window_fg_color, 0.08);
+    color: alpha(@window_fg_color, 0.85);
+}
+
+.pill.muted {
+    background: alpha(@window_fg_color, 0.08);
+    color: alpha(@window_fg_color, 0.6);
+}
+
+.pill.success {
+    background: alpha(@success_color, 0.18);
     color: @success_color;
 }
 
-/* The connection-state banner used at the top of the wizard view. */
-.connection-banner {
+/* -------------------------------------------------------------------------
+ * Hero tile + tile-card (kept for the unused legacy widgets; the
+ * new layout uses .boxed-card instead but the rules stay so
+ * any legacy widget still paints).
+ * ------------------------------------------------------------------------- */
+
+.tile {
+    background: @cardbg;
+    border-radius: 14px;
+    padding: 16px 18px;
+    border: 1px solid alpha(@window_fg_color, 0.06);
+}
+
+.tile > .tile-header > .tile-title {
+    font-weight: 700;
+    font-size: 13.5px;
+}
+
+.tile > .tile-header > .tile-subtitle {
+    color: alpha(@window_fg_color, 0.55);
+    font-size: 11.5px;
+}
+
+/* -------------------------------------------------------------------------
+ * Switches (kept slightly tighter than the libadwaita default so
+ * the row height matches a single-line action row).
+ * ------------------------------------------------------------------------- */
+
+switch {
     border-radius: 999px;
-    padding: 14px 20px;
-    background: alpha(@accentcolor, 0.12);
-    color: alpha(@accentcolor, 1);
+    min-width: 44px;
+    min-height: 24px;
+}
+
+/* -------------------------------------------------------------------------
+ * Device switcher (headerbar left)
+ * ------------------------------------------------------------------------- */
+
+.device-switcher {
+    border-radius: 999px;
+    padding: 4px 12px;
+    background: alpha(@window_fg_color, 0.08);
+    border: 1px solid alpha(@window_fg_color, 0.05);
     font-weight: 600;
+    font-size: 12px;
 }
 
-.connection-banner.error {
-    background: alpha(@error_color, 0.14);
-    color: @error_color;
+.device-switcher:hover {
+    background: alpha(@window_fg_color, 0.14);
 }
 
-/* Quick action button (refresh / scan) — small, no padding, and uses
- * the accent colour so it doesn't compete with the primary "Apply"
- * CTA further down the page. */
-.quick-action {
+/* -------------------------------------------------------------------------
+ * Theme toggle (headerbar right)
+ * ------------------------------------------------------------------------- */
+
+.theme-toggle {
+    border-radius: 999px;
+    padding: 4px 8px;
+    background: transparent;
+}
+
+.theme-toggle:hover {
+    background: alpha(@window_fg_color, 0.08);
+}
+
+/* -------------------------------------------------------------------------
+ * Mono / hex-packet response
+ * ------------------------------------------------------------------------- */
+
+.mono {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: alpha(@window_fg_color, 0.06);
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+
+/* -------------------------------------------------------------------------
+ * Quiet-mode (legacy widget — kept so the old `quiet-mode` class
+ * still paints if some future caller imports QuietModePill).
+ * ------------------------------------------------------------------------- */
+
+.quiet-mode {
     border-radius: 999px;
     padding: 6px 14px;
-    background: alpha(@accentcolor, 0.10);
-    color: @accentcolor;
-    border: none;
+    background: alpha(@window_fg_color, 0.08);
+    color: @window_fg_color;
     font-weight: 600;
-}
-
-.quick-action:hover {
-    background: alpha(@accentcolor, 0.18);
-}
-
-.quick-action:active {
-    background: alpha(@accentcolor, 0.28);
-}
-
-/* The device-card on the "paired devices" panel. Mirrors libadwaita's
- * .card but with a chip on the right for the connection state. */
-.device-card {
-    background: alpha(@window_bg_color, 0.5);
-    border: 1px solid alpha(@window_fg_color, 0.07);
-    border-radius: 14px;
-    padding: 14px 16px;
-}
-
-.device-card.connected {
-    border-color: alpha(@success_color, 0.6);
-}
-
-/* The big "Quiet Mode" toggle pill. */
-.quiet-mode {
-    background: linear-gradient(135deg, #0e1a4f, #1e2a78);
-    color: #7df9ff;
-    border-radius: 999px;
-    padding: 8px 18px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    transition: background 200ms ease, color 200ms ease;
 }
 
 .quiet-mode.active {
-    background: linear-gradient(135deg, #1e2a78, #3ab9ff);
+    background: @accentcolor;
     color: white;
-    box-shadow: 0 0 14px alpha(#3ab9ff, 0.5);
 }
