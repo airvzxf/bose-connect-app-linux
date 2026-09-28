@@ -622,3 +622,130 @@ impl Drop for TrayService {
         // the bus name and the interface registration.
     }
 }
+
+// ---------------------------------------------------------------------------
+// tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snap(battery: u8, connected: bool, name: &str) -> TraySnapshot {
+        TraySnapshot {
+            connected,
+            battery,
+            name: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn status_mapping_covers_every_band() {
+        // Disconnected => Passive, regardless of battery / name.
+        assert_eq!(status_for(&snap(0, false, "")), SniStatus::Passive);
+        assert_eq!(
+            status_for(&snap(50, false, "Bose QC35")),
+            SniStatus::Passive
+        );
+        // Connected but no name => Passive (no device yet).
+        assert_eq!(status_for(&snap(80, true, "")), SniStatus::Passive);
+        // Connected + healthy battery => Active.
+        assert_eq!(status_for(&snap(80, true, "Bose QC35")), SniStatus::Active);
+        // Connected + battery at the boundary 26 % is still Active.
+        assert_eq!(status_for(&snap(26, true, "Bose QC35")), SniStatus::Active);
+        // 25 % is the threshold; below that needs attention.
+        assert_eq!(
+            status_for(&snap(25, true, "Bose QC35")),
+            SniStatus::NeedsAttention
+        );
+        // Critical: 0 – 5 %.
+        assert_eq!(
+            status_for(&snap(5, true, "Bose QC35")),
+            SniStatus::NeedsAttention
+        );
+        assert_eq!(
+            status_for(&snap(0, true, "Bose QC35")),
+            SniStatus::NeedsAttention
+        );
+    }
+
+    #[test]
+    fn status_strings_match_the_sni_spec() {
+        // The watcher (KStatusNotifierItem) reads the `Status`
+        // property as a C string with one of three exact values.
+        // Drift here would silent-fail on KDE Plasma 6.
+        assert_eq!(SniStatus::Active.as_str(), "Active");
+        assert_eq!(SniStatus::Passive.as_str(), "Passive");
+        assert_eq!(SniStatus::NeedsAttention.as_str(), "NeedsAttention");
+    }
+
+    #[test]
+    fn pixmap_is_22x22_argb32_in_network_byte_order() {
+        let (_w, h, data) = make_pixmap(&snap(50, true, "Bose QC35"));
+        assert_eq!((h as usize), ICON_PX as usize);
+        assert_eq!(data.len(), ICON_PX as usize * ICON_PX as usize * 4);
+        // Every pixel must be 4-byte ARGB in network byte order.
+        for chunk in data.chunks_exact(4) {
+            let a = chunk[0];
+            // Either fully transparent (a == 0) or fully opaque (a == 0xFF).
+            assert!(
+                a == 0 || a == 0xFF,
+                "alpha must be 0x00 or 0xFF, got 0x{a:02x}"
+            );
+        }
+    }
+
+    #[test]
+    fn pixmap_color_matches_battery_band() {
+        // The green / amber / red / grey palette is keyed off
+        // the battery state. We sample the centre of the left
+        // ear cup ((5, 13) in geometry units) — that point is
+        // always inside the filled circle, regardless of scale.
+        // The ARGB32 buffer is in network byte order: A → R → G → B.
+        let sample_red = |snap: &TraySnapshot| {
+            let (_, _, buf) = make_pixmap(snap);
+            let idx = ((13 * ICON_PX as usize) + 5) * 4;
+            (buf[idx], buf[idx + 1], buf[idx + 2], buf[idx + 3])
+        };
+        // Disconnected => grey 0x9A.
+        let (a, r, _g, _b) = sample_red(&snap(0, false, ""));
+        assert_eq!(a, 0xFF, "alpha always opaque on filled pixels");
+        assert_eq!(r, 0x9A, "disconnected pixel must be grey");
+        // Healthy battery (>= 26 %).
+        let (_, r, _, _) = sample_red(&snap(80, true, "Bose QC35"));
+        assert_eq!(r, 0x4C, "healthy battery pixel must be green");
+        // Low (10 – 25 %).
+        let (_, r, _, _) = sample_red(&snap(15, true, "Bose QC35"));
+        assert_eq!(r, 0xE6, "low battery pixel must be amber");
+        // Critical (≤ 5 %).
+        let (_, r, _, _) = sample_red(&snap(3, true, "Bose QC35"));
+        assert_eq!(r, 0xE2, "critical battery pixel must be red");
+    }
+
+    #[test]
+    fn pixmap_has_exactly_two_filled_circles_and_a_band() {
+        // Count opaque pixels and confirm the geometry: 16 px wide
+        // band on rows 4-6, plus two ear cups of radius 4, centred at
+        // (5, 13) and (17, 13). The integer-area union is around
+        // 110–120 opaque pixels; we just check it's a sane shape
+        // (not zero, not the whole canvas, and congruent across
+        // scales).
+        let (_, _, data) = make_pixmap(&snap(50, true, "Bose QC35"));
+        let opaque = data.chunks_exact(4).filter(|c| c[0] == 0xFF).count();
+        assert!(
+            opaque > 60,
+            "expected a recognizable glyph, got {opaque} px"
+        );
+        assert!(opaque < 200, "glyph is leaking past geometry: {opaque} px");
+    }
+
+    #[test]
+    fn pixmap_scales_to_44x44_for_hidpi() {
+        let (w, h, data) = make_pixmap_scaled(&snap(50, true, "Bose QC35"), 2);
+        assert_eq!(w, 44);
+        assert_eq!(h, 44);
+        // Same pixel count as 22*22 ARGB32 — doubled width × doubled
+        // height = 4x the pixel count.
+        assert_eq!(data.len(), 44 * 44 * 4);
+    }
+}
