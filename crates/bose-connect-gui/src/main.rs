@@ -255,8 +255,27 @@ fn activate(
             );
         }
     }
-    let _ = tray_handle_opt;
+    let mut tray_handle_opt = tray_handle_opt;
     let tray_rx_opt = tray_rx_opt;
+
+    // Push the initial tray snapshot to the SNI immediately. Without
+    // this, the watcher's `Get` for `Status` / `IconPixmap` would
+    // return our default values (Passive, grey glyph) even when the
+    // model already has a live `DeviceSnapshot`. We push once now
+    // and again on every battery-tick so the tray icon's status /
+    // colour track the model's battery band live.
+    if let Some(tray) = tray_handle_opt.as_ref() {
+        let initial = bose_connect_gui::services::tray::TraySnapshot {
+            connected: model.snapshot.is_some(),
+            battery: model.snapshot.as_ref().map(|s| s.battery).unwrap_or(0),
+            name: model
+                .snapshot
+                .as_ref()
+                .map(|s| s.name.clone())
+                .unwrap_or_default(),
+        };
+        tray.update(initial);
+    }
 
     let model_holder: std::rc::Rc<std::cell::RefCell<AppModel>> =
         std::rc::Rc::new(std::cell::RefCell::new(model));
@@ -365,6 +384,7 @@ fn activate(
         TICK_INTERVAL_MS
     };
     let tick_service = _service.clone();
+    let tray_handle_for_tick = tray_handle_opt.take();
     glib::timeout_add_local(Duration::from_millis(tick_period_ms), move || {
         // Pull the live battery from the service so the mock's
         // background drain actually reaches the GUI. The model
@@ -406,7 +426,7 @@ fn activate(
                 let body = match now_band {
                     0 => "Battery critical — last 5 %. Plug in immediately.",
                     1 => "Battery low — plug in soon.",
-                    _ => return glib::ControlFlow::Continue,
+                    _ => "Battery dropped below threshold.",
                 };
                 let title = "Bose Connect";
                 tracing::info!(
@@ -414,6 +434,20 @@ fn activate(
                     "cross band {prev_band} -> {now_band} (battery={b}%); notifying"
                 );
                 let _ = Notifications::notify(title, body, level);
+            }
+
+            // Mirror the latest snapshot into the SNI so the
+            // tray icon's `Status` / `IconPixmap` track the live
+            // battery band (Active ≥ 26 %, NeedsAttention ≤ 25 %,
+            // Passive when no device).
+            if let Some(tray) = tray_handle_for_tick.as_ref() {
+                if let Ok(snap) = tick_service.refresh() {
+                    tray.update(bose_connect_gui::services::tray::TraySnapshot {
+                        connected: true,
+                        battery: snap.battery,
+                        name: snap.name.clone(),
+                    });
+                }
             }
         }
         glib::ControlFlow::Continue

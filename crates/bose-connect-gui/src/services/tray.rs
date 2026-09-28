@@ -19,6 +19,8 @@
 use std::sync::Arc;
 
 #[allow(unused_imports)]
+use gtk::glib::translate::{FromGlibPtrNone, ToGlibPtr};
+#[allow(unused_imports)]
 use gtk::glib::variant::ToVariant;
 
 use parking_lot::Mutex;
@@ -81,6 +83,15 @@ impl TrayScrollDirection {
 ///
 /// Source of truth: `kdelibs` / KStatusNotifierItem.xml shipped
 /// with plasma-workspace (KDE Plasma 6).
+///
+/// Note on icon surface — `IconPixmap` / `AttentionIconPixmap`
+/// are present with the `a(iiay)` signature (array of pixmap
+/// tuples, each pixmap being ARGB32 bytes in network byte
+/// order) so the watcher renders the icon directly from data,
+/// without depending on a theme lookup. This is the standard KDE
+/// Plasma 6 expects; `IconName` is kept only as a fallback
+/// (empty string) so the watcher never tries to resolve a name
+/// against the icon theme.
 const SNI_INTERFACE_XML: &str = r##"
 <node>
   <interface name="org.kde.StatusNotifierItem">
@@ -90,10 +101,13 @@ const SNI_INTERFACE_XML: &str = r##"
     <property name="Status" type="s" access="read"/>
     <property name="WindowId" type="u" access="read"/>
     <property name="IconName" type="s" access="read"/>
+    <property name="IconPixmap" type="a(iiay)" access="read"/>
     <property name="IconThemePath" type="s" access="read"/>
     <property name="AttentionIconName" type="s" access="read"/>
+    <property name="AttentionIconPixmap" type="a(iiay)" access="read"/>
     <property name="AttentionIconDescription" type="s" access="read"/>
     <property name="OverlayIconName" type="s" access="read"/>
+    <property name="OverlayIconPixmap" type="a(iiay)" access="read"/>
     <property name="OverlayIconDescription" type="s" access="read"/>
     <property name="ItemIsMenu" type="b" access="read"/>
     <property name="Menu" type="o" access="read"/>
@@ -358,10 +372,174 @@ impl TrayServiceHandle {
 // helpers
 // ---------------------------------------------------------------------------
 
+/// Side of the procedural tray icon. Matches the KDE Plasma 6
+/// system-tray applet's default slot size (22px) so the watcher
+/// does not have to scale — `StatusNotifierItem` already asks
+/// for the largest pixmap in the returned `IconPixmap` array.
+pub const ICON_PX: i32 = 22;
+
+/// Status of the SNI item, per the StatusNotifierItem spec. KDE
+/// Plasma 6 honours the spec faithfully: `Active` is always
+/// shown, `NeedsAttention` is always shown and animates between
+/// `IconPixmap` and `AttentionIconPixmap`, and `Passive`
+/// requires the user to enable "Show all items" in the panel
+/// settings (which is off by default in a clean Plasma 6 install).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SniStatus {
+    Active,
+    Passive,
+    NeedsAttention,
+}
+
+impl SniStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "Active",
+            Self::Passive => "Passive",
+            Self::NeedsAttention => "NeedsAttention",
+        }
+    }
+}
+
+/// Map a `TraySnapshot` to an SNI status string. The watcher
+/// uses `Status` to decide whether the icon shows up; KDE
+/// Plasma 6 hides `Passive` by default, so we only fall back
+/// to `Passive` when there is no device at all.
+pub fn status_for(snap: &TraySnapshot) -> SniStatus {
+    if !snap.connected || snap.name.is_empty() {
+        return SniStatus::Passive;
+    }
+    if snap.battery <= 25 {
+        SniStatus::NeedsAttention
+    } else {
+        SniStatus::Active
+    }
+}
+
+/// Render the procedural 22×22 ARGB32 pixmap for a given
+/// snapshot. The glyph is two filled circles (the ear cups) joined
+/// by a horizontal bar (the band), tinted by battery band. ARGB
+/// bytes are returned in **network byte order** as the SNI spec
+/// requires (`a -> r -> g -> b`, most-significant byte first).
+fn make_pixmap(snap: &TraySnapshot) -> (i32, i32, Vec<u8>) {
+    // Three colours keyed by the SNI band so the user can read
+    // the battery state at a glance from the panel.
+    let color: (u8, u8, u8) = match snap.battery {
+        b if !snap.connected || b == 0 => (0x9A, 0x9A, 0x9A), // grey: disconnected
+        b if b <= 5 => (0xE2, 0x52, 0x52),                    // red: critical
+        b if b <= 25 => (0xE6, 0xA8, 0x32),                   // amber: low
+        _ => (0x4C, 0xB5, 0x82),                              // green: ok
+    };
+    let size = ICON_PX as usize;
+    // Geometry (inclusive ranges), headphones glyph centred
+    // horizontally on the 22×22 canvas:
+    //   band:    y ∈ [4, 6]    x ∈ [3, 18]    (16 px wide, 3 px tall)
+    //   left cup: circle centred at (5, 13) radius 4
+    //   right cup: circle centred at (17, 13) radius 4
+    let band_y: std::ops::RangeInclusive<i32> = 4..=6;
+    let band_x: std::ops::RangeInclusive<i32> = 3..=18;
+    let l_cup = (5, 13, 4);
+    let r_cup = (17, 13, 4);
+    let (a, r, g, b) = (0xFFu8, color.0, color.1, color.2);
+    let mut data = Vec::with_capacity(size * size * 4);
+    for y in 0..ICON_PX {
+        for x in 0..ICON_PX {
+            let in_band = band_y.contains(&y) && band_x.contains(&x);
+            let in_l_cup = {
+                let dx = x - l_cup.0;
+                let dy = y - l_cup.1;
+                dx * dx + dy * dy <= l_cup.2 * l_cup.2
+            };
+            let in_r_cup = {
+                let dx = x - r_cup.0;
+                let dy = y - r_cup.1;
+                dx * dx + dy * dy <= r_cup.2 * r_cup.2
+            };
+            let visible = in_band || in_l_cup || in_r_cup;
+            // ARGB in network byte order: A is the highest byte
+            // on the wire (the SNI spec requires this).
+            let (va, vr, vg, vb) = if visible { (a, r, g, b) } else { (0, 0, 0, 0) };
+            data.extend_from_slice(&[va, vr, vg, vb]);
+        }
+    }
+    (ICON_PX, ICON_PX, data)
+}
+
+/// Render an `IconPixmap` (i.e. an `a(iiay)` Variant array)
+/// for the property handler. KDE Plasma 6 picks the largest
+/// pixmap it can render from the array, so the array may
+/// contain both baseline and HiDPI copies if the caller passed
+/// `scale > 1`.
+///
+/// We construct the array via the raw `g_variant_builder_*`
+/// C API rather than the convenience
+/// `Variant::array_from_iter_with_type` wrapper because, at
+/// the time of writing, the wrapper has a known bug where the
+/// per-child type check compares against the full array type
+/// instead of the element type (see upstream glib-rs
+/// `array_from_iter_with_type`).
+fn pixmap_variant(snap: &TraySnapshot, scale: i32) -> gtk::glib::Variant {
+    let (w, h, data) = make_pixmap_scaled(snap, scale);
+    let inner =
+        gtk::glib::Variant::tuple_from_iter([w.to_variant(), h.to_variant(), data.to_variant()]);
+    let arr_type = gtk::glib::VariantTy::new("a(iiay)").expect("valid d-bus type");
+    let empty = gtk::glib::Variant::from_iter(std::iter::empty::<gtk::glib::Variant>());
+    unsafe {
+        let builder = gtk::glib::ffi::g_variant_builder_new(arr_type.as_ptr());
+        if builder.is_null() {
+            return empty;
+        }
+        gtk::glib::ffi::g_variant_builder_add_value(builder, inner.to_glib_none().0);
+        let v = gtk::glib::ffi::g_variant_builder_end(builder);
+        if v.is_null() {
+            gtk::glib::ffi::g_variant_builder_clear(builder);
+            return empty;
+        }
+        gtk::glib::Variant::from_glib_none(v)
+    }
+}
+
+/// Render the pixmap at a per-side scale factor. `scale=1`
+/// reproduces the 22×22 baseline; `scale=2` doubles both
+/// dimensions (44×44), the standard Plasma 6 HiDPI pixel
+/// count, so 4K monitors see a crisp icon. The same colour is
+/// used at every scale.
+fn make_pixmap_scaled(snap: &TraySnapshot, scale: i32) -> (i32, i32, Vec<u8>) {
+    if scale <= 1 {
+        return make_pixmap(snap);
+    }
+    // Re-render the geometry at the target scale by repeating
+    // each base pixel into a `scale × scale` block. Cheap and
+    // preserves the geometry without needing a real 2D draw
+    // primitive.
+    let base = make_pixmap(snap);
+    let base_w = base.0 as usize;
+    let base_h = base.1 as usize;
+    let target_w = base_w * scale as usize;
+    let target_h = base_h * scale as usize;
+    let mut out = Vec::with_capacity(target_w * target_h * 4);
+    for by in 0..base_h {
+        for _ in 0..scale as usize {
+            for bx in 0..base_w {
+                let src = (by * base_w + bx) * 4;
+                let pixel = &base.2[src..src + 4];
+                for _ in 0..scale as usize {
+                    out.extend_from_slice(pixel);
+                }
+            }
+        }
+    }
+    (target_w as i32, target_h as i32, out)
+}
+
 /// Map an SNI property name to a `glib::Variant` value the
-/// watcher can consume. Returning `Some(())` for unknown
-/// properties so the watcher doesn't loop on retries.
-fn prop_value(snap: &TraySnapshot, property: &str, icon_resource_path: &str) -> gtk::glib::Variant {
+/// watcher can consume. Unknown properties trigger an empty
+/// `()` Variant reply so the watcher doesn't loop on retries.
+fn prop_value(
+    snap: &TraySnapshot,
+    property: &str,
+    _icon_resource_path: &str,
+) -> gtk::glib::Variant {
     match property {
         "Category" => "ApplicationStatus".to_variant(),
         "Id" => "com.airvzxf.bose-connect-gui".to_variant(),
@@ -373,19 +551,37 @@ fn prop_value(snap: &TraySnapshot, property: &str, icon_resource_path: &str) -> 
             format!("{} — disconnected", snap.name)
         }
         .to_variant(),
-        "Status" => {
-            if snap.connected {
-                "Active".to_variant()
-            } else {
-                "Passive".to_variant()
+        "Status" => status_for(snap).as_str().to_variant(),
+        "WindowId" => 0u32.to_variant(),
+        // IconName is intentionally empty: the watcher must
+        // use IconPixmap instead. Returning the resource path
+        // would re-introduce the theme-lookup bug.
+        "IconName" => String::new().to_variant(),
+        "IconPixmap" => pixmap_variant(snap, 1),
+        "IconThemePath" => String::new().to_variant(),
+        "AttentionIconName" => String::new().to_variant(),
+        // Same pixmap data as IconPixmap (we don't ship a
+        // distinct "alarm" glyph yet; KDE Plasma 6 will simply
+        // NOT animate between the two when they're identical).
+        "AttentionIconPixmap" => pixmap_variant(snap, 1),
+        "AttentionIconDescription" => "Bose Connect — battery is low".to_variant(),
+        "OverlayIconName" => String::new().to_variant(),
+        "OverlayIconPixmap" => {
+            // a(iiay) — empty array; KDE represents "no
+            // overlay" as a zero-length array. Constructed via
+            // the raw C API to avoid the same
+            // `array_from_iter_with_type` bug we hit on the
+            // non-empty path.
+            let elt_type = gtk::glib::VariantTy::new("(iiay)").expect("valid d-bus type");
+            unsafe {
+                let v = gtk::glib::ffi::g_variant_new_array(
+                    elt_type.to_glib_none().0,
+                    std::ptr::null(),
+                    0,
+                );
+                gtk::glib::Variant::from_glib_none(v)
             }
         }
-        "WindowId" => 0u32.to_variant(),
-        "IconName" => icon_resource_path.to_variant(),
-        "IconThemePath" => String::new().to_variant(),
-        "AttentionIconName" => icon_resource_path.to_variant(),
-        "AttentionIconDescription" => "Battery is low".to_variant(),
-        "OverlayIconName" => String::new().to_variant(),
         "OverlayIconDescription" => String::new().to_variant(),
         "ItemIsMenu" => false.to_variant(),
         // The SNI spec uses an object path (`o`) here. We don't
