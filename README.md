@@ -125,6 +125,10 @@ Usage: bose-connect-app-linux [options] <address>
     Disconnect the device at address.
   --remove-device=<address>
     Remove the device at address from the pairing list.
+  -m <mode>, --audio-mode=<mode>
+    Change the audio mode (QC Ultra).  mode: quiet, aware, immersion, or a slot index
+  --channel=<channel>
+    Use this RFCOMM channel instead of the automatic choice (8, then 2).
 ```
 
 ### C / FFI
@@ -210,12 +214,31 @@ preserved verbatim from the original C. If a regression slips
 through, `git diff feat/migration-to-rust main -- src/library/based.c`
 shows the source-of-truth protocol implementation side-by-side.
 
+## QuietComfort Ultra Headphones
+
+The QC Ultra Headphones (device id `0x4066`) speak the same
+protocol on RFCOMM channel 2 instead of 8; the connection falls
+back to it automatically (`--channel` forces one). Their audio
+modes replace the noise-cancelling levels:
+
+```bash
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --audio-mode aware   # or quiet, immersion, or a slot index
+```
+
+Supported: `--info`, `--device-status` (including the current
+audio mode), `--firmware-version`, `--serial-number`,
+`--battery-level`, `--paired-devices`, `--device-id`,
+`--audio-mode` and `--self-voice`. `--auto-off`,
+`--prompt-language` and `--voice-prompts` are refused because the
+QC Ultra's payloads for them differ from the QC35's and have not
+been decoded yet.
+
 ## Disclaimer
 
 This has only been tested on Bose `QuietComfort 35's` with
-firmware 1.3.2, 1.2.9, 1.06 and `SoundLink II's` with firmware
-2.1.1. I cannot ensure that this program works on any other
-devices.
+firmware 1.3.2, 1.2.9, 1.06, `SoundLink II's` with firmware
+2.1.1 and `QuietComfort Ultra Headphones` with firmware 1.6.7.
+I cannot ensure that this program works on any other devices.
 
 [denton-l]: https://github.com/Denton-L/based-connect
 [main-branch]: https://github.com/airvzxf/bose-connect-app-linux/tree/main

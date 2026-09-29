@@ -361,6 +361,15 @@ pub const MAX_SERIAL_SIZE: usize = 0x100;
 /// `BOSE_CHANNEL`.
 pub const BOSE_CHANNEL: u8 = 8;
 
+/// Channels tried, in order, when the connection on
+/// [`BOSE_CHANNEL`] is refused. The QC Ultra Headphones expose the
+/// same protocol on the serial-port channel 2.
+pub const BOSE_FALLBACK_CHANNELS: [u8; 1] = [2];
+
+/// Number of audio-mode slots on devices with audio modes. The QC
+/// Ultra answers slots 0..=9 and returns an error for slot 10.
+pub const MAX_AUDIO_MODES: u8 = 10;
+
 /// Bitmask for the voice-prompt language bits of the prompt-language
 /// response byte (low 5 bits hold the language, bit 7 is an echo
 /// status flag). Mirrors `VP_MASK`.
@@ -377,6 +386,8 @@ pub(crate) const NOISE_CANCELLING_14: u16 = 0x4014;
 pub(crate) const NOISE_CANCELLING_20: u16 = 0x4020;
 /// Device ID 0x400c — SoundLink II? Mirrors `NOISE_CANCELLING_0C`.
 pub(crate) const NOISE_CANCELLING_0C: u16 = 0x400c;
+/// Device ID 0x4066 — Bose QC Ultra Headphones.
+pub(crate) const QC_ULTRA_HEADPHONES: u16 = 0x4066;
 
 /// `CN_BASE_PACK_LEN + MAX_NAME_LEN - 1` — the worst-case length of
 /// a `SET_NAME` packet (4-byte prefix plus 31 name bytes). Re-exported
