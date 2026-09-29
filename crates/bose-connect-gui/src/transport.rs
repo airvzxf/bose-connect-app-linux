@@ -222,9 +222,10 @@ pub fn snapshot_report(state: &MockState) -> DeviceStatusReport {
         byte &= !VP_ENABLE_BIT;
     }
     DeviceStatusReport {
+        device_id: state.device_id,
         name: state.name.clone(),
         language: byte,
-        minutes: state.auto_off as u16,
+        minutes: Some(state.auto_off as u16),
         level: state.noise_cancelling,
     }
 }

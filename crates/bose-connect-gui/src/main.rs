@@ -297,9 +297,10 @@ fn activate(
         device_id: 0x400C,
         battery: if cli.low_battery_test { 10 } else { 78 },
         status: bose_connect::DeviceStatusReport {
+            device_id: 0x400C,
             name: "Bose QC35 II 🐺".to_string(),
             language: 0x05 | bose_connect::VP_ENABLE_BIT,
-            minutes: 20,
+            minutes: Some(20),
             level: bose_connect::NoiseCancelling::High,
         },
         paired: bose_connect::PairedDevices {
