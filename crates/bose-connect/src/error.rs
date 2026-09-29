@@ -92,6 +92,18 @@ pub enum BoseError {
     /// Catch-all for unexpected `std::io::Error`s from `read`/`write`.
     #[error("i/o error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// The device answered a request with an ERROR packet (for
+    /// example a function it does not implement).
+    #[error("device returned error 0x{code:02x} for function {block:02x}.{function:02x}")]
+    DeviceError {
+        /// Function block of the request.
+        block: u8,
+        /// Function of the request.
+        function: u8,
+        /// Error code sent by the device.
+        code: u8,
+    },
 }
 
 impl BoseError {
@@ -112,6 +124,7 @@ impl BoseError {
             BoseError::InvalidArgument(_) => -10,
             BoseError::Closed => -11,
             BoseError::Io(_) => -12,
+            BoseError::DeviceError { .. } => -13,
         }
     }
 }

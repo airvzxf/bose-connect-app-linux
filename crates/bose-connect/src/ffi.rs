@@ -230,7 +230,8 @@ pub extern "C" fn bose_connect_get_battery_level(
 /// Fetch the full device status (name, prompt language, auto-off,
 /// noise-cancelling level). The name and language are written into
 /// caller-provided buffers; the auto-off / NC level are written to
-/// out-pointers.
+/// out-pointers. The auto-off value is `0xffff` when the device uses
+/// a layout the library does not decode (QC Ultra).
 #[no_mangle]
 pub extern "C" fn bose_connect_get_device_status(
     handle: *mut BoseConnectHandle,
@@ -250,7 +251,7 @@ pub extern "C" fn bose_connect_get_device_status(
         }
         if !out_auto_off_minutes.is_null() {
             unsafe {
-                std::ptr::write(out_auto_off_minutes, status.minutes);
+                std::ptr::write(out_auto_off_minutes, status.minutes.unwrap_or(u16::MAX));
             }
         }
         if !out_noise_cancelling.is_null() {

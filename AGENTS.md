@@ -49,6 +49,16 @@ from the C source files in the `main` branch's git history:
 | `crates/bose-connect/src/address.rs`          | `src/library/bluetooth.c`               |
 | `crates/bose-connect/src/util.rs`             | `src/library/util.c`                    |
 
+The replies are the exception: `protocol.rs` parses every reply
+from its `block, function, operator, length` header instead of a
+fixed-size ACK, because the QC Ultra Headphones (device id
+`0x4066`) send longer payloads for the same functions. The
+audio-mode functions (block `0x1f`), the RFCOMM channel fallback
+(8, then 2) and the connection retry have no C counterpart; their
+byte sequences were captured from a real QC Ultra Headphones on
+firmware 1.6.7 and are recorded in `DEVELOPMENT.md` and in the
+`qc_ultra_*` tests of `tests/protocol_roundtrip.rs`.
+
 `git show <commit>:src/library/based.c` (the last commit that
 touched the C source on `main`) is the source of truth. If a
 packet byte disagrees between the two implementations, the C

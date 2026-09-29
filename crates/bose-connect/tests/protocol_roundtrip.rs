@@ -21,10 +21,13 @@ use std::os::unix::net::UnixStream;
 use std::thread;
 
 use bose_connect::protocol::{
-    get_battery_level, get_device_id, get_firmware_version, get_serial_number, set_auto_off,
-    set_name, set_pairing, set_prompt_language, set_self_voice, set_voice_prompts,
+    get_audio_mode, get_audio_mode_name, get_battery_level, get_device_id, get_device_status,
+    get_firmware_version, get_serial_number, set_audio_mode, set_auto_off, set_name, set_pairing,
+    set_prompt_language, set_self_voice, set_voice_prompts,
 };
-use bose_connect::{AutoOff, BdAddr, BoseError, Pairing, PromptLanguage, SelfVoice, VP_ENABLE_BIT};
+use bose_connect::{
+    AutoOff, BdAddr, BoseError, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, VP_ENABLE_BIT,
+};
 
 /// Helper: create a `UnixStream` pair and hand back (client, server)
 /// streams. The `client` end is what the protocol module sees; the
@@ -379,3 +382,153 @@ fn set_name_too_long_rejected_early() {
 // `-D warnings` build still flags the unused import.
 #[allow(dead_code)]
 const _: u8 = bose_connect::VP_MASK;
+
+// ---------------------------------------------------------------------------
+// QC Ultra Headphones (device id 0x4066, firmware 1.6.7). The replies
+// below are byte-for-byte captures from a real device.
+// ---------------------------------------------------------------------------
+
+/// Read a request of `N` bytes from the mock device side and check it.
+fn expect_request<const N: usize>(server: &mut UnixStream, expected: [u8; N]) {
+    let mut buf = [0u8; N];
+    server.read_exact(&mut buf).unwrap();
+    assert_eq!(buf, expected);
+}
+
+#[test]
+fn qc_ultra_firmware_version_is_variable_length() {
+    let v = with_mock_device(
+        |client| get_firmware_version(client).unwrap(),
+        |server| {
+            expect_request(server, [0x00, 0x05, 0x01, 0x00]);
+            server.write_all(&[0x00, 0x05, 0x03, 0x0e]).unwrap();
+            server.write_all(b"1.6.7+g6ebabd2").unwrap();
+        },
+    );
+    assert_eq!(v, "1.6.7+g6ebabd2");
+}
+
+#[test]
+fn qc_ultra_battery_level_ignores_extra_bytes() {
+    let level = with_mock_device(
+        |client| get_battery_level(client).unwrap(),
+        |server| {
+            expect_request(server, [0x02, 0x02, 0x01, 0x00]);
+            server
+                .write_all(&[0x02, 0x02, 0x03, 0x04, 0x64, 0xff, 0xff, 0x00])
+                .unwrap();
+        },
+    );
+    assert_eq!(level, 100);
+}
+
+#[test]
+fn qc_ultra_device_status() {
+    let status = with_mock_device(
+        |client| get_device_status(client).unwrap(),
+        |server| {
+            expect_request(server, [0x00, 0x03, 0x01, 0x00]);
+            server
+                .write_all(&[0x00, 0x03, 0x03, 0x03, 0x40, 0x66, 0x01])
+                .unwrap();
+            expect_request(server, [0x01, 0x01, 0x05, 0x00]);
+            let mut reply = vec![0x01, 0x01, 0x07, 0x00];
+            reply.extend_from_slice(&[0x01, 0x00, 0x03, 0x05]);
+            reply.extend_from_slice(b"1.1.0");
+            reply.extend_from_slice(&[0x01, 0x02, 0x03, 0x19, 0x00]);
+            reply.extend_from_slice(b"Bose QC Ultra Headphones");
+            reply.extend_from_slice(&[
+                0x01, 0x03, 0x03, 0x07, 0xe1, 0x00, 0x01, 0x81, 0x5e, 0x01, 0x01,
+            ]);
+            reply.extend_from_slice(&[0x01, 0x04, 0x03, 0x03, 0xa0, 0x00, 0x05]);
+            reply.extend_from_slice(&[0x01, 0x05, 0x03, 0x03, 0x0b, 0x00, 0x03]);
+            reply.extend_from_slice(&[
+                0x01, 0x07, 0x03, 0x0c, 0xf6, 0x0a, 0x00, 0x00, 0xf6, 0x0a, 0x00, 0x01, 0xf6, 0x0a,
+                0x00, 0x02,
+            ]);
+            reply.extend_from_slice(&[0x01, 0x0b, 0x03, 0x03, 0x01, 0x02, 0x0f]);
+            reply.extend_from_slice(&[0x01, 0x1b, 0x03, 0x01, 0x01]);
+            reply.extend_from_slice(&[0x01, 0x01, 0x06, 0x00]);
+            server.write_all(&reply).unwrap();
+        },
+    );
+    assert_eq!(status.device_id, 0x4066);
+    assert_eq!(status.name, "Bose QC Ultra Headphones");
+    assert_eq!(status.language, 0xe1);
+    assert_eq!(status.minutes, None);
+    assert_eq!(status.level, NoiseCancelling::Dne);
+}
+
+#[test]
+fn qc_ultra_get_audio_mode() {
+    let mode = with_mock_device(
+        |client| get_audio_mode(client).unwrap(),
+        |server| {
+            expect_request(server, [0x1f, 0x03, 0x01, 0x00]);
+            server.write_all(&[0x1f, 0x03, 0x03, 0x01, 0x02]).unwrap();
+        },
+    );
+    assert_eq!(mode, 2);
+}
+
+/// `1f 06` reply for slot `index` holding `name`.
+fn audio_mode_config(index: u8, name: &str) -> Vec<u8> {
+    let mut payload = vec![index, 0x00, 0x02, 0x00, 0x00, 0x01];
+    let mut field = [0u8; 32];
+    field[..name.len()].copy_from_slice(name.as_bytes());
+    payload.extend_from_slice(&field);
+    payload.extend_from_slice(&[0x00; 9]);
+    let mut reply = vec![0x1f, 0x06, 0x03, payload.len() as u8];
+    reply.extend_from_slice(&payload);
+    reply
+}
+
+#[test]
+fn qc_ultra_audio_mode_names() {
+    let names = with_mock_device(
+        |client| {
+            (
+                get_audio_mode_name(client, 1).unwrap(),
+                get_audio_mode_name(client, 3).unwrap(),
+            )
+        },
+        |server| {
+            expect_request(server, [0x1f, 0x06, 0x01, 0x01, 0x01]);
+            server.write_all(&audio_mode_config(1, "Aware")).unwrap();
+            expect_request(server, [0x1f, 0x06, 0x01, 0x01, 0x03]);
+            server.write_all(&audio_mode_config(3, "None")).unwrap();
+        },
+    );
+    assert_eq!(names, (Some("Aware".to_string()), None));
+}
+
+#[test]
+fn qc_ultra_set_audio_mode() {
+    let result = with_mock_device(
+        |client| set_audio_mode(client, 1),
+        |server| {
+            expect_request(server, [0x1f, 0x03, 0x05, 0x02, 0x01, 0x00]);
+            server.write_all(&[0x1f, 0x03, 0x06, 0x01, 0x01]).unwrap();
+        },
+    );
+    assert!(result.is_ok(), "expected Ok, got {:?}", result);
+}
+
+#[test]
+fn device_error_packet_surfaces_as_error() {
+    let result = with_mock_device(
+        |client| get_audio_mode_name(client, 10),
+        |server| {
+            expect_request(server, [0x1f, 0x06, 0x01, 0x01, 0x0a]);
+            server.write_all(&[0x1f, 0x06, 0x04, 0x01, 0x08]).unwrap();
+        },
+    );
+    assert!(matches!(
+        result,
+        Err(BoseError::DeviceError {
+            block: 0x1f,
+            function: 0x06,
+            code: 0x08
+        })
+    ));
+}

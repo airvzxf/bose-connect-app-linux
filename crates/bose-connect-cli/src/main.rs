@@ -44,7 +44,7 @@ struct Cli {
         "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     info: bool,
 
@@ -53,7 +53,7 @@ struct Cli {
         "info", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     device_status: bool,
 
@@ -62,7 +62,7 @@ struct Cli {
         "info", "device_status", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     firmware_version: bool,
 
@@ -71,7 +71,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     serial_number: bool,
 
@@ -80,7 +80,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     battery_level: bool,
 
@@ -89,7 +89,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     paired_devices: bool,
 
@@ -98,7 +98,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     device_id: bool,
 
@@ -107,7 +107,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     name: Option<String>,
 
@@ -116,16 +116,17 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     auto_off: Option<String>,
 
-    /// Change the noise-cancelling level. level: high, low, off.
+    /// Change the noise-cancelling level. level: high, low, off. On
+    /// the QC Ultra, use --audio-mode instead.
     #[arg(short = 'c', long = "noise-cancelling", value_name = "LEVEL", conflicts_with_all = &[
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     noise_cancelling: Option<String>,
 
@@ -134,7 +135,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     prompt_language: Option<String>,
 
@@ -143,7 +144,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     voice_prompts: Option<String>,
 
@@ -152,7 +153,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     pairing: Option<String>,
 
@@ -161,7 +162,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     self_voice: Option<String>,
 
@@ -170,7 +171,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "disconnect_device", "remove_device", "send_packet",
+        "disconnect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     connect_device: Option<String>,
 
@@ -179,7 +180,7 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "remove_device", "send_packet",
+        "connect_device", "remove_device", "send_packet", "audio_mode",
     ])]
     disconnect_device: Option<String>,
 
@@ -188,16 +189,31 @@ struct Cli {
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "send_packet",
+        "connect_device", "disconnect_device", "send_packet", "audio_mode",
     ])]
     remove_device: Option<String>,
+
+    /// Switch the audio mode (QC Ultra). mode: its name (quiet, aware,
+    /// immersion, …) or its slot index.
+    #[arg(short = 'm', long = "audio-mode", value_name = "MODE", conflicts_with_all = &[
+        "info", "device_status", "firmware_version", "serial_number", "battery_level",
+        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
+        "prompt_language", "voice_prompts", "pairing", "self_voice",
+        "connect_device", "disconnect_device", "remove_device", "send_packet",
+    ])]
+    audio_mode: Option<String>,
+
+    /// RFCOMM channel to use instead of the automatic choice
+    /// (8, then 2).
+    #[arg(long = "channel", value_name = "CHANNEL")]
+    channel: Option<u8>,
 
     /// Send a raw hex packet (e.g. `0a1b2c3d`) and print the response.
     #[arg(long = "send-packet", value_name = "HEX", conflicts_with_all = &[
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device",
+        "connect_device", "disconnect_device", "remove_device", "audio_mode",
     ])]
     send_packet: Option<String>,
 }
@@ -214,8 +230,12 @@ fn main() -> ExitCode {
 }
 
 fn dispatch(cli: Cli) -> Result<()> {
-    let mut device = BoseDevice::open(&cli.address)
-        .with_context(|| format!("failed to open Bose device at {}", cli.address))?;
+    let device = match cli.channel {
+        Some(channel) => BoseDevice::open_channel(&cli.address, channel),
+        None => BoseDevice::open(&cli.address),
+    };
+    let mut device =
+        device.with_context(|| format!("failed to open Bose device at {}", cli.address))?;
 
     // Mirror the C `do_get_information` retry/back-off pattern: each
     // sub-query gets up to 3 attempts, with a 1-second sleep between
@@ -243,12 +263,18 @@ fn dispatch(cli: Cli) -> Result<()> {
             .with_context(|| format!("setting name to {name:?}"))?;
     } else if let Some(minutes) = cli.auto_off.as_deref() {
         let parsed = parse_auto_off(minutes)?;
+        require_legacy_settings(&mut device, "auto-off")?;
         device.set_auto_off(parsed)?;
     } else if let Some(level) = cli.noise_cancelling.as_deref() {
         let parsed = parse_noise_cancelling(level)?;
         // Re-fetch the device id so we can refuse early on devices
         // that have no NC hardware. The C code's behaviour.
         let (device_id, _) = device.device_id()?;
+        if bose_connect::has_audio_modes(device_id) {
+            bail!(
+                "this device uses audio modes instead of noise-cancelling levels; use --audio-mode"
+            );
+        }
         if !bose_connect::has_noise_cancelling(device_id) {
             bail!("this device does not have noise cancelling");
         }
@@ -256,9 +282,11 @@ fn dispatch(cli: Cli) -> Result<()> {
     } else if let Some(lang) = cli.prompt_language.as_deref() {
         let parsed = language_from_arg(lang)
             .ok_or_else(|| anyhow::anyhow!("invalid prompt language argument: {lang}"))?;
+        require_legacy_settings(&mut device, "prompt-language")?;
         device.set_language_keep_voice_prompts(parsed)?;
     } else if let Some(switch) = cli.voice_prompts.as_deref() {
         let on = parse_voice_prompts(switch)?;
+        require_legacy_settings(&mut device, "voice-prompts")?;
         device.set_voice_prompts(on)?;
     } else if let Some(status) = cli.pairing.as_deref() {
         let on = parse_pairing(status)?;
@@ -298,6 +326,8 @@ fn dispatch(cli: Cli) -> Result<()> {
     } else if let Some(addr) = cli.remove_device.as_deref() {
         let addr = parse_address(addr)?;
         do_paired_op_verify(&mut device, "remove", addr, |d, a| d.remove_device(a))?;
+    } else if let Some(mode) = cli.audio_mode.as_deref() {
+        do_set_audio_mode(&mut device, mode)?;
     } else if let Some(hex) = cli.send_packet.as_deref() {
         do_send_packet(&mut device, hex)?;
     } else {
@@ -382,7 +412,10 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
     // in the lower 5 bits; without AND+OR the lookup would fall
     // through to 'Unknown' for every successful read. Same
     // workaround the C code applies (commit 56917d5).
-    let cleaned = (status.language & VP_MASK) | VP_ENABLE_BIT;
+    //
+    // The QC Ultra also sets bit 6, so only the low 5 bits are kept
+    // for the language code.
+    let cleaned = (status.language & VP_MASK & LANGUAGE_CODE_MASK) | VP_ENABLE_BIT;
     if let Some(pl) = PromptLanguage::from_u8(cleaned) {
         println!("\tLanguage: {}", pl.as_str());
     } else {
@@ -396,10 +429,10 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
             "off"
         }
     );
-    if status.minutes == 0 {
-        println!("\tAuto-Off: never");
-    } else {
-        println!("\tAuto-Off: {}", status.minutes);
+    match status.minutes {
+        Some(0) => println!("\tAuto-Off: never"),
+        Some(minutes) => println!("\tAuto-Off: {}", minutes),
+        None => println!("\tAuto-Off: unknown"),
     }
     if status.level != NoiseCancelling::Dne {
         let s = match status.level {
@@ -410,6 +443,51 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
         };
         println!("\tNoise Cancelling: {}", s);
     }
+    if bose_connect::has_audio_modes(status.device_id) {
+        let modes = device.audio_modes()?;
+        let current = device.audio_mode()?;
+        let name = modes
+            .iter()
+            .find(|(index, _)| *index == current)
+            .map_or("unknown", |(_, name)| name.as_str());
+        println!("\tAudio Mode: {}", name);
+        let names: Vec<&str> = modes.iter().map(|(_, name)| name.as_str()).collect();
+        println!("\tAudio Modes Available: {}", names.join(", "));
+    }
+    Ok(())
+}
+
+/// Low 5 bits of the prompt-language byte: the language code.
+const LANGUAGE_CODE_MASK: u8 = 0x1f;
+
+/// Refuse `setting` on devices whose payload layout for it is not
+/// the 1-byte QC35 one, rather than writing a guessed value.
+fn require_legacy_settings(device: &mut BoseDevice, setting: &str) -> Result<()> {
+    let (device_id, _) = device.device_id()?;
+    if !bose_connect::has_legacy_settings(device_id) {
+        bail!("{setting} is not supported on this device yet");
+    }
+    Ok(())
+}
+
+fn do_set_audio_mode(device: &mut BoseDevice, mode: &str) -> Result<()> {
+    let (device_id, _) = device.device_id()?;
+    if !bose_connect::has_audio_modes(device_id) {
+        bail!("this device does not have audio modes");
+    }
+    let modes = device.audio_modes()?;
+    let (index, name) = modes
+        .iter()
+        .find(|(index, name)| name.eq_ignore_ascii_case(mode) || index.to_string() == mode)
+        .ok_or_else(|| {
+            let names: Vec<&str> = modes.iter().map(|(_, name)| name.as_str()).collect();
+            anyhow::anyhow!(
+                "unknown audio mode {mode:?}; available: {}",
+                names.join(", ")
+            )
+        })?;
+    device.set_audio_mode(*index)?;
+    println!("Audio mode: {}", name);
     Ok(())
 }
 
