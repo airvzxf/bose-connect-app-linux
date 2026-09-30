@@ -43,6 +43,9 @@ pub struct DeviceSnapshot {
     pub paired: PairedDevices,
     pub devices: Vec<DeviceInfo>,
     pub capabilities: Capability,
+    pub volume: Option<u8>,
+    pub active_device: Option<BdAddr>,
+    pub device_bd_addr: Option<BdAddr>,
 }
 
 /// Concrete boxed service.
@@ -64,6 +67,8 @@ pub trait DeviceService: Send + Sync + 'static {
     fn connect_device(&self, addr: BdAddr) -> Result<DeviceSnapshot>;
     fn disconnect_device(&self, addr: BdAddr) -> Result<DeviceSnapshot>;
     fn remove_device(&self, addr: BdAddr) -> Result<DeviceSnapshot>;
+    fn set_volume(&self, level: u8) -> Result<DeviceSnapshot>;
+    fn send_media_key(&self, key: bose_connect::MediaKey) -> Result<()>;
 
     fn capabilities(&self, device_id: u16) -> Capability {
         Capability {
@@ -112,6 +117,9 @@ impl MockService {
             paired,
             devices,
             capabilities,
+            volume: Some(state.volume),
+            active_device: state.active_device,
+            device_bd_addr: state.device_bd_addr,
         }
     }
 }
@@ -203,6 +211,16 @@ impl DeviceService for MockService {
         state.paired.retain(|(a, _, _)| *a != addr);
         Ok(self.snapshot())
     }
+
+    fn set_volume(&self, level: u8) -> Result<DeviceSnapshot> {
+        let mut state = self.handle.write();
+        state.volume = level.min(75);
+        Ok(self.snapshot())
+    }
+
+    fn send_media_key(&self, _key: bose_connect::MediaKey) -> Result<()> {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +268,9 @@ impl RealService {
             paired,
             devices,
             capabilities,
+            volume: None,
+            active_device: None,
+            device_bd_addr: None,
         }
     }
 }
@@ -299,6 +320,14 @@ impl DeviceService for RealService {
     }
 
     fn remove_device(&self, _addr: BdAddr) -> Result<DeviceSnapshot> {
+        bail!("RealService: not yet wired in this build")
+    }
+
+    fn set_volume(&self, _level: u8) -> Result<DeviceSnapshot> {
+        bail!("RealService: not yet wired in this build")
+    }
+
+    fn send_media_key(&self, _key: bose_connect::MediaKey) -> Result<()> {
         bail!("RealService: not yet wired in this build")
     }
 }

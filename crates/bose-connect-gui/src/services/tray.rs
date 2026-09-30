@@ -790,6 +790,7 @@ mod tests {
 
     #[test]
     fn pixmap_resource_uri_was_registered() {
+        crate::register_resources();
         // Smoke-check that the GResource bundle the binary
         // shipped contains the SVG path we ship to the
         // property handler. If a future refactor builds

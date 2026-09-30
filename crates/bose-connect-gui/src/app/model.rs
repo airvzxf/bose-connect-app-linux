@@ -58,66 +58,39 @@ pub enum ConnectionState {
 /// `Page` value via `Page::from_key`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
-    MyBose,
     Overview,
-    Audio,
-    Device,
-    Multipoint,
-    Advanced,
+    MyBose,
 }
 
 impl Page {
-    /// Sidebar order — Position 1 (`Page::Overview`) is the home
-    /// page users land on. The 🏠 icon for `Overview` (in
-    /// `widgets::page_icon`) reinforces the affordance: clicking
-    /// the first sidebar item always returns to the main view.
-    pub const ALL: &'static [Page] = &[
-        Page::Overview,
-        Page::MyBose,
-        Page::Audio,
-        Page::Device,
-        Page::Multipoint,
-        Page::Advanced,
-    ];
+    pub const ALL: &'static [Page] = &[Page::Overview, Page::MyBose];
 
-    /// Stable string key used in the URL fragment and persisted
-    /// state. Keep these snake_case so they survive locale changes.
     pub fn key(self) -> &'static str {
         match self {
-            Page::MyBose => "mybose",
             Page::Overview => "overview",
-            Page::Audio => "audio",
-            Page::Device => "device",
-            Page::Multipoint => "paired",
-            Page::Advanced => "advanced",
+            Page::MyBose => "mybose",
         }
     }
 
     pub fn from_key(key: &str) -> Option<Page> {
-        Self::ALL.iter().copied().find(|p| p.key() == key)
-    }
-
-    /// Display title for the page header and window title.
-    pub fn title(self) -> &'static str {
-        match self {
-            Page::MyBose => "Paired devices",
-            Page::Overview => "Device overview",
-            Page::Audio => "Audio",
-            Page::Device => "Device settings",
-            Page::Multipoint => "Multipoint",
-            Page::Advanced => "Advanced",
+        match key {
+            "mybose" => Some(Page::MyBose),
+            "overview" => Some(Page::Overview),
+            _ => Some(Page::Overview),
         }
     }
 
-    /// Short helper text shown under the page title.
+    pub fn title(self) -> &'static str {
+        match self {
+            Page::Overview => "Bose Connect",
+            Page::MyBose => "Mis dispositivos Bose",
+        }
+    }
+
     pub fn subtitle(self) -> &'static str {
         match self {
-            Page::MyBose => "Bluetooth pairing between this laptop and your Bose devices",
-            Page::Overview => "Battery, identity and quick actions",
-            Page::Audio => "Active noise cancellation and own-voice level",
-            Page::Device => "Rename, language, auto-off and voice prompts",
-            Page::Multipoint => "Other machines connected to this Bose right now",
-            Page::Advanced => "Debug helpers for the RFCOMM protocol",
+            Page::Overview => "Panel de control y ajustes",
+            Page::MyBose => "Dispositivos emparejados en esta laptop",
         }
     }
 }
@@ -252,6 +225,8 @@ pub enum AppMsg {
     SetVoicePrompts(bool),
     SetPairing(bool),
     SetName(String),
+    SetVolume(u8),
+    SendMediaKey(bose_connect::MediaKey),
 
     /// Profile selection.
     ApplyProfile(ProfileName),

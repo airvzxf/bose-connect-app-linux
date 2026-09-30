@@ -39,6 +39,9 @@ pub struct MockSeed {
     pub device_id: u16,
     pub paired: Vec<(String, String, DeviceStatus)>,
     pub history: Vec<u8>,
+    pub volume: Option<u8>,
+    pub active_device: Option<BdAddr>,
+    pub device_bd_addr: Option<BdAddr>,
 }
 
 impl Default for MockSeed {
@@ -73,6 +76,9 @@ impl Default for MockSeed {
                 ),
             ],
             history,
+            volume: Some(45),
+            active_device: BdAddr::from_canonical("11:22:33:44:55:77"),
+            device_bd_addr: BdAddr::from_canonical("04:52:C7:BA:68:0D"),
         }
     }
 }
@@ -94,6 +100,9 @@ pub struct MockState {
     pub connected: bool,
     pub paired: Vec<(BdAddr, String, DeviceStatus)>,
     pub history: VecDeque<u8>,
+    pub volume: u8,
+    pub active_device: Option<BdAddr>,
+    pub device_bd_addr: Option<BdAddr>,
 }
 
 impl From<MockSeed> for MockState {
@@ -123,6 +132,9 @@ impl From<MockSeed> for MockState {
             connected: true,
             paired,
             history,
+            volume: seed.volume.unwrap_or(45),
+            active_device: seed.active_device,
+            device_bd_addr: seed.device_bd_addr,
         }
     }
 }

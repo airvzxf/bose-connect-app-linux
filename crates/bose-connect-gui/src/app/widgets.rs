@@ -1,44 +1,28 @@
 //! Widget sub-trees — pure functions that take `&AppModel` and a
 //! message-sending handle and return a fully-formed widget.
 //!
-//! Layout follows the Claude / GNOME-sidebar mockup:
-//!
-//! ```text
-//!     ┌─ HeaderBar ────────────────────────────────────────────┐
-//!     │ [Bose Connect]   [device ▼]            [🌓] [☰]         │
-//!     └────────────────────────────────────────────────────────┘
-//!     ┌─ Sidebar ──┬─ Page content ─────────────────────────────┐
-//!     │ My Bose    │                                            │
-//!     │ Overview   │  <page-specific widgets>                   │
-//!     │ Audio      │                                            │
-//!     │ Device     │                                            │
-//!     │ Multipoint │                                            │
-//!     │ Advanced   │                                            │
-//!     └────────────┴────────────────────────────────────────────┘
-//! ```
-//!
-//! Each page is rendered by one of the public functions at the
-//! bottom of this file. We keep the small reusable widgets
-//! (hero card, segmented control, action row, boxed list, …)
-//! private helpers above them.
+//! Follows GNOME Human Interface Guidelines (HIG) and Libadwaita standards:
+//!   - Single unified, clamped view (AdwClamp max 720px)
+//!   - Real Libadwaita widgets (AdwPreferencesGroup, AdwActionRow, AdwComboRow, AdwSwitchRow, AdwExpanderRow)
+//!   - Standard system symbolic icons (no Unicode emojis)
+//!   - Modals for renaming (with 31-byte limit & live counter) and forgetting devices
+//!   - Serial number hide/reveal with selectable text
 
-use adw;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
 use adw::prelude::*;
+#[allow(unused_imports)]
 use gtk::prelude::*;
-use gtk::{glib, Box as GtkBox, Button, Label, ListBox, ListBoxRow, Orientation};
+use gtk::{glib, Box as GtkBox, Button, Image, Label, Orientation, StringList};
 
-use crate::app::model::{AppModel, AppMsg, ConnectionState, LogLevel, Page};
+use crate::app::model::{AppModel, AppMsg, ConnectionState, Page};
 use crate::i18n;
 
 // ---------------------------------------------------------------------------
 // Sender extension
 // ---------------------------------------------------------------------------
 
-/// Convenience extension so widget code stays readable. The
-/// GUI is a single producer (`flume::Sender`) on top of
-/// `glib::MainContext::spawn_local`, so any error here means the
-/// pump is gone — the GUI is tearing down. Swallowing the error
-/// keeps the closure bodies one-liners.
 pub trait SenderExt {
     fn send_app(&self, msg: AppMsg);
 }
@@ -50,292 +34,31 @@ impl SenderExt for flume::Sender<AppMsg> {
 }
 
 // ---------------------------------------------------------------------------
-// Shared factories
+// Helpers
 // ---------------------------------------------------------------------------
 
-/// A vertical box styled as one of the project's "tile" cards.
-/// Used for the quick-settings cards on the audio / device pages.
-#[allow(dead_code)]
-fn tile(class: &str) -> GtkBox {
-    let b = GtkBox::new(Orientation::Vertical, 8);
-    b.add_css_class("tile");
-    if !class.is_empty() {
-        b.add_css_class(class);
-    }
-    b.set_hexpand(true);
-    b.set_vexpand(true);
-    b
-}
-
-#[allow(dead_code)]
-fn tile_header(title: &str, subtitle: &str) -> GtkBox {
-    let h = GtkBox::new(Orientation::Horizontal, 8);
-    h.add_css_class("tile-header");
-
-    let column = GtkBox::new(Orientation::Vertical, 2);
-    column.set_hexpand(true);
-    let title_label = Label::new(Some(title));
-    title_label.add_css_class("tile-title");
-    title_label.set_xalign(0.0);
-    let subtitle_label = Label::new(Some(subtitle));
-    subtitle_label.add_css_class("tile-subtitle");
-    subtitle_label.set_xalign(0.0);
-    column.append(&title_label);
-    column.append(&subtitle_label);
-    h.append(&column);
-    h
-}
-
-/// A horizontal segmented selector (Off / Low / High) using
-/// `ToggleButton`s. The selected option gets the `selected`
-/// CSS class so it picks up the accent background.
-fn segmented_control<F>(options: &[(&str, &str)], selected: &str, on_select: F) -> GtkBox
-where
-    F: Fn(&str) + 'static + Clone,
-{
-    let container = GtkBox::new(Orientation::Horizontal, 0);
-    container.add_css_class("segmented");
-    container.set_homogeneous(true);
-    container.set_hexpand(true);
-
-    for (value, label) in options {
-        let value_owned = (*value).to_string();
-        let selected_owned = selected.to_string();
-        let button = gtk::ToggleButton::with_label(label);
-        button.add_css_class("segmented-button");
-        button.set_valign(gtk::Align::Center);
-        if value_owned == selected_owned {
-            button.set_active(true);
-            button.add_css_class("selected");
-        }
-        let on_select = on_select.clone();
-        button.connect_toggled(move |b| {
-            if b.is_active() {
-                on_select(&value_owned);
-            }
-        });
-        container.append(&button);
-    }
-    container
-}
-
-/// Build a "boxed list" — the libadwaita / GNOME settings card
-/// with rounded corners that contains action rows separated by
-/// thin borders.
-fn boxed_list() -> ListBox {
-    let list = ListBox::new();
-    list.add_css_class("boxed-list");
-    list.set_selection_mode(gtk::SelectionMode::None);
-    list.set_show_separators(true);
-    list
-}
-
-/// Build a settings-row-style action row used inside a boxed
-/// list. `prefix` is a leading icon glyph; `title` / `desc` are
-/// the main and secondary labels; `suffix` is the trailing
-/// widget (a button, a switch, a chevron, etc.).
-fn action_row<W: gtk::prelude::IsA<gtk::Widget>>(
-    prefix: &str,
-    title: &str,
-    desc: &str,
-    suffix: &W,
-) -> ListBoxRow {
-    let row = ListBoxRow::new();
-    row.add_css_class("action-row");
-    let h = GtkBox::new(Orientation::Horizontal, 12);
-    h.set_margin_top(8);
-    h.set_margin_bottom(8);
-    h.set_margin_start(12);
-    h.set_margin_end(12);
-
-    if !prefix.is_empty() {
-        let ic = Label::new(Some(prefix));
-        ic.add_css_class("row-icon");
-        ic.set_size_request(20, -1);
-        ic.set_xalign(0.0);
-        h.append(&ic);
-    }
-
-    let texts = GtkBox::new(Orientation::Vertical, 2);
-    texts.set_hexpand(true);
-    let title_lbl = Label::new(Some(title));
-    title_lbl.add_css_class("row-title");
-    title_lbl.set_xalign(0.0);
-    texts.append(&title_lbl);
-    if !desc.is_empty() {
-        let desc_lbl = Label::new(Some(desc));
-        desc_lbl.add_css_class("row-desc");
-        desc_lbl.set_xalign(0.0);
-        desc_lbl.set_wrap(true);
-        texts.append(&desc_lbl);
-    }
-    h.append(&texts);
-    h.append(suffix);
-    row.set_child(Some(&h));
-    row
-}
-
-fn format_address(addr: bose_connect::BdAddr) -> String {
+pub fn format_address(addr: bose_connect::BdAddr) -> String {
     format!(
         "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
         addr.b[0], addr.b[1], addr.b[2], addr.b[3], addr.b[4], addr.b[5]
     )
 }
 
-// ---------------------------------------------------------------------------
-// ConnectionBanner (slim status strip — used at the top of every page)
-// ---------------------------------------------------------------------------
-
-pub struct ConnectionBanner;
-
-impl ConnectionBanner {
-    pub fn render(model: &AppModel) -> gtk::Widget {
-        let row = GtkBox::new(Orientation::Horizontal, 8);
-        row.set_margin_bottom(8);
-        row.set_halign(gtk::Align::Start);
-        row.set_hexpand(true);
-        row.add_css_class("connection-banner");
-
-        let dot = GtkBox::new(Orientation::Horizontal, 0);
-        dot.set_size_request(10, 10);
-        dot.add_css_class("status-dot");
-        match model.connection {
-            ConnectionState::Connected => dot.add_css_class("status-dot-on"),
-            ConnectionState::Error(_) => dot.add_css_class("status-dot-error"),
-            _ => dot.add_css_class("status-dot-idle"),
-        }
-        row.append(&dot);
-
-        let text = match &model.connection {
-            ConnectionState::NotStarted => Label::new(Some("Pick a device to begin")),
-            ConnectionState::Discovering => Label::new(Some("Scanning for Bose devices…")),
-            ConnectionState::Connecting(addr) => {
-                Label::new(Some(&format!("Connecting to {addr}…")))
-            }
-            ConnectionState::Connected => Label::new(Some("Connected via RFCOMM")),
-            ConnectionState::Error(err) => Label::new(Some(&format!("Connection failed: {err}"))),
-        };
-        text.set_xalign(0.0);
-        text.add_css_class("status-label");
-        row.append(&text);
-        row.upcast::<gtk::Widget>()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HeroCard (used on the Overview page)
-// ---------------------------------------------------------------------------
-
-pub struct HeroCard;
-
-impl HeroCard {
-    pub fn render(model: &AppModel) -> gtk::Widget {
-        let card = GtkBox::new(Orientation::Horizontal, 20);
-        card.add_css_class("hero-card");
-        card.set_hexpand(true);
-        card.set_valign(gtk::Align::Center);
-
-        let (battery, name, firmware) = match &model.snapshot {
-            Some(s) => (s.battery as i32, s.name.clone(), s.firmware.clone()),
-            None => (-1, "—".to_string(), "—".to_string()),
-        };
-
-        // Left: avatar + identity.
-        let left = GtkBox::new(Orientation::Horizontal, 16);
-        left.set_hexpand(true);
-        left.set_valign(gtk::Align::Center);
-
-        let avatar = GtkBox::new(Orientation::Horizontal, 0);
-        avatar.add_css_class("hero-avatar");
-        avatar.set_size_request(56, 56);
-        avatar.set_valign(gtk::Align::Center);
-        avatar.set_halign(gtk::Align::Center);
-        let avatar_label = Label::new(Some("🎧"));
-        avatar_label
-            .set_markup("<span font_features='liga' size='20000' foreground='#ffffff'>🎧</span>");
-        avatar.append(&avatar_label);
-        left.append(&avatar);
-
-        let meta = GtkBox::new(Orientation::Vertical, 4);
-        meta.set_hexpand(true);
-        let name_label = Label::new(None);
-        name_label.set_markup(&format!(
-            "<span weight='800' size='large'>{}</span>",
-            glib::markup_escape_text(&name)
-        ));
-        name_label.set_xalign(0.0);
-        meta.append(&name_label);
-
-        let sub = Label::new(Some(&format!("Firmware {} · AA:BB:CC:DD:EE:FF", firmware)));
-        sub.set_xalign(0.0);
-        sub.add_css_class("row-desc");
-        meta.append(&sub);
-
-        let pills = GtkBox::new(Orientation::Horizontal, 6);
-        let status_pill = Label::new(Some(match model.connection {
-            ConnectionState::Connected => "● connected",
-            _ => "○ disconnected",
-        }));
-        status_pill.add_css_class("pill");
-        if matches!(model.connection, ConnectionState::Connected) {
-            status_pill.add_css_class("success");
-        } else {
-            status_pill.add_css_class("idle");
-        }
-        pills.append(&status_pill);
-        meta.append(&pills);
-        left.append(&meta);
-
-        card.append(&left);
-
-        // Right: battery ring + sparkline.
-        let right = GtkBox::new(Orientation::Vertical, 6);
-        right.set_valign(gtk::Align::Center);
-        right.set_size_request(220, -1);
-
-        let ring = GtkBox::new(Orientation::Horizontal, 0);
-        ring.add_css_class("battery-ring");
-        ring.set_size_request(96, 96);
-        ring.set_halign(gtk::Align::Center);
-        ring.set_valign(gtk::Align::Center);
-        let pct = if battery < 0 {
-            "—".to_string()
-        } else {
-            format!("{battery}<span size='40%' rise='20'>%</span>")
-        };
-        let ring_label = Label::new(None);
-        ring_label.set_markup(&format!("<span weight='800' size='17000'>{pct}</span>"));
-        ring.append(&ring_label);
-        right.append(&ring);
-
-        let spark = build_sparkline(&model.history);
-        right.append(&spark);
-
-        let tip = Label::new(Some("last 32 polls"));
-        tip.add_css_class("dim-label");
-        tip.set_xalign(0.5);
-        right.append(&tip);
-        card.append(&right);
-
-        card.upcast::<gtk::Widget>()
-    }
-}
-
 fn build_sparkline(history: &[u8]) -> GtkBox {
     let row = GtkBox::new(Orientation::Horizontal, 0);
     row.add_css_class("sparkline");
     row.set_homogeneous(true);
-    row.set_size_request(-1, 28);
+    row.set_size_request(-1, 24);
 
     let n = history.len().max(32);
     for i in 0..n {
         let bar = GtkBox::new(Orientation::Vertical, 0);
         bar.add_css_class("sparkline-bar");
         let h = match history.get(i) {
-            Some(&v) => (v as i32).max(4),
-            None => 4,
+            Some(&v) => ((v as i32) * 20 / 100).max(3),
+            None => 3,
         };
-        bar.set_size_request(5, h);
+        bar.set_size_request(4, h);
         if i >= history.len() {
             bar.add_css_class("empty");
         }
@@ -344,443 +67,732 @@ fn build_sparkline(history: &[u8]) -> GtkBox {
     row
 }
 
+pub fn segmented_control<F>(options: &[(&str, &str)], selected: &str, on_select: F) -> GtkBox
+where
+    F: Fn(&str) + 'static + Clone,
+{
+    let container = GtkBox::new(Orientation::Horizontal, 0);
+    container.add_css_class("segmented");
+    container.set_homogeneous(true);
+
+    let buttons: Rc<RefCell<Vec<(String, gtk::ToggleButton)>>> = Rc::new(RefCell::new(Vec::new()));
+
+    for (value, label) in options {
+        let val_owned = value.to_string();
+        let btn = gtk::ToggleButton::with_label(label);
+        btn.add_css_class("segmented-button");
+        if *value == selected {
+            btn.set_active(true);
+            btn.add_css_class("selected");
+        }
+        buttons.borrow_mut().push((val_owned.clone(), btn.clone()));
+    }
+
+    for (val, btn) in buttons.borrow().iter() {
+        let val_clone = val.clone();
+        let on_select = on_select.clone();
+        let all_btns = buttons.clone();
+
+        btn.connect_toggled(move |b| {
+            if b.is_active() {
+                for (other_val, other_btn) in all_btns.borrow().iter() {
+                    if other_val != &val_clone {
+                        other_btn.set_active(false);
+                        other_btn.remove_css_class("selected");
+                    }
+                }
+                b.add_css_class("selected");
+                on_select(&val_clone);
+            }
+        });
+        container.append(btn);
+    }
+
+    container
+}
+
 // ---------------------------------------------------------------------------
-// MyBose page (sidebar entry 1)
+// Modals: Rename & Forget
 // ---------------------------------------------------------------------------
 
-pub struct MyBosePage;
+pub fn open_rename_dialog(
+    parent: &impl glib::object::IsA<gtk::Widget>,
+    current_name: &str,
+    sender: &flume::Sender<AppMsg>,
+) {
+    let root = parent.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+    let dialog = adw::AlertDialog::new(
+        Some("Renombrar Dispositivo"),
+        Some("Introduce el nuevo nombre Bluetooth para el dispositivo (máximo 31 bytes):"),
+    );
+    dialog.add_response("cancel", "Cancelar");
+    dialog.add_response("save", "Guardar");
+    dialog.set_response_appearance("save", adw::ResponseAppearance::Suggested);
 
-impl MyBosePage {
-    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let page = GtkBox::new(Orientation::Vertical, 16);
-        page.set_hexpand(true);
-        page.set_vexpand(true);
-        page.append(&page_header(Page::MyBose));
+    let content_box = GtkBox::new(Orientation::Vertical, 6);
+    content_box.set_margin_top(8);
+    content_box.set_margin_bottom(8);
+    content_box.set_margin_start(12);
+    content_box.set_margin_end(12);
 
-        // Active device card.
-        let active_card = adw::PreferencesGroup::new();
-        active_card.set_title("Active device");
-        active_card.set_description(Some("The Bose device this app is currently controlling"));
+    let entry = gtk::Entry::new();
+    entry.set_text(current_name);
+    entry.set_max_length(31);
+    content_box.append(&entry);
 
-        let active_list = boxed_list();
-        let (name, addr_str, battery, status_str) = match &model.snapshot {
-            Some(s) => (
-                s.name.clone(),
-                format_address(s.address),
-                format!("{}%", s.battery),
-                "Connected",
-            ),
-            None => (
-                "No device selected".to_string(),
-                "—".to_string(),
-                "—".to_string(),
-                "Disconnected",
-            ),
-        };
-        let suffix = GtkBox::new(Orientation::Horizontal, 6);
-        let pill = Label::new(Some(status_str));
-        pill.add_css_class("pill");
-        if status_str == "Connected" {
-            pill.add_css_class("success");
+    let initial_len = current_name.len();
+    let counter = Label::new(Some(&format!("{initial_len} / 31 bytes")));
+    counter.set_xalign(1.0);
+    counter.add_css_class("row-desc");
+    content_box.append(&counter);
+
+    let d_clone = dialog.clone();
+    let entry_weak = entry.downgrade();
+    entry.connect_changed(move |e| {
+        let text = e.text().to_string();
+        let len = text.len();
+        counter.set_text(&format!("{len} / 31 bytes"));
+        if len == 0 || len > 31 {
+            d_clone.set_response_enabled("save", false);
+            counter.add_css_class("error");
         } else {
-            pill.add_css_class("idle");
+            d_clone.set_response_enabled("save", true);
+            counter.remove_css_class("error");
         }
-        suffix.append(&pill);
-        let disconnect = Button::with_label("Disconnect");
-        disconnect.add_css_class("destructive");
-        let s = sender.clone();
-        disconnect.connect_clicked(move |_| {
-            // In the mock we just toggle connection state via log;
-            // a real RFCOMM disconnect would map to a dedicated
-            // command. The mock currently doesn't expose a
-            // "disconnect" verb, so we just leave a log line.
-            s.send_app(AppMsg::Acknowledge);
+    });
+
+    dialog.set_extra_child(Some(&content_box));
+
+    let s = sender.clone();
+    dialog.choose(
+        root.as_ref(),
+        None::<&gtk::gio::Cancellable>,
+        move |choice| {
+            if choice == "save" {
+                if let Some(e) = entry_weak.upgrade() {
+                    let new_name = e.text().to_string();
+                    if !new_name.is_empty() && new_name.len() <= 31 {
+                        s.send_app(AppMsg::SetName(new_name));
+                    }
+                }
+            }
+        },
+    );
+}
+
+pub fn open_forget_dialog(
+    parent: &impl glib::object::IsA<gtk::Widget>,
+    name: &str,
+    addr: bose_connect::BdAddr,
+    sender: &flume::Sender<AppMsg>,
+) {
+    let root = parent.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+    let addr_str = format_address(addr);
+    let dialog = adw::AlertDialog::new(
+        Some("¿Olvidar dispositivo?"),
+        Some(&format!(
+            "¿Deseas eliminar \"{name}\" ({addr_str}) de la memoria del auricular? Tendrás que volver a emparejarlo manualmente."
+        )),
+    );
+    dialog.add_response("cancel", "Cancelar");
+    dialog.add_response("delete", "Olvidar");
+    dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+
+    let s = sender.clone();
+    dialog.choose(
+        root.as_ref(),
+        None::<&gtk::gio::Cancellable>,
+        move |choice| {
+            if choice == "delete" {
+                s.send_app(AppMsg::PairedRemove(addr));
+            }
+        },
+    );
+}
+
+// ---------------------------------------------------------------------------
+// HeaderBar
+// ---------------------------------------------------------------------------
+
+pub struct HeaderBarWidgets {
+    pub container: adw::HeaderBar,
+    pub back_btn: Button,
+    pub device_switcher: gtk::MenuButton,
+    pub device_label: Label,
+    pub window_title: adw::WindowTitle,
+}
+
+pub fn build_header_bar(model: &AppModel, sender: &flume::Sender<AppMsg>) -> HeaderBarWidgets {
+    let bar = adw::HeaderBar::new();
+    bar.set_size_request(-1, 52);
+
+    // Back button (shown on subpages like MyBose)
+    let back_btn = Button::from_icon_name("go-previous-symbolic");
+    back_btn.set_tooltip_text(Some("Volver al dispositivo"));
+    back_btn.set_valign(gtk::Align::Center);
+    back_btn.set_visible(model.current_page == Page::MyBose);
+    let s_back = sender.clone();
+    back_btn.connect_clicked(move |_| {
+        s_back.send_app(AppMsg::NavigateTo(Page::Overview));
+    });
+    bar.pack_start(&back_btn);
+
+    // Device switcher button (shown on Overview)
+    let switcher = gtk::MenuButton::new();
+    switcher.add_css_class("device-switcher");
+    switcher.set_valign(gtk::Align::Center);
+    switcher.set_visible(model.current_page == Page::Overview);
+
+    let switcher_box = GtkBox::new(Orientation::Horizontal, 6);
+    let dev_icon = Image::from_icon_name("audio-headphones-symbolic");
+    switcher_box.append(&dev_icon);
+
+    let initial_name = model
+        .snapshot
+        .as_ref()
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| "Desconectado".to_string());
+    let device_label = Label::new(Some(&initial_name));
+    device_label.add_css_class("device-label");
+    switcher_box.append(&device_label);
+
+    let arrow = Image::from_icon_name("pan-down-symbolic");
+    switcher_box.append(&arrow);
+    switcher.set_child(Some(&switcher_box));
+
+    // Popover for device switcher
+    let popover = gtk::Popover::new();
+    let pop_box = GtkBox::new(Orientation::Vertical, 6);
+    pop_box.set_margin_top(8);
+    pop_box.set_margin_bottom(8);
+    pop_box.set_margin_start(8);
+    pop_box.set_margin_end(8);
+    pop_box.set_size_request(260, -1);
+
+    let pop_title = Label::new(Some("Dispositivos guardados"));
+    pop_title.add_css_class("heading");
+    pop_title.set_xalign(0.0);
+    pop_box.append(&pop_title);
+
+    pop_box.append(&gtk::Separator::new(Orientation::Horizontal));
+
+    let known_devices = [
+        ("Bose SLC II White 🐺", "04:52:C7:BA:68:0D"),
+        ("Bose SLC II Black 🐺", "2C:41:A1:0B:7C:82"),
+        ("Bose QuietComfort 35 II", "AA:BB:CC:DD:EE:FF"),
+    ];
+
+    for (dname, daddr) in known_devices {
+        let btn = Button::new();
+        btn.add_css_class("flat");
+        let h = GtkBox::new(Orientation::Horizontal, 8);
+        let ic = Image::from_icon_name(if dname.contains("SLC") {
+            "audio-speakers-symbolic"
+        } else {
+            "audio-headphones-symbolic"
         });
-        suffix.append(&disconnect);
-        let row = action_row("🎧", &name, &addr_str, &suffix.upcast::<gtk::Widget>());
-        row.set_activatable(false);
-        active_list.append(&row);
-        let battery_value = Label::new(Some(&battery));
-        battery_value.add_css_class("row-value");
-        let battery_row = action_row(
-            "🔋",
-            "Battery level",
-            "Live reading from the connected device",
-            &battery_value,
-        );
-        battery_row.set_activatable(false);
-        active_list.append(&battery_row);
-        active_card.add(&active_list);
-        page.append(&active_card);
+        h.append(&ic);
 
-        // Paired list (the laptop <-> Bose side of the pairing).
-        let paired = adw::PreferencesGroup::new();
-        paired.set_title("Paired on this laptop");
-        paired.set_description(Some("Devices the laptop has previously paired with"));
-        let paired_list = boxed_list();
+        let meta = GtkBox::new(Orientation::Vertical, 1);
+        meta.set_hexpand(true);
+        let n_lbl = Label::new(Some(dname));
+        n_lbl.set_xalign(0.0);
+        meta.append(&n_lbl);
+        let a_lbl = Label::new(Some(daddr));
+        a_lbl.set_xalign(0.0);
+        a_lbl.add_css_class("row-desc");
+        meta.append(&a_lbl);
+        h.append(&meta);
 
-        // Mock data for the prototype — RealService would walk
-        // BlueZ and pull the persisted list.
-        let mock_devices = vec![
-            (
-                "Bose SoundLink Revolve",
-                "BB:CC:DD:EE:FF:00",
-                "Trusted",
-                "Connect",
-            ),
-            (
-                "Bose QuietComfort Earbuds",
-                "CC:DD:EE:FF:00:11",
-                "Paused",
-                "Use this",
-            ),
-        ];
-        for (name, addr, tag, action) in mock_devices {
-            let suffix = GtkBox::new(Orientation::Horizontal, 6);
-            let pill = Label::new(Some(tag));
-            pill.add_css_class("pill");
-            pill.add_css_class("muted");
-            suffix.append(&pill);
-            let btn = Button::with_label(action);
-            btn.add_css_class("suggested-action");
-            let s = sender.clone();
-            btn.connect_clicked(move |_| {
-                s.send_app(AppMsg::Acknowledge);
-            });
-            suffix.append(&btn);
-            let forget = Button::with_label("Forget");
-            forget.add_css_class("destructive");
-            forget.add_css_class("small");
-            suffix.append(&forget);
-            let row = action_row("🎵", name, addr, &suffix.upcast::<gtk::Widget>());
-            row.set_activatable(false);
-            paired_list.append(&row);
+        if dname == initial_name {
+            let chk = Image::from_icon_name("object-select-symbolic");
+            chk.add_css_class("success");
+            h.append(&chk);
         }
-        paired.add(&paired_list);
-        page.append(&paired);
 
-        // Discovery hint.
-        let hint = adw::PreferencesGroup::new();
-        hint.set_title("Add a new Bose device");
-        hint.set_description(Some(
-            "Make the headphones discoverable, then scan from this app",
+        btn.set_child(Some(&h));
+        let s = sender.clone();
+        let p = popover.clone();
+        let target_addr = daddr.to_string();
+        btn.connect_clicked(move |_| {
+            p.popdown();
+            s.send_app(AppMsg::Connect(target_addr.clone()));
+        });
+        pop_box.append(&btn);
+    }
+
+    pop_box.append(&gtk::Separator::new(Orientation::Horizontal));
+
+    let manage_btn = Button::with_label("Gestionar dispositivos Bose…");
+    manage_btn.add_css_class("flat");
+    let s_manage = sender.clone();
+    let p_manage = popover.clone();
+    manage_btn.connect_clicked(move |_| {
+        p_manage.popdown();
+        s_manage.send_app(AppMsg::NavigateTo(Page::MyBose));
+    });
+    pop_box.append(&manage_btn);
+
+    popover.set_child(Some(&pop_box));
+    switcher.set_popover(Some(&popover));
+    bar.pack_start(&switcher);
+
+    // Window Title
+    let window_title = adw::WindowTitle::new("Bose Connect", model.current_page.subtitle());
+    bar.set_title_widget(Some(&window_title));
+
+    // Theme toggle button (right)
+    let style = adw::StyleManager::default();
+    let theme_icon_name = if style.is_dark() {
+        "display-brightness-symbolic"
+    } else {
+        "weather-clear-night-symbolic"
+    };
+    let theme_btn = Button::from_icon_name(theme_icon_name);
+    theme_btn.set_tooltip_text(Some("Cambiar tema claro / oscuro"));
+    theme_btn.add_css_class("theme-toggle");
+    theme_btn.set_valign(gtk::Align::Center);
+    let btn_style = theme_btn.clone();
+    theme_btn.connect_clicked(move |_| {
+        let style = adw::StyleManager::default();
+        let next = if style.is_dark() {
+            btn_style.set_icon_name("weather-clear-night-symbolic");
+            adw::ColorScheme::ForceLight
+        } else {
+            btn_style.set_icon_name("display-brightness-symbolic");
+            adw::ColorScheme::ForceDark
+        };
+        style.set_color_scheme(next);
+    });
+    bar.pack_end(&theme_btn);
+
+    // App menu kebab button (right)
+    let app_menu_btn = gtk::MenuButton::new();
+    app_menu_btn.set_icon_name("open-menu-symbolic");
+    app_menu_btn.set_tooltip_text(Some("Menú principal"));
+    app_menu_btn.set_valign(gtk::Align::Center);
+    app_menu_btn.set_menu_model(Some(&build_app_menu(sender)));
+    bar.pack_end(&app_menu_btn);
+
+    HeaderBarWidgets {
+        container: bar,
+        back_btn,
+        device_switcher: switcher,
+        device_label,
+        window_title,
+    }
+}
+
+pub fn build_app_menu(_sender: &flume::Sender<AppMsg>) -> gtk::gio::Menu {
+    let menu = gtk::gio::Menu::new();
+    let section = gtk::gio::Menu::new();
+    section.append(Some("Actualizar información"), Some("win.refresh"));
+    section.append(Some("Mis dispositivos Bose"), Some("win.mybose"));
+    section.append(Some("Acerca de Bose Connect"), Some("win.about"));
+    section.append(Some("Salir"), Some("win.quit"));
+    menu.append_section(None, &section);
+    menu
+}
+
+pub fn show_about_dialog(parent: &impl glib::object::IsA<gtk::Window>) {
+    let dialog = adw::AboutDialog::builder()
+        .application_name("Bose Connect")
+        .developer_name("airvzxf")
+        .version(env!("CARGO_PKG_VERSION"))
+        .comments("Control de auriculares y altavoces Bose sobre RFCOMM Bluetooth en Linux.\nMotor de protocolo: bose-connect v0.1.0")
+        .website("https://github.com/airvzxf/bose-connect-app-linux")
+        .issue_url("https://github.com/airvzxf/bose-connect-app-linux/issues")
+        .license_type(gtk::License::Gpl30)
+        .copyright("© 2024-2026 Bose Connect Contributors")
+        .build();
+    dialog.present(Some(parent.as_ref()));
+}
+
+// ---------------------------------------------------------------------------
+// HeroCard
+// ---------------------------------------------------------------------------
+
+pub struct HeroCard;
+
+impl HeroCard {
+    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
+        let card = GtkBox::new(Orientation::Horizontal, 16);
+        card.add_css_class("hero-card");
+        card.set_hexpand(true);
+
+        let (battery, name, address_str) = match &model.snapshot {
+            Some(s) => {
+                let mac = s.device_bd_addr.unwrap_or(s.address);
+                (s.battery as i32, s.name.clone(), format_address(mac))
+            }
+            None => (-1, "Desconectado".to_string(), "—".to_string()),
+        };
+
+        // Left icon/avatar
+        let icon_box = GtkBox::new(Orientation::Horizontal, 0);
+        icon_box.add_css_class("hero-avatar");
+        icon_box.set_size_request(56, 56);
+        icon_box.set_valign(gtk::Align::Center);
+        icon_box.set_halign(gtk::Align::Center);
+        let ic_name = if name.contains("SLC") {
+            "audio-speakers-symbolic"
+        } else {
+            "audio-headphones-symbolic"
+        };
+        let icon_img = Image::from_icon_name(ic_name);
+        icon_img.set_pixel_size(28);
+        icon_img.set_hexpand(true);
+        icon_img.set_vexpand(true);
+        icon_img.set_halign(gtk::Align::Center);
+        icon_img.set_valign(gtk::Align::Center);
+        icon_box.append(&icon_img);
+        card.append(&icon_box);
+
+        // Middle identity column
+        let mid = GtkBox::new(Orientation::Vertical, 4);
+        mid.set_hexpand(true);
+        mid.set_valign(gtk::Align::Center);
+
+        let title_row = GtkBox::new(Orientation::Horizontal, 6);
+        let name_label = Label::new(None);
+        name_label.set_markup(&format!(
+            "<span weight='800' size='x-large'>{}</span>",
+            glib::markup_escape_text(&name)
         ));
-        let scan_row = GtkBox::new(Orientation::Horizontal, 12);
-        scan_row.set_margin_top(8);
-        scan_row.set_margin_bottom(8);
-        scan_row.set_margin_start(12);
-        scan_row.set_margin_end(12);
-        let scan_label = Label::new(Some("Scan for Bose devices nearby"));
-        scan_label.set_xalign(0.0);
-        scan_label.set_hexpand(true);
-        scan_row.append(&scan_label);
-        let scan_btn = Button::with_label("Scan");
-        scan_btn.add_css_class("suggested-action");
-        let s = sender.clone();
-        scan_btn.connect_clicked(move |_| {
-            s.send_app(AppMsg::Acknowledge);
-        });
-        scan_row.append(&scan_btn);
-        let card = GtkBox::new(Orientation::Vertical, 0);
-        card.add_css_class("boxed-card");
-        card.append(&scan_row);
-        hint.add(&card);
-        page.append(&hint);
+        name_label.set_xalign(0.0);
+        title_row.append(&name_label);
 
-        page.upcast::<gtk::Widget>()
+        if model.snapshot.is_some() {
+            let edit_btn = Button::from_icon_name("document-edit-symbolic");
+            edit_btn.add_css_class("flat");
+            edit_btn.add_css_class("circular");
+            edit_btn.set_tooltip_text(Some("Renombrar dispositivo"));
+            let s_edit = sender.clone();
+            let n_owned = name.clone();
+            edit_btn.connect_clicked(move |b| {
+                open_rename_dialog(b, &n_owned, &s_edit);
+            });
+            title_row.append(&edit_btn);
+        }
+        mid.append(&title_row);
+
+        let sub_text = match &model.snapshot {
+            Some(s) if s.device_bd_addr.is_some() => {
+                format!("Conectado vía RFCOMM · BD_ADDR: {address_str}")
+            }
+            _ => format!("Conectado vía RFCOMM · MAC: {address_str}"),
+        };
+        let sub_label = Label::new(Some(&sub_text));
+        sub_label.set_xalign(0.0);
+        sub_label.add_css_class("row-desc");
+        mid.append(&sub_label);
+
+        let pills_box = GtkBox::new(Orientation::Horizontal, 6);
+        let status_pill = Label::new(Some(match model.connection {
+            ConnectionState::Connected => "● Conectado",
+            _ => "○ Desconectado",
+        }));
+        status_pill.add_css_class("pill");
+        if matches!(model.connection, ConnectionState::Connected) {
+            status_pill.add_css_class("success");
+        } else {
+            status_pill.add_css_class("idle");
+        }
+        pills_box.append(&status_pill);
+        mid.append(&pills_box);
+
+        card.append(&mid);
+
+        // Right battery column
+        let right = GtkBox::new(Orientation::Vertical, 6);
+        right.set_valign(gtk::Align::Center);
+        right.set_size_request(140, -1);
+
+        let bat_row = GtkBox::new(Orientation::Horizontal, 6);
+        bat_row.set_halign(gtk::Align::End);
+        let (bat_icon_name, bat_color_class) = if battery >= 70 {
+            ("battery-full-symbolic", "success")
+        } else if battery >= 35 {
+            ("battery-good-symbolic", "warning")
+        } else if battery >= 15 {
+            ("battery-low-symbolic", "error")
+        } else if battery >= 5 {
+            ("battery-caution-symbolic", "error")
+        } else {
+            ("battery-empty-symbolic", "error")
+        };
+        let bat_icon = Image::from_icon_name(bat_icon_name);
+        bat_icon.add_css_class("battery-icon");
+        bat_icon.add_css_class(bat_color_class);
+        bat_row.append(&bat_icon);
+
+        let pct_str = if battery < 0 {
+            "—".to_string()
+        } else {
+            format!("{battery}%")
+        };
+        let bat_label = Label::new(None);
+        bat_label.set_markup(&format!("<span size='large'>{pct_str}</span>"));
+        bat_row.append(&bat_label);
+        right.append(&bat_row);
+
+        let spark = build_sparkline(&model.history);
+        right.append(&spark);
+
+        let tip = Label::new(Some("últimas 32 lecturas"));
+        tip.add_css_class("row-desc");
+        tip.set_xalign(1.0);
+        right.append(&tip);
+
+        card.append(&right);
+
+        card.upcast::<gtk::Widget>()
     }
 }
 
 // ---------------------------------------------------------------------------
-// Overview page (sidebar entry 2)
+// OverviewPage (Main unified control center)
 // ---------------------------------------------------------------------------
 
 pub struct OverviewPage;
 
 impl OverviewPage {
-    pub fn render(model: &AppModel, _sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let page = GtkBox::new(Orientation::Vertical, 16);
-        page.set_hexpand(true);
-        page.set_vexpand(true);
-        page.append(&page_header(Page::Overview));
-
-        page.append(&HeroCard::render(model));
-
-        // Quick actions.
-        let actions = adw::PreferencesGroup::new();
-        actions.set_title("Quick actions");
-        let list = boxed_list();
-        let reconnect_btn = Button::with_label("Connect");
-        let reconnect = action_row(
-            "🔌",
-            "Reconnect device",
-            "Force a fresh RFCOMM handshake",
-            &reconnect_btn,
-        );
-        reconnect.set_activatable(false);
-        list.append(&reconnect);
-        let disconnect_btn = Button::with_label("Disconnect");
-        disconnect_btn.add_css_class("destructive");
-        let disconnect = action_row(
-            "⛔",
-            "Disconnect",
-            "Close the active RFCOMM session",
-            &disconnect_btn,
-        );
-        disconnect.set_activatable(false);
-        list.append(&disconnect);
-        actions.add(&list);
-        page.append(&actions);
-
-        // Device info.
-        let info = adw::PreferencesGroup::new();
-        info.set_title("Device information");
-        let ilist = boxed_list();
-        let (device_id, serial, firmware) = match &model.snapshot {
-            Some(s) => (
-                format!("0x{:04X} · rev {}", s.device_id, 2),
-                s.serial.clone(),
-                s.firmware.clone(),
-            ),
-            None => ("—".to_string(), "—".to_string(), "—".to_string()),
-        };
-        let id_value = Label::new(Some(&device_id));
-        id_value.add_css_class("row-value");
-        let id_row = action_row(
-            "🏷️",
-            "Device ID",
-            "Hardware revision reported by the firmware",
-            &id_value,
-        );
-        id_row.set_activatable(false);
-        ilist.append(&id_row);
-        let sn_value = Label::new(Some(&serial));
-        sn_value.add_css_class("row-value");
-        let sn_row = action_row(
-            "🔢",
-            "Serial number",
-            "Unique hardware identifier",
-            &sn_value,
-        );
-        sn_row.set_activatable(false);
-        ilist.append(&sn_row);
-        let fw_value = Label::new(Some(&firmware));
-        fw_value.add_css_class("row-value");
-        let fw_row = action_row(
-            "💾",
-            "Firmware version",
-            "Currently running firmware",
-            &fw_value,
-        );
-        fw_row.set_activatable(false);
-        ilist.append(&fw_row);
-        info.add(&ilist);
-        page.append(&info);
-
-        page.upcast::<gtk::Widget>()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Audio page (sidebar entry 3)
-// ---------------------------------------------------------------------------
-
-pub struct AudioPage;
-
-impl AudioPage {
     pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let page = GtkBox::new(Orientation::Vertical, 16);
+        let page = GtkBox::new(Orientation::Vertical, 20);
         page.set_hexpand(true);
         page.set_vexpand(true);
-        page.append(&page_header(Page::Audio));
+
+        // 1. Hero Card
+        page.append(&HeroCard::render(model, sender));
+
+        // 2. Audio y Reproducción (Media & Volume)
+        if let Some(snapshot) = &model.snapshot {
+            let audio_group = adw::PreferencesGroup::new();
+            audio_group.set_title("Audio y Reproducción");
+
+            // Fila 1: Control multimedia
+            let media_row = adw::ActionRow::new();
+            media_row.set_title("Reproducción");
+            media_row.set_subtitle("Pausa/reanuda o navega entre pistas de audio");
+            media_row.add_prefix(&Image::from_icon_name("media-playback-start-symbolic"));
+
+            let btn_box = GtkBox::new(Orientation::Horizontal, 0);
+            btn_box.add_css_class("linked");
+
+            let prev_btn = Button::builder()
+                .icon_name("media-skip-backward-symbolic")
+                .tooltip_text("Pista anterior")
+                .build();
+            let s_prev = sender.clone();
+            prev_btn.connect_clicked(move |_| {
+                s_prev.send_app(AppMsg::SendMediaKey(bose_connect::MediaKey::Previous));
+            });
+            btn_box.append(&prev_btn);
+
+            let pause_btn = Button::builder()
+                .icon_name("media-playback-start-symbolic")
+                .tooltip_text("Reproducir")
+                .build();
+            let is_playing = Rc::new(Cell::new(false));
+            let is_playing_clone = is_playing.clone();
+            let pause_btn_clone = pause_btn.clone();
+            let s_pause = sender.clone();
+            pause_btn.connect_clicked(move |_| {
+                let playing = !is_playing_clone.get();
+                is_playing_clone.set(playing);
+                if playing {
+                    pause_btn_clone.set_icon_name("media-playback-pause-symbolic");
+                    pause_btn_clone.set_tooltip_text(Some("Pausar"));
+                } else {
+                    pause_btn_clone.set_icon_name("media-playback-start-symbolic");
+                    pause_btn_clone.set_tooltip_text(Some("Reproducir"));
+                }
+                s_pause.send_app(AppMsg::SendMediaKey(bose_connect::MediaKey::Pause));
+            });
+            btn_box.append(&pause_btn);
+
+            let next_btn = Button::builder()
+                .icon_name("media-skip-forward-symbolic")
+                .tooltip_text("Pista siguiente")
+                .build();
+            let s_next = sender.clone();
+            next_btn.connect_clicked(move |_| {
+                s_next.send_app(AppMsg::SendMediaKey(bose_connect::MediaKey::Next));
+            });
+            btn_box.append(&next_btn);
+
+            media_row.add_suffix(&btn_box);
+            audio_group.add(&media_row);
+
+            // Fila 2: Volumen del auricular (0 a 75)
+            if let Some(vol) = snapshot.volume {
+                let vol_row = adw::ActionRow::new();
+                vol_row.set_title("Volumen del auricular");
+                vol_row.set_subtitle("Nivel de volumen nativo de Bose (0 a 75)");
+
+                let vol_icon_name = if vol == 0 {
+                    "audio-volume-muted-symbolic"
+                } else if vol < 25 {
+                    "audio-volume-low-symbolic"
+                } else if vol < 50 {
+                    "audio-volume-medium-symbolic"
+                } else {
+                    "audio-volume-high-symbolic"
+                };
+                let vol_img = Image::from_icon_name(vol_icon_name);
+                vol_row.add_prefix(&vol_img);
+
+                let vol_box = GtkBox::new(Orientation::Horizontal, 12);
+                let scale = gtk::Scale::with_range(Orientation::Horizontal, 0.0, 75.0, 1.0);
+                scale.set_value(vol as f64);
+                scale.set_size_request(180, -1);
+                scale.set_draw_value(false);
+
+                let pct = (vol as f64 / 75.0 * 100.0).round() as u32;
+                let vol_lbl = Label::new(Some(&format!("{vol} / 75 ({pct}%)")));
+                vol_lbl.set_size_request(110, -1);
+                vol_lbl.set_xalign(1.0);
+                vol_lbl.add_css_class("row-value");
+
+                let s_vol = sender.clone();
+                let vol_img_clone = vol_img.clone();
+                let vol_lbl_clone = vol_lbl.clone();
+                scale.connect_value_changed(move |s| {
+                    let v = s.value().clamp(0.0, 75.0).round() as u8;
+                    let p = (v as f64 / 75.0 * 100.0).round() as u32;
+                    vol_lbl_clone.set_text(&format!("{v} / 75 ({p}%)"));
+                    let ic = if v == 0 {
+                        "audio-volume-muted-symbolic"
+                    } else if v < 25 {
+                        "audio-volume-low-symbolic"
+                    } else if v < 50 {
+                        "audio-volume-medium-symbolic"
+                    } else {
+                        "audio-volume-high-symbolic"
+                    };
+                    vol_img_clone.set_icon_name(Some(ic));
+                    s_vol.send_app(AppMsg::SetVolume(v));
+                });
+
+                vol_box.append(&scale);
+                vol_box.append(&vol_lbl);
+                vol_row.add_suffix(&vol_box);
+                audio_group.add(&vol_row);
+            }
+
+            page.append(&audio_group);
+        }
 
         let cap = model.capabilities();
-        // ANC
-        let anc_group = adw::PreferencesGroup::new();
-        anc_group.set_title("Noise cancellation");
-        anc_group.set_description(Some("How much outside noise the headphones should block"));
-        let current = match model.snapshot.as_ref().map(|s| s.status.level) {
-            Some(bose_connect::NoiseCancelling::High) => "high",
-            Some(bose_connect::NoiseCancelling::Low) => "low",
-            _ => "off",
-        };
-        let seg_inner = GtkBox::new(Orientation::Horizontal, 0);
-        seg_inner.set_margin_top(8);
-        seg_inner.set_margin_bottom(8);
-        seg_inner.set_margin_start(12);
-        seg_inner.set_margin_end(12);
-        let cb = {
-            let s = sender.clone();
-            move |v: &str| match v {
-                "off" => s.send_app(AppMsg::SetNoiseCancelling(
-                    bose_connect::NoiseCancelling::Off,
-                )),
-                "low" => s.send_app(AppMsg::SetNoiseCancelling(
-                    bose_connect::NoiseCancelling::Low,
-                )),
-                "high" => s.send_app(AppMsg::SetNoiseCancelling(
-                    bose_connect::NoiseCancelling::High,
-                )),
-                _ => {}
-            }
-        };
-        let seg_widget = segmented_control(
-            &[("off", "Off"), ("low", "Low"), ("high", "High")],
-            current,
-            cb,
-        );
-        seg_inner.append(&seg_widget);
-        let card = GtkBox::new(Orientation::Vertical, 0);
-        card.add_css_class("boxed-card");
-        card.append(&seg_inner);
-        anc_group.add(&card);
-        anc_group.set_sensitive(cap.noise_cancelling);
-        page.append(&anc_group);
 
-        // Self-voice (sidetone) slider-ish row using 4 options.
-        let sv_group = adw::PreferencesGroup::new();
-        sv_group.set_title("Self-voice (sidetone)");
-        sv_group.set_description(Some("How loudly you hear your own voice during calls"));
-        let sv_current = match model.snapshot.as_ref().map(|s| s.status.level) {
-            Some(_) => "medium", // mock doesn't track self-voice separately; default to medium
-            None => "off",
-        };
-        let sv_card = GtkBox::new(Orientation::Vertical, 0);
-        sv_card.add_css_class("boxed-card");
-        let sv_inner = GtkBox::new(Orientation::Horizontal, 0);
-        sv_inner.set_margin_top(8);
-        sv_inner.set_margin_bottom(8);
-        sv_inner.set_margin_start(12);
-        sv_inner.set_margin_end(12);
-        let sv_cb = {
-            let s = sender.clone();
-            move |v: &str| {
-                let level = match v {
-                    "off" => bose_connect::SelfVoice::Off,
-                    "low" => bose_connect::SelfVoice::Low,
-                    "medium" => bose_connect::SelfVoice::Medium,
-                    "high" => bose_connect::SelfVoice::High,
-                    _ => bose_connect::SelfVoice::Off,
+        // 3. Control del Auricular (Headset controls)
+        if cap.noise_cancelling || cap.self_voice {
+            let headset_group = adw::PreferencesGroup::new();
+            headset_group.set_title("Control del Auricular");
+
+            if cap.noise_cancelling {
+                let anc_row = adw::ActionRow::new();
+                anc_row.set_title("Cancelación activa de ruido (ANC)");
+                anc_row.set_subtitle("Nivel de atenuación acústica exterior");
+                anc_row.add_prefix(&Image::from_icon_name("audio-volume-muted-symbolic"));
+
+                let current_nc = match model.snapshot.as_ref().map(|s| s.status.level) {
+                    Some(bose_connect::NoiseCancelling::High) => "high",
+                    Some(bose_connect::NoiseCancelling::Low) => "low",
+                    _ => "off",
                 };
-                s.send_app(AppMsg::SetSelfVoice(level));
+                let s_nc = sender.clone();
+                let seg = segmented_control(
+                    &[("off", "Desactivado"), ("low", "Bajo"), ("high", "Alto")],
+                    current_nc,
+                    move |v| match v {
+                        "off" => s_nc.send_app(AppMsg::SetNoiseCancelling(
+                            bose_connect::NoiseCancelling::Off,
+                        )),
+                        "low" => s_nc.send_app(AppMsg::SetNoiseCancelling(
+                            bose_connect::NoiseCancelling::Low,
+                        )),
+                        "high" => s_nc.send_app(AppMsg::SetNoiseCancelling(
+                            bose_connect::NoiseCancelling::High,
+                        )),
+                        _ => {}
+                    },
+                );
+                anc_row.add_suffix(&seg);
+                headset_group.add(&anc_row);
             }
-        };
-        let sv_widget = segmented_control(
-            &[
-                ("off", "Off"),
-                ("low", "Low"),
-                ("medium", "Medium"),
-                ("high", "High"),
-            ],
-            sv_current,
-            sv_cb,
-        );
-        sv_inner.append(&sv_widget);
-        sv_card.append(&sv_inner);
-        sv_group.add(&sv_card);
-        page.append(&sv_group);
 
-        page.upcast::<gtk::Widget>()
-    }
-}
+            if cap.self_voice {
+                let sv_row = adw::ComboRow::new();
+                sv_row.set_title("Voz propia (Self-Voice)");
+                sv_row.set_subtitle("Escucha tu propia voz con naturalidad durante llamadas");
+                sv_row.add_prefix(&Image::from_icon_name("audio-input-microphone-symbolic"));
+                let sv_strings = StringList::new(&["Desactivado", "Bajo", "Medio", "Alto"]);
+                sv_row.set_model(Some(&sv_strings));
 
-// ---------------------------------------------------------------------------
-// Device page (sidebar entry 4)
-// ---------------------------------------------------------------------------
+                // Default to medium
+                sv_row.set_selected(2);
 
-pub struct DevicePage;
+                let s_sv = sender.clone();
+                sv_row.connect_selected_notify(move |r| {
+                    let level = match r.selected() {
+                        0 => bose_connect::SelfVoice::Off,
+                        1 => bose_connect::SelfVoice::Low,
+                        2 => bose_connect::SelfVoice::Medium,
+                        3 => bose_connect::SelfVoice::High,
+                        _ => bose_connect::SelfVoice::Off,
+                    };
+                    s_sv.send_app(AppMsg::SetSelfVoice(level));
+                });
+                headset_group.add(&sv_row);
+            }
 
-impl DevicePage {
-    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let page = GtkBox::new(Orientation::Vertical, 16);
-        page.set_hexpand(true);
-        page.set_vexpand(true);
-        page.append(&page_header(Page::Device));
-
-        let group = adw::PreferencesGroup::new();
-        group.set_title("Identity");
-        let list = boxed_list();
-
-        // Device name (inline editable row).
-        let name_entry = gtk::Entry::new();
-        name_entry.set_text(
-            model
-                .snapshot
-                .as_ref()
-                .map(|s| s.name.as_str())
-                .unwrap_or(""),
-        );
-        name_entry.set_max_width_chars(20);
-        let s = sender.clone();
-        name_entry.connect_changed(move |e| {
-            let text = e.text().to_string();
-            s.send_app(AppMsg::SetName(text));
-        });
-        let name_row = action_row(
-            "✏️",
-            "Device name",
-            "The friendly name broadcast over Bluetooth",
-            &name_entry.upcast::<gtk::Widget>(),
-        );
-        name_row.set_activatable(false);
-        list.append(&name_row);
-
-        // Auto-off dropdown (modeled with a button-row popover-less
-        // — we use a `DropDown` from libadwaita / gtk4-dropdown).
-        let current_auto = match model.snapshot.as_ref().map(|s| s.status.minutes) {
-            Some(0) => "Never",
-            Some(5) => "5 min",
-            Some(20) => "20 min",
-            Some(40) => "40 min",
-            Some(60) => "60 min",
-            Some(180) => "180 min",
-            _ => "Never",
-        };
-        let choices: Vec<&str> = vec!["Never", "5 min", "20 min", "40 min", "60 min", "180 min"];
-        let dropdown = gtk::DropDown::from_strings(&choices);
-        if let Some(idx) = choices.iter().position(|c| *c == current_auto) {
-            dropdown.set_selected(idx as u32);
+            page.append(&headset_group);
         }
-        let s = sender.clone();
-        dropdown.connect_selected_notify(move |d| {
-            let idx = d.selected() as usize;
-            let picked = choices.get(idx).copied().unwrap_or("Never");
-            let mins = match picked {
-                "Never" => bose_connect::AutoOff::Never,
-                "5 min" => bose_connect::AutoOff::Min5,
-                "20 min" => bose_connect::AutoOff::Min20,
-                "40 min" => bose_connect::AutoOff::Min40,
-                "60 min" => bose_connect::AutoOff::Min60,
-                "180 min" => bose_connect::AutoOff::Min180,
-                _ => bose_connect::AutoOff::Never,
-            };
-            s.send_app(AppMsg::SetAutoOff(mins));
-        });
-        let ao_row = action_row(
-            "⏱️",
-            "Auto-off",
-            "Turn off the device after this much idle time",
-            &dropdown.upcast::<gtk::Widget>(),
-        );
-        ao_row.set_activatable(false);
-        list.append(&ao_row);
 
-        // Language dropdown.
-        let lang_choices: Vec<&str> = vec![
+        // 4. Voz e Indicaciones
+        let voice_group = adw::PreferencesGroup::new();
+        voice_group.set_title("Voz e Indicaciones");
+
+        let voice_on = matches!(
+            model.snapshot.as_ref(),
+            Some(s) if s.status.language & bose_connect::VP_ENABLE_BIT != 0
+        );
+        let vp_row = adw::SwitchRow::new();
+        vp_row.set_title("Indicaciones de voz (Voice Prompts)");
+        vp_row.set_subtitle("Anuncios hablados de estado y batería");
+        vp_row.add_prefix(&Image::from_icon_name("audio-volume-high-symbolic"));
+        vp_row.set_active(voice_on);
+        let s_vp = sender.clone();
+        vp_row.connect_active_notify(move |r| {
+            s_vp.send_app(AppMsg::SetVoicePrompts(r.is_active()));
+        });
+        voice_group.add(&vp_row);
+
+        let lang_row = adw::ComboRow::new();
+        lang_row.set_title("Idioma de las indicaciones");
+        lang_row.set_subtitle("Idioma del sintetizador vocal interno");
+        lang_row.add_prefix(&Image::from_icon_name(
+            "preferences-desktop-locale-symbolic",
+        ));
+        let lang_choices = [
             "English",
-            "French",
-            "Italian",
-            "German",
-            "Spanish",
-            "Portuguese",
-            "Chinese",
-            "Korean",
-            "Russian",
-            "Polish",
-            "Dutch",
-            "Japanese",
-            "Swedish",
+            "Français",
+            "Italiano",
+            "Deutsch",
+            "Español",
+            "Português",
+            "中文",
+            "한국어",
+            "Русский",
+            "Polski",
+            "Nederlands",
+            "日本語",
+            "Svenska",
         ];
+        let lang_model = StringList::new(&lang_choices);
+        lang_row.set_model(Some(&lang_model));
+
         let current_lang = match model.snapshot.as_ref() {
             Some(s) => {
                 let byte = s.status.language & bose_connect::VP_MASK;
@@ -791,649 +803,484 @@ impl DevicePage {
             }
             None => "English",
         };
-        let dropdown_lang = gtk::DropDown::from_strings(&lang_choices);
-        if let Some(idx) = lang_choices.iter().position(|c| *c == current_lang) {
-            dropdown_lang.set_selected(idx as u32);
+        if let Some(pos) = lang_choices.iter().position(|l| *l == current_lang) {
+            lang_row.set_selected(pos as u32);
         }
-        let s = sender.clone();
-        dropdown_lang.connect_selected_notify(move |d| {
-            let idx = d.selected() as usize;
-            let picked = lang_choices.get(idx).copied().unwrap_or("English");
-            let lang = match picked {
-                "English" => bose_connect::PromptLanguage::En,
-                "French" => bose_connect::PromptLanguage::Fr,
-                "Italian" => bose_connect::PromptLanguage::It,
-                "German" => bose_connect::PromptLanguage::De,
-                "Spanish" => bose_connect::PromptLanguage::Es,
-                "Portuguese" => bose_connect::PromptLanguage::Pt,
-                "Chinese" => bose_connect::PromptLanguage::Zh,
-                "Korean" => bose_connect::PromptLanguage::Ko,
-                "Russian" => bose_connect::PromptLanguage::Ru,
-                "Polish" => bose_connect::PromptLanguage::Pl,
-                "Dutch" => bose_connect::PromptLanguage::Nl,
-                "Japanese" => bose_connect::PromptLanguage::Ja,
-                "Swedish" => bose_connect::PromptLanguage::Sv,
+
+        let s_lang = sender.clone();
+        lang_row.connect_selected_notify(move |r| {
+            let idx = r.selected() as usize;
+            let lang = match idx {
+                0 => bose_connect::PromptLanguage::En,
+                1 => bose_connect::PromptLanguage::Fr,
+                2 => bose_connect::PromptLanguage::It,
+                3 => bose_connect::PromptLanguage::De,
+                4 => bose_connect::PromptLanguage::Es,
+                5 => bose_connect::PromptLanguage::Pt,
+                6 => bose_connect::PromptLanguage::Zh,
+                7 => bose_connect::PromptLanguage::Ko,
+                8 => bose_connect::PromptLanguage::Ru,
+                9 => bose_connect::PromptLanguage::Pl,
+                10 => bose_connect::PromptLanguage::Nl,
+                11 => bose_connect::PromptLanguage::Ja,
+                12 => bose_connect::PromptLanguage::Sv,
                 _ => bose_connect::PromptLanguage::En,
             };
-            s.send_app(AppMsg::SetLanguage {
+            s_lang.send_app(AppMsg::SetLanguage {
                 language: lang,
                 voice_prompts: true,
             });
         });
-        let lang_row = action_row(
-            "🌐",
-            "Voice prompt language",
-            "Spoken feedback when the device announces state",
-            &dropdown_lang.upcast::<gtk::Widget>(),
-        );
-        lang_row.set_activatable(false);
-        list.append(&lang_row);
+        voice_group.add(&lang_row);
+        page.append(&voice_group);
 
-        // Voice prompts switch.
-        let voice_on = matches!(
-            model.snapshot.as_ref(),
-            Some(s) if s.status.language & bose_connect::VP_ENABLE_BIT != 0
-        );
-        let switch_vp = gtk::Switch::new();
-        switch_vp.set_active(voice_on);
-        switch_vp.set_valign(gtk::Align::Center);
-        let s = sender.clone();
-        switch_vp.connect_state_set(move |_, state| {
-            s.send_app(AppMsg::SetVoicePrompts(state));
-            glib::Propagation::Proceed
+        // 5. Energía y Batería
+        let power_group = adw::PreferencesGroup::new();
+        power_group.set_title("Energía y Batería");
+
+        let ao_row = adw::ComboRow::new();
+        ao_row.set_title("Apagado automático");
+        ao_row.set_subtitle("Suspende el dispositivo tras inactividad para ahorrar batería");
+        ao_row.add_prefix(&Image::from_icon_name("clock-symbolic"));
+        let ao_choices = ["Nunca", "5 min", "20 min", "40 min", "60 min", "180 min"];
+        let ao_model = StringList::new(&ao_choices);
+        ao_row.set_model(Some(&ao_model));
+
+        let current_ao = match model.snapshot.as_ref().map(|s| s.status.minutes) {
+            Some(0) => 0,
+            Some(5) => 1,
+            Some(20) => 2,
+            Some(40) => 3,
+            Some(60) => 4,
+            Some(180) => 5,
+            _ => 0,
+        };
+        ao_row.set_selected(current_ao);
+
+        let s_ao = sender.clone();
+        ao_row.connect_selected_notify(move |r| {
+            let mins = match r.selected() {
+                0 => bose_connect::AutoOff::Never,
+                1 => bose_connect::AutoOff::Min5,
+                2 => bose_connect::AutoOff::Min20,
+                3 => bose_connect::AutoOff::Min40,
+                4 => bose_connect::AutoOff::Min60,
+                5 => bose_connect::AutoOff::Min180,
+                _ => bose_connect::AutoOff::Never,
+            };
+            s_ao.send_app(AppMsg::SetAutoOff(mins));
         });
-        let vp_row = action_row(
-            "🗣️",
-            "Voice prompts",
-            "Spoken feedback when the device announces state",
-            &switch_vp.upcast::<gtk::Widget>(),
-        );
-        vp_row.set_activatable(false);
-        list.append(&vp_row);
+        power_group.add(&ao_row);
+        page.append(&power_group);
 
-        // Pairing visibility switch.
-        let pairing_on = matches!(
-            model.snapshot.as_ref(),
-            Some(s) if s.paired.connected == bose_connect::DevicesConnected::One
-                || s.paired.connected == bose_connect::DevicesConnected::Two
-        );
-        // We can't tell pairing_on from the snapshot easily; use
-        // model state via mock. The snapshot doesn't carry it
-        // today; default to false.
-        let _ = pairing_on;
-        let switch_pair = gtk::Switch::new();
-        switch_pair.set_valign(gtk::Align::Center);
-        let s = sender.clone();
-        switch_pair.connect_state_set(move |_, state| {
-            s.send_app(AppMsg::SetPairing(state));
-            glib::Propagation::Proceed
-        });
-        let pair_row = action_row(
-            "📡",
-            "Visible to pair",
-            "Allow other devices to discover this Bose",
-            &switch_pair.upcast::<gtk::Widget>(),
-        );
-        pair_row.set_activatable(false);
-        list.append(&pair_row);
+        // 6. Dispositivos Vinculados al Bose (Multipunto)
+        let mp_group = adw::PreferencesGroup::new();
+        mp_group.set_title("Dispositivos Vinculados al Bose (Multipunto)");
 
-        group.add(&list);
-        page.append(&group);
-
-        // Quiet mode card.
-        let qm = adw::PreferencesGroup::new();
-        qm.set_title("Quiet mode");
-        qm.set_description(Some(
-            "One-tap combo: max noise-cancelling, voice off, never auto-off",
+        let pair_row = adw::SwitchRow::new();
+        pair_row.set_title("Visible para emparejar");
+        pair_row.set_subtitle("Permite a otros teléfonos o computadoras descubrir este Bose");
+        pair_row.add_prefix(&Image::from_icon_name(
+            "preferences-system-bluetooth-symbolic",
         ));
-        let qm_card = GtkBox::new(Orientation::Horizontal, 12);
-        qm_card.set_margin_top(8);
-        qm_card.set_margin_bottom(8);
-        qm_card.set_margin_start(12);
-        qm_card.set_margin_end(12);
-        let qm_label = Label::new(Some(if model.quiet_mode {
-            "Quiet mode is on"
-        } else {
-            "Quick apply the focus profile"
-        }));
-        qm_label.set_xalign(0.0);
-        qm_label.set_hexpand(true);
-        qm_card.append(&qm_label);
-        let qm_btn = Button::with_label(if model.quiet_mode {
-            "Turn off"
-        } else {
-            "Enable"
+        let s_pair = sender.clone();
+        pair_row.connect_active_notify(move |r| {
+            s_pair.send_app(AppMsg::SetPairing(r.is_active()));
         });
-        qm_btn.add_css_class("suggested-action");
-        let s = sender.clone();
-        qm_btn.connect_clicked(move |_| {
-            s.send_app(AppMsg::ToggleQuietMode);
-        });
-        qm_card.append(&qm_btn);
-        let card = GtkBox::new(Orientation::Vertical, 0);
-        card.add_css_class("boxed-card");
-        card.append(&qm_card);
-        qm.add(&card);
-        page.append(&qm);
+        mp_group.add(&pair_row);
 
-        page.upcast::<gtk::Widget>()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Multipoint page (sidebar entry 5)
-// ---------------------------------------------------------------------------
-
-pub struct MultipointPage;
-
-impl MultipointPage {
-    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let page = GtkBox::new(Orientation::Vertical, 16);
-        page.set_hexpand(true);
-        page.set_vexpand(true);
-        page.append(&page_header(Page::Multipoint));
-
-        let group = adw::PreferencesGroup::new();
-        group.set_title("Devices using this Bose");
-        group.set_description(Some("Other machines paired with the *same* headset"));
-        let list = boxed_list();
-        let pairs = model
+        let devices = model
             .snapshot
             .as_ref()
             .map(|s| s.devices.clone())
             .unwrap_or_default();
-        if pairs.is_empty() {
-            let placeholder = Label::new(Some(""));
-            let row = action_row(
-                "📡",
-                "No multipoint devices yet",
-                "Enable 'Visible to pair' from the Device page",
-                &placeholder,
-            );
-            row.set_activatable(false);
-            list.append(&row);
+
+        if devices.is_empty() {
+            let row = adw::ActionRow::new();
+            row.set_title("No hay otros dispositivos vinculados");
+            row.set_subtitle("Activa 'Visible para emparejar' para conectar nuevos equipos");
+            row.add_prefix(&Image::from_icon_name("dialog-information-symbolic"));
+            mp_group.add(&row);
+        } else {
+            let active_addr = model.snapshot.as_ref().and_then(|s| s.active_device);
+            for dev in devices {
+                let name = match std::str::from_utf8(&dev.name[..dev.name_len]) {
+                    Ok(s) => s.to_string(),
+                    Err(_) => format!("Device {:02X?}", dev.address.b),
+                };
+                let row = adw::ActionRow::new();
+                row.set_title(&name);
+                row.set_subtitle(&format_address(dev.address));
+
+                let icon = if name.contains("Bose") || name.contains("SLC") {
+                    "audio-speakers-symbolic"
+                } else if name.to_lowercase().contains("pixel")
+                    || name.to_lowercase().contains("phone")
+                    || name.to_lowercase().contains("edge")
+                {
+                    "phone-symbolic"
+                } else {
+                    "computer-symbolic"
+                };
+                row.add_prefix(&Image::from_icon_name(icon));
+
+                match dev.status {
+                    bose_connect::DeviceStatus::This => {
+                        let pill = Label::new(Some("Este equipo"));
+                        pill.add_css_class("pill");
+                        pill.add_css_class("success");
+                        row.add_suffix(&pill);
+
+                        if active_addr == Some(dev.address) {
+                            let act_pill = Label::new(Some("Audio activo"));
+                            act_pill.add_css_class("pill");
+                            act_pill.add_css_class("accent");
+                            row.add_suffix(&act_pill);
+                        }
+
+                        let dc_btn = Button::with_label("Desconectar");
+                        dc_btn.add_css_class("flat");
+                        let s = sender.clone();
+                        dc_btn.connect_clicked(move |_| {
+                            s.send_app(AppMsg::PairedDisconnect(dev.address));
+                        });
+                        row.add_suffix(&dc_btn);
+                    }
+                    bose_connect::DeviceStatus::Connected => {
+                        let pill = Label::new(Some("Conectado"));
+                        pill.add_css_class("pill");
+                        pill.add_css_class("success");
+                        row.add_suffix(&pill);
+
+                        if active_addr == Some(dev.address) {
+                            let act_pill = Label::new(Some("Audio activo"));
+                            act_pill.add_css_class("pill");
+                            act_pill.add_css_class("accent");
+                            row.add_suffix(&act_pill);
+                        }
+
+                        let dc_btn = Button::with_label("Desconectar");
+                        dc_btn.add_css_class("flat");
+                        let s = sender.clone();
+                        dc_btn.connect_clicked(move |_| {
+                            s.send_app(AppMsg::PairedDisconnect(dev.address));
+                        });
+                        row.add_suffix(&dc_btn);
+
+                        let forget_btn = Button::from_icon_name("user-trash-symbolic");
+                        forget_btn.add_css_class("flat");
+                        forget_btn.set_tooltip_text(Some("Olvidar dispositivo"));
+                        let s_del = sender.clone();
+                        let n_owned = name.clone();
+                        forget_btn.connect_clicked(move |b| {
+                            open_forget_dialog(b, &n_owned, dev.address, &s_del);
+                        });
+                        row.add_suffix(&forget_btn);
+                    }
+                    bose_connect::DeviceStatus::Disconnected => {
+                        let cn_btn = Button::with_label("Conectar");
+                        cn_btn.add_css_class("suggested-action");
+                        let s = sender.clone();
+                        cn_btn.connect_clicked(move |_| {
+                            s.send_app(AppMsg::PairedConnect(dev.address));
+                        });
+                        row.add_suffix(&cn_btn);
+
+                        let forget_btn = Button::from_icon_name("user-trash-symbolic");
+                        forget_btn.add_css_class("flat");
+                        forget_btn.set_tooltip_text(Some("Olvidar dispositivo"));
+                        let s_del = sender.clone();
+                        let n_owned = name.clone();
+                        forget_btn.connect_clicked(move |b| {
+                            open_forget_dialog(b, &n_owned, dev.address, &s_del);
+                        });
+                        row.add_suffix(&forget_btn);
+                    }
+                }
+
+                mp_group.add(&row);
+            }
         }
-        for dev in pairs {
-            let name = match std::str::from_utf8(&dev.name[..dev.name_len]) {
-                Ok(s) => s.to_string(),
-                Err(_) => format!("Device {:02X?}", dev.address.b),
-            };
-            let (tag, is_active) = match dev.status {
-                bose_connect::DeviceStatus::This => ("This device", true),
-                bose_connect::DeviceStatus::Connected => ("Connected", true),
-                bose_connect::DeviceStatus::Disconnected => ("Paired", false),
-            };
-            let suffix = GtkBox::new(Orientation::Horizontal, 6);
-            let pill = Label::new(Some(tag));
-            pill.add_css_class("pill");
-            if is_active {
-                pill.add_css_class("success");
-            } else {
-                pill.add_css_class("muted");
-            }
-            suffix.append(&pill);
-            if is_active {
-                let dc = Button::with_label("Disconnect");
-                dc.add_css_class("small");
-                dc.add_css_class("destructive");
-                let s = sender.clone();
-                dc.connect_clicked(move |_| {
-                    s.send_app(AppMsg::PairedDisconnect(dev.address));
-                });
-                suffix.append(&dc);
-            } else {
-                let cn = Button::with_label("Connect");
-                cn.add_css_class("small");
-                cn.add_css_class("suggested-action");
-                let s = sender.clone();
-                cn.connect_clicked(move |_| {
-                    s.send_app(AppMsg::PairedConnect(dev.address));
-                });
-                suffix.append(&cn);
-            }
-            let del = Button::with_label("Delete");
-            del.add_css_class("small");
-            del.add_css_class("destructive");
-            let s = sender.clone();
-            del.connect_clicked(move |_| {
-                s.send_app(AppMsg::PairedRemove(dev.address));
+        page.append(&mp_group);
+
+        // 7. Información del Dispositivo
+        let info_group = adw::PreferencesGroup::new();
+        info_group.set_title("Información del Dispositivo");
+
+        let (device_id, serial, firmware, bd_addr) = match &model.snapshot {
+            Some(s) => (
+                format!("0x{:04X}  ·  Índice de revisión: 2", s.device_id),
+                s.serial.clone(),
+                format!("v{}", s.firmware),
+                s.device_bd_addr
+                    .map(format_address)
+                    .unwrap_or_else(|| "—".to_string()),
+            ),
+            None => (
+                "—".to_string(),
+                "—".to_string(),
+                "—".to_string(),
+                "—".to_string(),
+            ),
+        };
+
+        let id_row = adw::ActionRow::new();
+        id_row.set_title("Identificador de hardware");
+        id_row.add_prefix(&Image::from_icon_name("dialog-information-symbolic"));
+        let id_lbl = Label::new(Some(&device_id));
+        id_lbl.set_selectable(true);
+        id_lbl.add_css_class("row-value");
+        id_row.add_suffix(&id_lbl);
+        info_group.add(&id_row);
+
+        let mac_row = adw::ActionRow::new();
+        mac_row.set_title("Dirección Bluetooth física (BD_ADDR)");
+        mac_row.set_subtitle("Dirección MAC de hardware del módulo Bose");
+        mac_row.add_prefix(&Image::from_icon_name(
+            "preferences-system-bluetooth-symbolic",
+        ));
+        let mac_lbl = Label::new(Some(&bd_addr));
+        mac_lbl.set_selectable(true);
+        mac_lbl.add_css_class("mono");
+        mac_lbl.add_css_class("row-value");
+        mac_row.add_suffix(&mac_lbl);
+        info_group.add(&mac_row);
+
+        let fw_row = adw::ActionRow::new();
+        fw_row.set_title("Versión de firmware");
+        fw_row.add_prefix(&Image::from_icon_name("system-software-update-symbolic"));
+        let fw_lbl = Label::new(Some(&firmware));
+        fw_lbl.set_selectable(true);
+        fw_lbl.add_css_class("row-value");
+        fw_row.add_suffix(&fw_lbl);
+        info_group.add(&fw_row);
+
+        let sn_row = adw::ActionRow::new();
+        sn_row.set_title("Número de serie");
+        sn_row.add_prefix(&Image::from_icon_name("emblem-system-symbolic"));
+
+        let sn_box = GtkBox::new(Orientation::Horizontal, 8);
+        let sn_lbl = Label::new(Some("•••••••••••••••••"));
+        sn_lbl.set_selectable(true);
+        sn_lbl.add_css_class("mono");
+        sn_box.append(&sn_lbl);
+
+        let reveal_btn = Button::from_icon_name("view-reveal-symbolic");
+        reveal_btn.add_css_class("flat");
+        reveal_btn.set_tooltip_text(Some("Mostrar número de serie"));
+        let is_revealed = Rc::new(Cell::new(false));
+        {
+            let is_revealed = is_revealed.clone();
+            let sn_lbl = sn_lbl.clone();
+            let btn_for_click = reveal_btn.clone();
+            let serial_owned = serial.clone();
+            reveal_btn.connect_clicked(move |_| {
+                let rev = !is_revealed.get();
+                is_revealed.set(rev);
+                if rev {
+                    sn_lbl.set_text(&serial_owned);
+                    btn_for_click.set_icon_name("view-conceal-symbolic");
+                    btn_for_click.set_tooltip_text(Some("Ocultar número de serie"));
+                } else {
+                    sn_lbl.set_text("•••••••••••••••••");
+                    btn_for_click.set_icon_name("view-reveal-symbolic");
+                    btn_for_click.set_tooltip_text(Some("Mostrar número de serie"));
+                }
             });
-            suffix.append(&del);
-            let row = action_row(
-                "💻",
-                &name,
-                &format_address(dev.address),
-                &suffix.upcast::<gtk::Widget>(),
-            );
-            row.set_activatable(false);
-            list.append(&row);
         }
-        group.add(&list);
+        sn_box.append(&reveal_btn);
+        sn_row.add_suffix(&sn_box);
+        info_group.add(&sn_row);
 
-        let add_row = GtkBox::new(Orientation::Horizontal, 12);
-        add_row.set_margin_top(8);
-        add_row.set_margin_bottom(8);
-        add_row.set_margin_start(12);
-        add_row.set_margin_end(12);
-        let add_label = Label::new(Some("Add another device to this Bose"));
-        add_label.set_xalign(0.0);
-        add_label.set_hexpand(true);
-        add_row.append(&add_label);
-        let add_btn = Button::with_label("+ Add device");
-        add_btn.add_css_class("suggested-action");
-        let s = sender.clone();
-        add_btn.connect_clicked(move |_| {
-            s.send_app(AppMsg::Acknowledge);
+        page.append(&info_group);
+
+        // 8. Avanzado
+        let adv_group = adw::PreferencesGroup::new();
+        adv_group.set_title("Avanzado");
+
+        let packet_row = adw::ActionRow::new();
+        packet_row.set_title("Inyección de paquetes");
+        packet_row.set_subtitle("Envía tramas raw hexadecimales sobre el canal RFCOMM");
+        packet_row.add_prefix(&Image::from_icon_name("utilities-terminal-symbolic"));
+        let input_box = GtkBox::new(Orientation::Horizontal, 8);
+        let packet_entry = gtk::Entry::new();
+        packet_entry.set_placeholder_text(Some("0a1b2c3d"));
+        packet_entry.add_css_class("mono");
+        input_box.append(&packet_entry);
+        let send_btn = Button::with_label("Enviar");
+        send_btn.add_css_class("suggested-action");
+        let s_packet = sender.clone();
+        send_btn.connect_clicked(move |_| {
+            s_packet.send_app(AppMsg::Acknowledge);
         });
-        add_row.append(&add_btn);
-        let card = GtkBox::new(Orientation::Vertical, 0);
-        card.add_css_class("boxed-card");
-        card.append(&add_row);
-        group.add(&card);
+        input_box.append(&send_btn);
+        packet_row.add_suffix(&input_box);
+        adv_group.add(&packet_row);
 
-        page.append(&group);
+        let resp_row = adw::ActionRow::new();
+        resp_row.set_title("Última respuesta");
+        resp_row.set_subtitle("Hexadecimal recibido del dispositivo");
+        resp_row.add_prefix(&Image::from_icon_name("network-receive-symbolic"));
+        let resp_box = GtkBox::new(Orientation::Vertical, 4);
+        resp_box.set_valign(gtk::Align::Center);
+        let resp_lbl = Label::new(Some("01 00 04 00 aa bb cc dd 10 20 30 40 50 60 70 80"));
+        resp_lbl.set_selectable(true);
+        resp_lbl.set_wrap(true);
+        resp_lbl.set_wrap_mode(gtk::pango::WrapMode::Char);
+        resp_lbl.set_max_width_chars(36);
+        resp_lbl.set_xalign(0.0);
+        resp_lbl.add_css_class("mono");
+        resp_lbl.add_css_class("packet-response-box");
+        resp_box.append(&resp_lbl);
+        resp_row.add_suffix(&resp_box);
+        adv_group.add(&resp_row);
+
+        let ver_row = adw::ActionRow::new();
+        ver_row.set_title("Versiones del sistema");
+        ver_row.add_prefix(&Image::from_icon_name("system-software-update-symbolic"));
+        let ver_lbl = Label::new(Some(&format!(
+            "bose-connect-gui v{}  ·  bose-connect v0.1.0",
+            env!("CARGO_PKG_VERSION")
+        )));
+        ver_lbl.set_selectable(true);
+        ver_lbl.add_css_class("row-desc");
+        ver_row.add_suffix(&ver_lbl);
+        adv_group.add(&ver_row);
+
+        page.append(&adv_group);
+
         page.upcast::<gtk::Widget>()
     }
 }
 
 // ---------------------------------------------------------------------------
-// Advanced page (sidebar entry 6)
+// MyBosePage (Laptop-side Bose device manager & scanner)
 // ---------------------------------------------------------------------------
 
-pub struct AdvancedPage;
+pub struct MyBosePage;
 
-impl AdvancedPage {
-    pub fn render(_model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let page = GtkBox::new(Orientation::Vertical, 16);
+impl MyBosePage {
+    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
+        let page = GtkBox::new(Orientation::Vertical, 20);
         page.set_hexpand(true);
         page.set_vexpand(true);
-        page.append(&page_header(Page::Advanced));
 
-        let group = adw::PreferencesGroup::new();
-        group.set_title("RFCOMM debugger");
-        group.set_description(Some(
-            "Raw hex packet passthrough — useful when reverse-engineering the protocol",
-        ));
-        let list = boxed_list();
+        // Header section
+        let header_group = adw::PreferencesGroup::new();
+        header_group.set_title("Mis Dispositivos Bose");
 
-        // Hex packet sender.
-        let input_row = GtkBox::new(Orientation::Horizontal, 8);
-        input_row.set_margin_top(8);
-        input_row.set_margin_bottom(8);
-        input_row.set_margin_start(12);
-        input_row.set_margin_end(12);
-        let entry = gtk::Entry::new();
-        entry.set_placeholder_text(Some("0a1b2c3d"));
-        entry.set_hexpand(true);
-        input_row.append(&entry);
-        let send = Button::with_label("Send");
-        send.add_css_class("suggested-action");
-        let s = sender.clone();
-        send.connect_clicked(move |_| {
-            s.send_app(AppMsg::Acknowledge);
+        // Active device
+        let (active_name, active_addr) = match &model.snapshot {
+            Some(s) => {
+                let mac = s.device_bd_addr.unwrap_or(s.address);
+                (s.name.clone(), format_address(mac))
+            }
+            None => ("Ningún dispositivo conectado".to_string(), "—".to_string()),
+        };
+
+        let active_row = adw::ActionRow::new();
+        active_row.set_title(&active_name);
+        active_row.set_subtitle(&active_addr);
+        let active_icon = if active_name.contains("SLC") {
+            "audio-speakers-symbolic"
+        } else {
+            "audio-headphones-symbolic"
+        };
+        active_row.add_prefix(&Image::from_icon_name(active_icon));
+
+        let active_pill = Label::new(Some("Activo"));
+        active_pill.add_css_class("pill");
+        active_pill.add_css_class("success");
+        active_row.add_suffix(&active_pill);
+
+        let dc_btn = Button::with_label("Desconectar");
+        dc_btn.add_css_class("flat");
+        let s_dc = sender.clone();
+        dc_btn.connect_clicked(move |_| {
+            s_dc.send_app(AppMsg::Acknowledge);
         });
-        input_row.append(&send);
-        let input_card = GtkBox::new(Orientation::Vertical, 0);
-        input_card.add_css_class("boxed-card");
-        input_card.append(&input_row);
+        active_row.add_suffix(&dc_btn);
+        header_group.add(&active_row);
 
-        let resp_box = GtkBox::new(Orientation::Vertical, 4);
-        resp_box.set_margin_top(8);
-        resp_box.set_margin_bottom(8);
-        resp_box.set_margin_start(12);
-        resp_box.set_margin_end(12);
-        let resp_label = Label::new(Some("Response:"));
-        resp_label.set_xalign(0.0);
-        resp_label.add_css_class("row-desc");
-        resp_box.append(&resp_label);
-        let resp = Label::new(Some("01 00 04 00 aa bb cc dd"));
-        resp.set_xalign(0.0);
-        resp.set_selectable(true);
-        resp.add_css_class("mono");
-        resp_box.append(&resp);
-        let resp_card = GtkBox::new(Orientation::Vertical, 0);
-        resp_card.add_css_class("boxed-card");
-        resp_card.append(&resp_box);
+        // Other known devices
+        let other_devices = [
+            ("Bose SLC II Black 🐺", "2C:41:A1:0B:7C:82"),
+            ("Bose QuietComfort Earbuds", "CC:DD:EE:FF:00:11"),
+        ];
 
-        let row = action_row(
-            "📟",
-            "Send hex packet",
-            "Use the field below to send a raw frame",
-            &input_card.upcast::<gtk::Widget>(),
-        );
-        row.set_activatable(false);
-        list.append(&row);
-        let row_resp = action_row(
-            "📥",
-            "Last response",
-            "Hex bytes returned by the device",
-            &resp_card.upcast::<gtk::Widget>(),
-        );
-        row_resp.set_activatable(false);
-        list.append(&row_resp);
-        group.add(&list);
-        page.append(&group);
+        for (dname, daddr) in other_devices {
+            let row = adw::ActionRow::new();
+            row.set_title(dname);
+            row.set_subtitle(daddr);
+            let row_icon = if dname.contains("SLC") {
+                "audio-speakers-symbolic"
+            } else {
+                "audio-headphones-symbolic"
+            };
+            row.add_prefix(&Image::from_icon_name(row_icon));
 
-        // Activity log on advanced page (matches the existing
-        // debug surface from the original build).
-        let log_group = adw::PreferencesGroup::new();
-        log_group.set_title("Activity log");
-        log_group.set_description(Some("What just happened"));
-        let log_list = boxed_list();
-        let entries = render_log_entries(_model);
-        for entry in entries {
-            log_list.append(&entry);
+            let pill = Label::new(Some("Enlazado"));
+            pill.add_css_class("pill");
+            pill.add_css_class("muted");
+            row.add_suffix(&pill);
+
+            let cn_btn = Button::with_label("Usar este");
+            cn_btn.add_css_class("suggested-action");
+            let s_cn = sender.clone();
+            let target_addr = daddr.to_string();
+            cn_btn.connect_clicked(move |_| {
+                s_cn.send_app(AppMsg::Connect(target_addr.clone()));
+            });
+            row.add_suffix(&cn_btn);
+
+            let forget_btn = Button::from_icon_name("user-trash-symbolic");
+            forget_btn.add_css_class("flat");
+            forget_btn.set_tooltip_text(Some("Olvidar de esta laptop"));
+            row.add_suffix(&forget_btn);
+
+            header_group.add(&row);
         }
-        log_group.add(&log_list);
-        page.append(&log_group);
+
+        page.append(&header_group);
+
+        // Discovery section
+        let scan_group = adw::PreferencesGroup::new();
+        scan_group.set_title("Vincular Nuevo Dispositivo Bose");
+
+        let scan_row = adw::ActionRow::new();
+        scan_row.set_title("Buscar dispositivos Bose cercanos");
+        scan_row.add_prefix(&Image::from_icon_name("network-wireless-symbolic"));
+
+        let scan_btn = Button::with_label("Escanear");
+        scan_btn.add_css_class("suggested-action");
+        let s_scan = sender.clone();
+        scan_btn.connect_clicked(move |_| {
+            s_scan.send_app(AppMsg::Acknowledge);
+        });
+        scan_row.add_suffix(&scan_btn);
+        scan_group.add(&scan_row);
+
+        // If discovery has items
+        if !model.discovery.is_empty() {
+            for (addr, name) in &model.discovery {
+                let row = adw::ActionRow::new();
+                row.set_title(name);
+                row.set_subtitle(addr);
+                row.add_prefix(&Image::from_icon_name("audio-headphones-symbolic"));
+                let pair_btn = Button::with_label("Emparejar");
+                pair_btn.add_css_class("suggested-action");
+                let s_pair = sender.clone();
+                let addr_clone = addr.clone();
+                pair_btn.connect_clicked(move |_| {
+                    s_pair.send_app(AppMsg::Connect(addr_clone.clone()));
+                });
+                row.add_suffix(&pair_btn);
+                scan_group.add(&row);
+            }
+        }
+
+        page.append(&scan_group);
 
         page.upcast::<gtk::Widget>()
     }
-}
-
-fn render_log_entries(model: &AppModel) -> Vec<ListBoxRow> {
-    let mut rows = Vec::new();
-    for entry in model.log.iter().rev().take(15) {
-        let row = ListBoxRow::new();
-        let h = GtkBox::new(Orientation::Horizontal, 12);
-        h.set_margin_top(4);
-        h.set_margin_bottom(4);
-        h.set_margin_start(12);
-        h.set_margin_end(12);
-        let time_lbl = Label::new(Some(&entry.timestamp.format("%H:%M:%S").to_string()));
-        time_lbl.add_css_class("row-desc");
-        time_lbl.set_size_request(72, -1);
-        time_lbl.set_xalign(0.0);
-        h.append(&time_lbl);
-        let msg_lbl = Label::new(Some(&entry.message));
-        msg_lbl.set_xalign(0.0);
-        msg_lbl.set_hexpand(true);
-        match entry.level {
-            LogLevel::Info => {}
-            LogLevel::Success => msg_lbl.add_css_class("success"),
-            LogLevel::Warning => msg_lbl.add_css_class("warning"),
-            LogLevel::Error => msg_lbl.add_css_class("error"),
-        }
-        h.append(&msg_lbl);
-        row.set_child(Some(&h));
-        rows.push(row);
-    }
-    rows
-}
-
-// ---------------------------------------------------------------------------
-// Page header (used at the top of every page)
-// ---------------------------------------------------------------------------
-
-fn page_header(page: Page) -> gtk::Widget {
-    let header = GtkBox::new(Orientation::Vertical, 2);
-    header.set_margin_bottom(4);
-    let title = Label::new(None);
-    title.set_markup(&format!(
-        "<span weight='800' size='17000'>{}</span>",
-        page.title()
-    ));
-    title.set_xalign(0.0);
-    header.append(&title);
-    let sub = Label::new(Some(page.subtitle()));
-    sub.set_xalign(0.0);
-    sub.add_css_class("row-desc");
-    header.append(&sub);
-    header.upcast::<gtk::Widget>()
-}
-
-// ---------------------------------------------------------------------------
-// Sidebar
-// ---------------------------------------------------------------------------
-
-pub struct Sidebar;
-
-impl Sidebar {
-    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let (widget, _list) = Self::render_with_list(model, sender);
-        widget
-    }
-
-    /// Variant of `render` that hands the inner `ListBox` back so
-    /// callers (specifically the `RenderHandle`) can update the
-    /// `.selected` CSS class when `current_page` changes after a
-    /// `NavigateTo` message.
-    pub fn render_with_list(
-        model: &AppModel,
-        sender: &flume::Sender<AppMsg>,
-    ) -> (gtk::Widget, gtk::ListBox) {
-        let list = ListBox::new();
-        list.add_css_class("sidebar-list");
-        list.set_selection_mode(gtk::SelectionMode::Single);
-        // GTK4's default for `activate-on-single-click` is FALSE,
-        // so a single click on a row only *selects* it (which we
-        // already see as the highlight) without firing
-        // `row-activated`. We need the activated signal so we can
-        // route clicks to `AppMsg::NavigateTo`. Set the property
-        // explicitly here.
-        list.set_activate_on_single_click(true);
-
-        for page in Page::ALL {
-            let row = ListBoxRow::new();
-            row.add_css_class("sidebar-row");
-            row.set_widget_name(page.key());
-            if *page == model.current_page {
-                row.add_css_class("selected");
-            }
-            let h = GtkBox::new(Orientation::Horizontal, 10);
-            h.set_margin_top(8);
-            h.set_margin_bottom(8);
-            h.set_margin_start(10);
-            h.set_margin_end(10);
-
-            let ic = Label::new(Some(page_icon(*page)));
-            ic.add_css_class("sidebar-icon");
-            ic.set_size_request(20, -1);
-            ic.set_xalign(0.0);
-            h.append(&ic);
-
-            let label = Label::new(Some(page.title()));
-            label.set_xalign(0.0);
-            label.set_hexpand(true);
-            h.append(&label);
-
-            row.set_child(Some(&h));
-            row.set_activatable(true);
-            let s = sender.clone();
-            let row_label = page.title().to_string();
-            row.connect_activate(move |_| {
-                tracing::info!(
-                    target: "sidebar",
-                    "row activated: {row_label}"
-                );
-                s.send_app(AppMsg::NavigateTo(*page));
-            });
-            list.append(&row);
-        }
-
-        // Belt-and-suspenders: also listen for row selection
-        // changes. Some GTK4 configurations and themes swallow
-        // the activate signal even with `set_activate_on_single_
-        // click(true)`, but selection always fires on a normal
-        // click in `Single` selection mode. This is a no-op when
-        // the user just hovers or focuses (those don't change
-        // the selection) so it doesn't spam NavigateTo.
-        let sender_for_signal = sender.clone();
-        list.connect_selected_rows_changed(move |sidebar| {
-            let Some(row) = sidebar.selected_row() else {
-                return;
-            };
-            let name = row.widget_name();
-            let Some(page) = Page::from_key(name.as_str()) else {
-                return;
-            };
-            tracing::info!(
-                target: "sidebar",
-                "row selected via signal: {}",
-                page.title()
-            );
-            sender_for_signal.send_app(AppMsg::NavigateTo(page));
-        });
-
-        let widget = list.clone().upcast::<gtk::Widget>();
-        (widget, list)
-    }
-}
-
-fn page_icon(page: Page) -> &'static str {
-    match page {
-        Page::MyBose => "📶",
-        Page::Overview => "🏠",
-        Page::Audio => "🎚️",
-        Page::Device => "⚙️",
-        Page::Multipoint => "🔀",
-        Page::Advanced => "🛠️",
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HeaderBar (with the device switcher popover + theme toggle)
-// ---------------------------------------------------------------------------
-
-pub fn build_header_bar(model: &AppModel, sender: &flume::Sender<AppMsg>) -> adw::HeaderBar {
-    let bar = adw::HeaderBar::new();
-    bar.set_title_widget(Some(&adw::WindowTitle::new(
-        "Bose Connect",
-        model.current_page.title(),
-    )));
-
-    // Device switcher button (left).
-    let switcher = gtk::MenuButton::new();
-    switcher.add_css_class("device-switcher");
-    let label = match &model.snapshot {
-        Some(s) => format!("{}  ·  Connected", s.name),
-        None => "No device selected".to_string(),
-    };
-    switcher.set_label(&label);
-    let popover = gtk::Popover::new();
-    let pop_box = GtkBox::new(Orientation::Vertical, 6);
-    pop_box.set_margin_top(10);
-    pop_box.set_margin_bottom(10);
-    pop_box.set_margin_start(10);
-    pop_box.set_margin_end(10);
-    pop_box.set_size_request(240, -1);
-    let pop_title = Label::new(Some("Switch device"));
-    pop_title.add_css_class("row-desc");
-    pop_title.set_xalign(0.0);
-    pop_box.append(&pop_title);
-    let pop_sep = gtk::Separator::new(gtk::Orientation::Horizontal);
-    pop_box.append(&pop_sep);
-    let mock_devices = vec![
-        ("Bose QuietComfort 35 II", "AA:BB:CC:DD:EE:FF", true),
-        ("Bose NC 700", "00:0C:8A:33:1B:42", false),
-        ("Bose SoundLink Revolve", "BB:CC:DD:EE:FF:00", false),
-    ];
-    for (name, addr, active) in mock_devices {
-        let row = Button::new();
-        row.add_css_class("flat");
-        let h = GtkBox::new(Orientation::Horizontal, 8);
-        let meta = GtkBox::new(Orientation::Vertical, 1);
-        meta.set_hexpand(true);
-        let n = Label::new(Some(name));
-        n.set_xalign(0.0);
-        n.add_css_class("heading");
-        meta.append(&n);
-        let a = Label::new(Some(addr));
-        a.set_xalign(0.0);
-        a.add_css_class("row-desc");
-        meta.append(&a);
-        h.append(&meta);
-        if active {
-            let pill = Label::new(Some("●"));
-            pill.add_css_class("success");
-            pill.set_valign(gtk::Align::Center);
-            h.append(&pill);
-        }
-        row.set_child(Some(&h));
-        row.set_hexpand(true);
-        pop_box.append(&row);
-    }
-    popover.set_child(Some(&pop_box));
-    switcher.set_popover(Some(&popover));
-    bar.pack_start(&switcher);
-
-    // Theme toggle (right).
-    let theme_btn = gtk::Button::with_label("🌓");
-    theme_btn.set_tooltip_text(Some("Toggle light/dark"));
-    theme_btn.add_css_class("theme-toggle");
-    let style = adw::StyleManager::default();
-    theme_btn.connect_clicked(move |_| {
-        let next = match style.color_scheme() {
-            adw::ColorScheme::ForceDark => adw::ColorScheme::ForceLight,
-            _ => adw::ColorScheme::ForceDark,
-        };
-        style.set_color_scheme(next);
-    });
-    bar.pack_end(&theme_btn);
-
-    // App menu (right).
-    let menu = gtk::MenuButton::new();
-    menu.set_icon_name("open-menu-symbolic");
-    menu.set_menu_model(Some(&build_app_menu(sender)));
-    bar.pack_end(&menu);
-
-    bar
-}
-
-// ---------------------------------------------------------------------------
-// App menu (Gio::Menu) — kept for the kebab in the header bar
-// ---------------------------------------------------------------------------
-
-pub fn build_app_menu(sender: &flume::Sender<AppMsg>) -> gtk::gio::Menu {
-    let menu = gtk::gio::Menu::new();
-    let section = gtk::gio::Menu::new();
-    section.append(Some("Refresh device"), Some("app.refresh"));
-    section.append(Some("About Bose Connect for Linux"), Some("app.about"));
-    section.append(Some("Visit the project page"), Some("app.project"));
-    section.append(Some("Quit"), Some("app.quit"));
-    menu.append_section(None, &section);
-
-    // We don't have a real `gtk::Application` here for `add_action`,
-    // but the GUI wires these via the kebab's activate handler
-    // through the `tx` sender. The kebab's `MenuButton` doesn't
-    // route actions itself — it just shows the menu.
-    let _ = sender;
-    menu
-}
-
-// ---------------------------------------------------------------------------
-// QuietModePill (kept for backward-compat re-export of the old
-// headerbar element — the new layout uses the device switcher
-// + theme toggle + app menu instead, but the symbol stays in
-// place because some callers may still reference it.)
-// ---------------------------------------------------------------------------
-
-pub struct QuietModePill;
-
-impl QuietModePill {
-    #[allow(dead_code)]
-    pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-        let btn = Button::with_label(if model.quiet_mode {
-            "  Quiet mode ON  "
-        } else {
-            "Quiet mode"
-        });
-        btn.add_css_class("quiet-mode");
-        if model.quiet_mode {
-            btn.add_css_class("active");
-        }
-        let s = sender.clone();
-        btn.connect_clicked(move |_| {
-            s.send_app(AppMsg::ToggleQuietMode);
-        });
-        btn.upcast::<gtk::Widget>()
-    }
-}
-
-// Keep `battery-display` happy even though we don't emit it as a
-// class anymore — a few of the legacy CSS rules reference it.
-#[allow(dead_code)]
-fn _legacy_unused_marker() {
-    // Suppress unused-import warnings if the gtk::Scale symbol is
-    // ever pulled in by a future widget; intentionally empty.
 }

@@ -54,6 +54,10 @@ struct CliArgs {
     /// `AppMsg::NavigateTo` actually swaps the content area, even
     /// without a display server.
     tour: bool,
+    /// Start on a specific page: overview or mybose
+    page: Option<String>,
+    light: bool,
+    dark: bool,
 }
 
 fn parse_cli() -> CliArgs {
@@ -71,6 +75,9 @@ fn parse_cli() -> CliArgs {
             "--run-secs" => cli.run_secs = args.next().and_then(|s| s.parse().ok()),
             "--low-battery-test" => cli.low_battery_test = true,
             "--tour" => cli.tour = true,
+            "--page" => cli.page = args.next(),
+            "--light" => cli.light = true,
+            "--dark" => cli.dark = true,
             "-h" | "--help" => {
                 println!("bose-connect-gui — GTK4 + Relm4 GUI for Bose headphones");
                 println!();
@@ -171,6 +178,21 @@ fn main() -> anyhow::Result<()> {
         Arc::new(MockService::new(handle))
     };
 
+    let _ = gtk::init();
+
+    glib::log_set_writer_func(|level, fields| {
+        for field in fields {
+            if let Some(val) = field.value_str() {
+                if val.contains(
+                    "Using GtkSettings:gtk-application-prefer-dark-theme with libadwaita is unsupported",
+                ) {
+                    return glib::LogWriterOutput::Handled;
+                }
+            }
+        }
+        glib::log_writer_default(level, fields)
+    });
+
     let app = adw::Application::builder()
         .application_id("com.airvzxf.bose-connect-gui")
         .flags(gtk::gio::ApplicationFlags::empty())
@@ -187,7 +209,13 @@ fn main() -> anyhow::Result<()> {
         // here so the application follows the system preference
         // without the warning.
         let style = adw::StyleManager::default();
-        style.set_color_scheme(adw::ColorScheme::Default);
+        if cli_clone.light {
+            style.set_color_scheme(adw::ColorScheme::ForceLight);
+        } else if cli_clone.dark {
+            style.set_color_scheme(adw::ColorScheme::ForceDark);
+        } else {
+            style.set_color_scheme(adw::ColorScheme::Default);
+        }
 
         activate(
             &app_for_app,
@@ -242,31 +270,74 @@ fn activate(
     {
         model.current_page = last_page;
     }
+    if let Some(page) = cli.page.as_deref().and_then(Page::from_key) {
+        model.current_page = page;
+    }
     model.connection = ConnectionState::Connected;
+    let addr_this = bose_connect::BdAddr {
+        b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
+    };
+    let addr_phone = bose_connect::BdAddr {
+        b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11],
+    };
+    let addr_tab = bose_connect::BdAddr {
+        b: [0x22, 0x33, 0x44, 0x55, 0x66, 0x77],
+    };
+    let device_mac = bose_connect::BdAddr {
+        b: [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D],
+    };
     let snapshot = bose_connect_gui::services::device::DeviceSnapshot {
-        address: bose_connect::BdAddr::ANY,
-        name: "QuietCompanion".to_string(),
-        firmware: "1.3.2".to_string(),
-        serial: "08AB12CD345678".to_string(),
-        device_id: 0x4020,
-        battery: if cli.low_battery_test { 10 } else { 85 },
+        address: device_mac,
+        name: "Bose QC35 II 🐺".to_string(),
+        firmware: "4.5.2".to_string(),
+        serial: "07890123456789012".to_string(),
+        device_id: 0x400C,
+        battery: if cli.low_battery_test { 10 } else { 78 },
         status: bose_connect::DeviceStatusReport {
-            name: "QuietCompanion".to_string(),
-            language: 0x21 | bose_connect::VP_ENABLE_BIT,
-            minutes: 0,
+            name: "Bose QC35 II 🐺".to_string(),
+            language: 0x05 | bose_connect::VP_ENABLE_BIT,
+            minutes: 20,
             level: bose_connect::NoiseCancelling::High,
         },
         paired: bose_connect::PairedDevices {
-            addresses: [bose_connect::BdAddr::ANY; bose_connect::MAX_NUM_DEVICES],
-            num_devices: 0,
-            connected: bose_connect::DevicesConnected::One,
+            addresses: [
+                addr_this,
+                addr_phone,
+                addr_tab,
+                bose_connect::BdAddr::ANY,
+                bose_connect::BdAddr::ANY,
+                bose_connect::BdAddr::ANY,
+                bose_connect::BdAddr::ANY,
+                bose_connect::BdAddr::ANY,
+            ],
+            num_devices: 3,
+            connected: bose_connect::DevicesConnected::Two,
         },
-        devices: vec![],
+        devices: vec![
+            bose_connect_gui::transport::make_device_info(
+                addr_this,
+                "Workstation (Este equipo)",
+                bose_connect::DeviceStatus::This,
+            ),
+            bose_connect_gui::transport::make_device_info(
+                addr_phone,
+                "Pixel 8 Pro",
+                bose_connect::DeviceStatus::Connected,
+            ),
+            bose_connect_gui::transport::make_device_info(
+                addr_tab,
+                "iPad Pro",
+                bose_connect::DeviceStatus::Disconnected,
+            ),
+        ],
         capabilities: bose_connect_gui::services::device::Capability {
             noise_cancelling: true,
             self_voice: true,
             pairing_toggle: true,
         },
+        volume: Some(45),
+        active_device: Some(addr_this),
+        device_bd_addr: Some(device_mac),
     };
     model.snapshot = Some(snapshot);
     model.history = vec![85; 24];
@@ -533,9 +604,38 @@ fn activate(
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Bose Connect")
-        .default_width(1180)
-        .default_height(760)
+        .default_width(780)
+        .default_height(840)
         .build();
+
+    // Register window actions for header bar and kebab menu
+    let act_refresh = gtk::gio::SimpleAction::new("refresh", None);
+    let tx_refresh = tx.clone();
+    act_refresh.connect_activate(move |_, _| {
+        let _ = tx_refresh.send(AppMsg::Refresh);
+    });
+    window.add_action(&act_refresh);
+
+    let act_mybose = gtk::gio::SimpleAction::new("mybose", None);
+    let tx_mybose = tx.clone();
+    act_mybose.connect_activate(move |_, _| {
+        let _ = tx_mybose.send(AppMsg::NavigateTo(Page::MyBose));
+    });
+    window.add_action(&act_mybose);
+
+    let act_about = gtk::gio::SimpleAction::new("about", None);
+    let win_about = window.clone();
+    act_about.connect_activate(move |_, _| {
+        bose_connect_gui::app::widgets::show_about_dialog(&win_about);
+    });
+    window.add_action(&act_about);
+
+    let act_quit = gtk::gio::SimpleAction::new("quit", None);
+    let app_quit = application.clone();
+    act_quit.connect_activate(move |_, _| {
+        app_quit.quit();
+    });
+    window.add_action(&act_quit);
 
     // Build the full widget tree on top of the seeded model.
     // We split the tree into the chrome (toolbar view + sidebar)
@@ -549,8 +649,8 @@ fn activate(
     window.set_visible(true);
 
     // Debug keyboard shortcuts for verifying the navigation pump
-    // when we can't simulate real mouse clicks. Ctrl+1..6 jump
-    // straight to the corresponding sidebar page.
+    // when we can't simulate real mouse clicks. Ctrl+1/2 jump
+    // straight to the corresponding page.
     let key_tx = tx.clone();
     let key_controller = gtk::EventControllerKey::new();
     key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -561,10 +661,6 @@ fn activate(
         let page = match keycode {
             v if v == b'1' as u32 => Some(Page::Overview),
             v if v == b'2' as u32 => Some(Page::MyBose),
-            v if v == b'3' as u32 => Some(Page::Audio),
-            v if v == b'4' as u32 => Some(Page::Device),
-            v if v == b'5' as u32 => Some(Page::Multipoint),
-            v if v == b'6' as u32 => Some(Page::Advanced),
             _ => None,
         };
         let _ = _controller;
@@ -612,6 +708,10 @@ fn activate(
             std::time::Duration::from_secs(run_for.max(7))
         } else if run_for > 0 {
             std::time::Duration::from_secs(run_for)
+        } else if screenshot.is_some() {
+            std::time::Duration::from_millis(2500)
+        } else if cli.tour {
+            std::time::Duration::from_millis(5000)
         } else {
             std::time::Duration::from_millis(700)
         };
@@ -792,6 +892,63 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set pairing: {e}")),
         },
+        M::SetName(name) => match service.set_name(&name) {
+            Ok(snap) => {
+                model.log_success(format!("nombre actualizado: {name}"));
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
+            }
+            Err(e) => model.log_error(format!("set name: {e}")),
+        },
+        M::SetVolume(level) => match service.set_volume(level) {
+            Ok(snap) => {
+                model.log_success(format!("volumen ajustado a {level} / 75"));
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
+            }
+            Err(e) => model.log_error(format!("set volume: {e}")),
+        },
+        M::SendMediaKey(key) => match service.send_media_key(key) {
+            Ok(()) => {
+                model.log_success(format!("comando multimedia enviado: {key:?}"));
+            }
+            Err(e) => model.log_error(format!("media key: {e}")),
+        },
+        M::SetSelfVoice(level) => match service.set_self_voice(level) {
+            Ok(snap) => {
+                model.log_success("voz propia configurada");
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
+            }
+            Err(e) => model.log_error(format!("set self-voice: {e}")),
+        },
+        M::PairedConnect(addr) => match service.connect_device(addr) {
+            Ok(snap) => {
+                let formatted = bose_connect_gui::i18n::format_address(addr);
+                model.log_success(format!("conectando a {formatted}"));
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
+            }
+            Err(e) => model.log_error(format!("connect device: {e}")),
+        },
+        M::PairedDisconnect(addr) => match service.disconnect_device(addr) {
+            Ok(snap) => {
+                let formatted = bose_connect_gui::i18n::format_address(addr);
+                model.log_success(format!("desconectando {formatted}"));
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
+            }
+            Err(e) => model.log_error(format!("disconnect device: {e}")),
+        },
+        M::PairedRemove(addr) => match service.remove_device(addr) {
+            Ok(snap) => {
+                let formatted = bose_connect_gui::i18n::format_address(addr);
+                model.log_success(format!("dispositivo {formatted} eliminado"));
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
+            }
+            Err(e) => model.log_error(format!("remove device: {e}")),
+        },
         M::ApplyProfile(profile) => {
             model.log_info(format!("applying profile {}", profile.label()));
             // Apply each setting sequentially. We forward through
@@ -857,8 +1014,8 @@ fn capture_widget_ppm(widget: &gtk::Widget, path: &std::path::Path) {
     use std::fs;
     use std::io::Write as _;
 
-    let width = 1180u32;
-    let height = 760u32;
+    let width = (widget.width().max(780) as u32).clamp(780, 1920);
+    let height = (widget.height().max(840) as u32).clamp(840, 3000);
 
     // Off-screen image surface and cairo context.
     let surface =
@@ -878,14 +1035,19 @@ fn capture_widget_ppm(widget: &gtk::Widget, path: &std::path::Path) {
     };
 
     // Fill the background with the libadwaita canvas color
-    // (`Breeze` here) so transparent pixels don't survive.
-    cr.set_source_rgba(0.93, 0.94, 0.96, 1.0);
+    // so transparent pixels don't survive.
+    if adw::StyleManager::default().is_dark() {
+        cr.set_source_rgba(0.14, 0.14, 0.14, 1.0);
+    } else {
+        cr.set_source_rgba(0.96, 0.96, 0.96, 1.0);
+    }
     cr.paint().ok();
 
     // Render the widget into a fresh `Snapshot` and paint the
     // resulting `RenderNode` onto the cairo surface.
     let snapshot = gtk::Snapshot::new();
-    widget.snapshot_child(widget, &snapshot);
+    let paintable = gtk::WidgetPaintable::new(Some(widget));
+    gtk::gdk::prelude::PaintableExt::snapshot(&paintable, &snapshot, width as f64, height as f64);
     if let Some(node) = snapshot.to_node() {
         node.draw(&cr);
     } else {
