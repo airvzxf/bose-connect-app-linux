@@ -64,17 +64,20 @@ git push
 
 ## What the package installs
 
-| Path | What |
-| --- | --- |
-| `/usr/bin/bose-connect-gui` | the GTK4 + libadwaita GUI |
-| `/usr/bin/bose-connect-app-linux` | the original CLI driver |
-| `/usr/bin/bose-connect-probe` | the sanity-probe binary |
-| `/usr/lib/libbose_connect.so` | the C ABI library |
-| `/usr/share/applications/com.airvzxf.bose-connect-gui.desktop` | launcher entry |
-| `/usr/share/metainfo/com.airvzxf.bose-connect-gui.metainfo.xml` | AppStream metadata |
-| `/usr/share/icons/hicolor/scalable/apps/com.airvzxf.bose-connect-gui.svg` | the main app icon |
-| `/usr/share/icons/hicolor/symbolic/apps/com.airvzxf.bose-connect-gui-symbolic.svg` | the symbolic icon (KDE / GNOME tray) |
-| `/usr/share/bash-completion/completions/bose-connect-gui` | tab-completion |
+* the GTK4 + libadwaita GUI: `/usr/bin/bose-connect-gui`
+* the original CLI driver: `/usr/bin/bose-connect-app-linux`
+* the sanity-probe binary: `/usr/bin/bose-connect-probe`
+* the C ABI library: `/usr/lib/libbose_connect.so`
+* launcher entry:
+  `/usr/share/applications/com.airvzxf.bose-connect-gui.desktop`
+* AppStream metadata:
+  `/usr/share/metainfo/com.airvzxf.bose-connect-gui.metainfo.xml`
+* the main app icon:
+  `/usr/share/icons/hicolor/scalable/apps/com.airvzxf.bose-connect-gui.svg`
+* the symbolic icon (KDE / GNOME tray):
+  `/usr/share/icons/hicolor/symbolic/apps/com.airvzxf.bose-connect-gui-symbolic.svg`
+* tab-completion:
+  `/usr/share/bash-completion/completions/bose-connect-gui`
 
 The screenshot artefacts in `screenshots/` and the metadata in
 `linux/` are the same files that the packagers bundle.

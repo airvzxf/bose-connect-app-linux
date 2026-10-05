@@ -19,7 +19,7 @@ set -euo pipefail
 
 # Resolve the repo root from the script's location so the test
 # is independent of cwd.
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
 
 # 1. Build with the same flags CI uses.

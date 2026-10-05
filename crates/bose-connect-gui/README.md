@@ -5,7 +5,7 @@ A GTK4 + libadwaita desktop front-end for the
 Bose QuietComfort / SoundLink headphone from a modern Linux desktop
 without vendor-supplied tooling — same byte-level protocol, modern UX.
 
-```
+```text
 crates/bose-connect-gui
 ├── src
 │   ├── lib.rs          public crate surface
@@ -73,13 +73,13 @@ gdbus call --session --dest org.freedesktop.DBus --object-path / \
 
 | Flag | Effect |
 | --- | --- |
-| `--real` / `--real-bluetooth` | Use the real RFCOMM transport against the wired Bose device |
+| `--real` / `--real-bluetooth` | Use the real RFCOMM transport |
 | `--mock` | (default) In-process mock device |
 | `--headless` | Render once and exit; writes `/tmp/bose-connect-gui.smoke` |
-| `--run-secs SECONDS` | Keep the binary alive long enough to observe a timeout |
+| `--run-secs SECONDS` | Exit cleanly after `SECONDS` |
 | `--mock-tick-ms MS` | Battery-drain interval for the mock (default `4000`) |
-| `--low-battery-test` | Seed the mock at 10 % so the libnotify threshold fires within seconds |
-| `--screenshot PATH` | Write the first frame as PNG to `PATH` (off-screen `gdk::Texture` snapshot) |
+| `--low-battery-test` | Seed the mock at 10 % to fire a low-battery alert |
+| `--screenshot PATH` | Save the first frame to `PATH` (headless) |
 | `--dump-tree` | Print the GTK widget tree, one widget per line, to stdout |
 
 ## KDE Plasma integration
