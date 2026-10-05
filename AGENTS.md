@@ -64,14 +64,16 @@ ad-hoc fuzzing).
 
 `set_volume`, `send_media_key`, `get_active_device` and
 `get_device_bd_addr` do **not** exist in `based.c`, so the rule
-above cannot apply to them. Their sources are:
+above cannot apply to them. "Capture" below means a live capture
+against a Bose SoundLink Color, second generation (II), referred to
+as SoundLink Color II from here on. Their sources are:
 
-| Command              | Request bytes  | Source                                       |
-| -------------------- | -------------- | -------------------------------------------- |
-| `set_volume`         | `05 05 02 01 xx` | `DEVELOPMENT.md` + live SoundLink Color II capture |
-| `send_media_key`     | `05 03 05 01 xx` | `DEVELOPMENT.md` + live SoundLink Color II capture |
-| `get_active_device`  | `05 01 01 00`    | `DEVELOPMENT.md` + live SoundLink Color II capture |
-| `get_device_bd_addr` | `00 06 01 00`    | live SoundLink Color II capture only          |
+| Command              | Request          | Source                    |
+| -------------------- | ---------------- | ------------------------- |
+| `set_volume`         | `05 05 02 01 xx` | `DEVELOPMENT.md`, capture |
+| `send_media_key`     | `05 03 05 01 xx` | `DEVELOPMENT.md`, capture |
+| `get_active_device`  | `05 01 01 00`    | `DEVELOPMENT.md`, capture |
+| `get_device_bd_addr` | `00 06 01 00`    | capture only              |
 
 For these, a real-hardware capture is the source of truth. Note in
 the doc comment which device and firmware a response layout was
