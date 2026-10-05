@@ -200,6 +200,7 @@ struct Cli {
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
         "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "set_volume", "send_media_key", "active_device", "device_bd_addr",
     ])]
     audio_mode: Option<String>,
 
@@ -223,7 +224,7 @@ struct Cli {
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
         "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "send_media_key", "active_device", "device_bd_addr",
+        "send_media_key", "active_device", "device_bd_addr", "audio_mode",
     ])]
     set_volume: Option<u8>,
 
@@ -233,7 +234,7 @@ struct Cli {
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
         "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "set_volume", "active_device", "device_bd_addr",
+        "set_volume", "active_device", "device_bd_addr", "audio_mode",
     ])]
     send_media_key: Option<String>,
 
@@ -243,7 +244,7 @@ struct Cli {
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
         "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "set_volume", "send_media_key", "device_bd_addr",
+        "set_volume", "send_media_key", "device_bd_addr", "audio_mode",
     ])]
     active_device: bool,
 
@@ -253,7 +254,7 @@ struct Cli {
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
         "prompt_language", "voice_prompts", "pairing", "self_voice",
         "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "set_volume", "send_media_key", "active_device",
+        "set_volume", "send_media_key", "active_device", "audio_mode",
     ])]
     device_bd_addr: bool,
 }
