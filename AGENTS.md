@@ -60,6 +60,23 @@ real Bose headphone and capture the on-wire bytes (the
 `--send-packet` flag passes raw hex packets through for
 ad-hoc fuzzing).
 
+### Commands without a C counterpart
+
+`set_volume`, `send_media_key`, `get_active_device` and
+`get_device_bd_addr` do **not** exist in `based.c`, so the rule
+above cannot apply to them. Their sources are:
+
+| Command              | Request bytes  | Source                                       |
+| -------------------- | -------------- | -------------------------------------------- |
+| `set_volume`         | `05 05 02 01 xx` | `DEVELOPMENT.md` + live SoundLink Color II capture |
+| `send_media_key`     | `05 03 05 01 xx` | `DEVELOPMENT.md` + live SoundLink Color II capture |
+| `get_active_device`  | `05 01 01 00`    | `DEVELOPMENT.md` + live SoundLink Color II capture |
+| `get_device_bd_addr` | `00 06 01 00`    | live SoundLink Color II capture only          |
+
+For these, a real-hardware capture is the source of truth. Note in
+the doc comment which device and firmware a response layout was
+observed on; do not describe them as translated from C.
+
 ## Bluetooth address byte order
 
 The `BdAddr` type stores bytes in **canonical MSB-first** order

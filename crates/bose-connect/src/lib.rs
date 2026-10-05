@@ -19,12 +19,16 @@
 //!
 //! ## Wire protocol fidelity
 //!
-//! Every public function in this crate corresponds to one C function
-//! in the original `library/based.c`. The packet byte sequences,
-//! masked-ACK masks, and short-read / short-write semantics are
-//! preserved verbatim. If the original code sends
-//! `[0x01, 0x02, 0x02, ANY]`, the Rust code sends exactly the same
-//! bytes in the same order.
+//! Every public function in this crate that has a counterpart in the
+//! original `library/based.c` preserves its packet byte sequences,
+//! masked-ACK masks, and short-read / short-write semantics verbatim.
+//! If the original code sends `[0x01, 0x02, 0x02, ANY]`, the Rust code
+//! sends exactly the same bytes in the same order.
+//!
+//! The media / volume / addressing commands (`set_volume`,
+//! `send_media_key`, `active_device`, `device_bd_addr`) have no C
+//! counterpart. Their packets come from `DEVELOPMENT.md` and from live
+//! captures against a Bose SoundLink Color II (firmware 4.0.1).
 //!
 //! ## Quick start
 //!

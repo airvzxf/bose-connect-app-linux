@@ -94,12 +94,12 @@ const SET_SELF_VOICE_SEND: [u8; 7] = [0x01, 0x0b, 0x02, 0x02, 0x01, 0x00, 0x38];
 const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
 
 // ---------------------------------------------------------------------------
-// Media / volume / audio-routing commands. Captured live against the
-// Foreman (SoundLink Color II) firmware 4.0.1 and documented in
-// `.worktrees/spike-firmware-party-mode/docs/foreman_firmware_re.md`
-// §5.1 (Phase 1) and §6.1 ("Fully working, can be added to
-// `protocol.rs` now"). DEVELOPMENT.md also lists these as known
-// packets.
+// Media / volume / audio-routing commands. These are NOT in the
+// original C source (`based.c` has no counterpart). The request
+// packets for media keys, volume and active device are listed in
+// DEVELOPMENT.md (sniffed by the original author); the responses and
+// `get_device_bd_addr` were captured live against a Bose SoundLink
+// Color II (Foreman, firmware 4.0.1).
 //
 // These are *direct* Bose codes — they are not generic volume /
 // media-key commands that ride on a separate standard (AVCTP, HSP,
@@ -113,7 +113,7 @@ const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
 /// accepted in the range 0..=75 (decimal) on the SLC II 4.0.1
 /// firmware; values above 75 produce a different response shape
 /// rather than an error. The protocol layer does not range-check
-/// so it stays in lockstep with the C reference.
+/// (there is no C reference to mirror for this command).
 const SET_VOLUME_SEND_PREFIX: [u8; 4] = [0x05, 0x05, 0x02, 0x01];
 
 /// Response header for `set_volume`. The full response is 6 bytes:
@@ -335,7 +335,7 @@ pub fn get_battery_level<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
     Ok(level[0])
 }
 
-/// `int set_volume` in `based.c`. Sets the speaker's local volume
+/// No C counterpart (see the packet-constant comment above). Sets the speaker's local volume
 /// level. Valid range is 0..=75 on the SLC II 4.0.1 firmware; the
 /// protocol layer does not pre-clamp, so callers passing larger
 /// values will see a non-echo response.
@@ -371,7 +371,7 @@ pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
     Ok(payload[0])
 }
 
-/// `int send_media_key` in `based.c`. Sends a media transport key
+/// No C counterpart (see the packet-constant comment above). Sends a media transport key
 /// (pause/play toggle, next, previous) to the A2DP source currently
 /// feeding the speaker.
 ///
@@ -402,7 +402,7 @@ pub fn send_media_key<I: BoseIo>(io: &mut I, key: MediaKey) -> BoseResult<()> {
     Ok(())
 }
 
-/// `int get_active_device` in `based.c`. Returns the BT address of
+/// No C counterpart (see the packet-constant comment above). Returns the BT address of
 /// the device currently feeding audio to the speaker's A2DP sink.
 ///
 /// The response is 13 bytes total: `[0x05, 0x01, 0x03, 0x09, 0x00,
@@ -429,7 +429,7 @@ pub fn get_active_device<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
     Ok(addr)
 }
 
-/// `int get_device_bd_addr` in `based.c`. Returns the speaker's
+/// No C counterpart (see the packet-constant comment above). Returns the speaker's
 /// *own* Bluetooth address, regardless of whether an audio source
 /// is connected.
 ///
@@ -1103,10 +1103,8 @@ mod tests {
 
     // ========================================================================
     // Media / volume / audio-routing command tests. Bytes are taken from
-    // the live capture documented in
-    // `.worktrees/spike-firmware-party-mode/docs/foreman_firmware_re.md`
-    // §5.1 (Phase 1, both White and Black speakers responded identically)
-    // and DEVELOPMENT.md.
+    // live captures against two SoundLink Color II speakers and from
+    // DEVELOPMENT.md.
     //
     // These tests are hermetic: they use `UnixStream` to drive the
     // protocol side and verify the byte sequence is correct *regardless*
