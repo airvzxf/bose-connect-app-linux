@@ -221,6 +221,38 @@ impl SelfVoice {
     }
 }
 
+/// Media transport key. Mirrors the `xx` byte sent in the Bose
+/// `send_media_key` packet (`05 03 05 01 0n`).
+///
+/// Named `Pause` because that's what the operator-facing CLI flag
+/// calls it, but on the wire it's a play/pause toggle: live testing
+/// on the SLC II 4.0.1 firmware (Black speaker, 2C:41:A1:0B:7C:82)
+/// shows that Bose byte `0x02` does nothing — `0x01` flips between
+/// playing and paused depending on the device's current state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum MediaKey {
+    /// Toggle play / pause (Bose wire byte 0x01). The CLI exposes
+    /// this as `pause`; the actual effect is play↔pause.
+    Pause = 0x01,
+    /// Skip to next track.
+    Next = 0x03,
+    /// Skip to previous track.
+    Previous = 0x04,
+}
+
+impl MediaKey {
+    /// Parse a CLI argument (`pause`, `next`, `prev`).
+    pub fn from_arg(s: &str) -> Option<Self> {
+        Some(match s {
+            "pause" => Self::Pause,
+            "next" => Self::Next,
+            "prev" | "previous" => Self::Previous,
+            _ => return None,
+        })
+    }
+}
+
 /// Per-device status byte returned by the paired-devices query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
