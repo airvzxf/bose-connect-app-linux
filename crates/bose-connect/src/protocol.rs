@@ -106,38 +106,47 @@ const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
 // etc.). The Bose firmware implements them at the RFCOMM layer;
 // the device echoes back a status byte so callers can verify the
 // change took effect.
+//
+// A rejected request is answered with an ERROR packet
+// `[block, function, 0x04, len, code…]` instead of the usual STATUS
+// (0x03) / RESULT (0x06) reply; see `read_reply_header`.
 // ---------------------------------------------------------------------------
 
+/// Operator byte of an ERROR reply.
+const OP_ERROR: u8 = 0x04;
+
 /// `set_volume` request — subsystem 0x05, opcode 0x05, command
-/// 0x02 (SET), length 0x01, payload = volume level. Level is
-/// accepted in the range 0..=75 (decimal) on the SLC II 4.0.1
-/// firmware; values above 75 produce a different response shape
-/// rather than an error. The protocol layer does not range-check
-/// (there is no C reference to mirror for this command).
+/// 0x02 (SET), length 0x01, payload = volume level. The valid range
+/// is device-specific and reported by the device itself (see
+/// [`SET_VOLUME_ACK_PREFIX`]): `0..=99` on the SoundLink Color II,
+/// `0..=24` on the QC35 per DEVELOPMENT.md. Out-of-range levels are
+/// rejected with the ERROR packet `05 05 04 01 06`.
 const SET_VOLUME_SEND_PREFIX: [u8; 4] = [0x05, 0x05, 0x02, 0x01];
 
 /// Response header for `set_volume`. The full response is 6 bytes:
-/// `[0x05, 0x05, 0x03, 0x02, battery_pct, volume_echo]`. The first
-/// 4 bytes are fixed; the last 2 carry the current battery level
-/// (0..=100) and the volume level echoed back by the device.
+/// `[0x05, 0x05, 0x03, 0x02, levels, volume_echo]`. `levels` is the
+/// number of volume steps the device supports (`0x64` = 100 on the
+/// SoundLink Color II, `0x19` = 25 on the QC35), so the highest valid
+/// level is `levels - 1`. It is *not* the battery level: verified on
+/// hardware by sweeping the level, the byte stayed `0x64` and 100 was
+/// the first value rejected.
 const SET_VOLUME_ACK_PREFIX: [u8; 4] = [0x05, 0x05, 0x03, 0x02];
 
-/// Media-key request — subsystem 0x05, opcode 0x03, command 0x05
-/// (long-form SET), length 0x01, payload = media key code. Keys:
+/// Media-key request — subsystem 0x05, opcode 0x03, operator 0x05,
+/// length 0x01, payload = media key code. Keys:
 /// 0x01 play/pause toggle, 0x03 next, 0x04 previous. The play/pause
 /// toggle is exposed as `MediaKey::Pause` — see
 /// [`crate::types::MediaKey`] for why.
 const SEND_MEDIA_KEY_SEND_PREFIX: [u8; 4] = [0x05, 0x03, 0x05, 0x01];
 
-/// Response header for `send_media_key`. The full response is 8
-/// bytes (two concatenated packets): `[0x05, 0x03, 0x07, 0x00,
-/// 0x05, 0x03, 0x06, 0x00]`. The first packet is the data packet,
-/// the second is the final ACK. Some firmware variants include a
-/// third packet — see [`send_media_key`] for the actual read.
+/// First reply packet of `send_media_key`. The full response is 8
+/// bytes (two concatenated packets, verified on a SoundLink Color II):
+/// `[0x05, 0x03, 0x07, 0x00]` (PROCESSING) followed by
+/// `[0x05, 0x03, 0x06, 0x00]` (RESULT).
 const SEND_MEDIA_KEY_ACK_PREFIX: [u8; 4] = [0x05, 0x03, 0x07, 0x00];
 
-/// Final ACK for `send_media_key`. Concatenated immediately after
-/// the data packet on the wire.
+/// Second reply packet of `send_media_key` (RESULT). Concatenated
+/// immediately after the PROCESSING packet on the wire.
 const SEND_MEDIA_KEY_FINAL_ACK: [u8; 4] = [0x05, 0x03, 0x06, 0x00];
 
 /// `get_active_device` request — returns the BT address of the
@@ -335,15 +344,14 @@ pub fn get_battery_level<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
     Ok(level[0])
 }
 
-/// No C counterpart (see the packet-constant comment above). Sets the speaker's local volume
-/// level. Valid range is 0..=75 on the SLC II 4.0.1 firmware; the
-/// protocol layer does not pre-clamp, so callers passing larger
-/// values will see a non-echo response.
+/// No C counterpart (see the packet-constant comment above). Sets the
+/// speaker's local volume level.
 ///
-/// The device responds with `[0x05, 0x05, 0x03, 0x02, battery,
+/// The device responds with `[0x05, 0x05, 0x03, 0x02, levels,
 /// volume_echo]`. We verify the volume echo matches `level` and
-/// return the battery percentage as a convenience for callers who
-/// want to log it.
+/// return `levels`, the number of volume steps the device supports
+/// (valid levels are `0..levels`). The range is not checked here:
+/// an out-of-range level comes back as [`BoseError::DeviceError`].
 pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
     let send = [
         SET_VOLUME_SEND_PREFIX[0],
@@ -354,17 +362,15 @@ pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
     ];
     io.bose_write_all(&send)?;
 
-    let mut header = [0u8; 4];
-    io.bose_read_exact(&mut header)?;
+    let header = read_reply_header(io, &SET_VOLUME_SEND_PREFIX)?;
     if header != SET_VOLUME_ACK_PREFIX {
         return Err(BoseError::AckMismatch);
     }
 
     let mut payload = [0u8; 2];
     io.bose_read_exact(&mut payload)?;
-    // payload[0] = battery percentage (0..=100). payload[1] = the
-    // volume level the device now has, which should equal `level`
-    // on success.
+    // payload[0] = number of volume steps. payload[1] = the volume
+    // level the device now has, which should equal `level` on success.
     if payload[1] != level {
         return Err(unconfirmed(level, payload[1]));
     }
@@ -376,8 +382,8 @@ pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
 /// feeding the speaker.
 ///
 /// The device responds with two concatenated 4-byte packets:
-/// `[0x05, 0x03, 0x07, 0x00]` (data) and `[0x05, 0x03, 0x06, 0x00]`
-/// (final ACK). We read both and verify the headers.
+/// `[0x05, 0x03, 0x07, 0x00]` (PROCESSING) and
+/// `[0x05, 0x03, 0x06, 0x00]` (RESULT). We read both and verify them.
 pub fn send_media_key<I: BoseIo>(io: &mut I, key: MediaKey) -> BoseResult<()> {
     let send = [
         SEND_MEDIA_KEY_SEND_PREFIX[0],
@@ -388,8 +394,7 @@ pub fn send_media_key<I: BoseIo>(io: &mut I, key: MediaKey) -> BoseResult<()> {
     ];
     io.bose_write_all(&send)?;
 
-    let mut data = [0u8; 4];
-    io.bose_read_exact(&mut data)?;
+    let data = read_reply_header(io, &SEND_MEDIA_KEY_SEND_PREFIX)?;
     if data != SEND_MEDIA_KEY_ACK_PREFIX {
         return Err(BoseError::AckMismatch);
     }
@@ -715,8 +720,31 @@ pub fn remove_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Private helpers. Mirror the static C functions in `based.c`.
+// Private helpers. Mirror the static C functions in `based.c`, except
+// `read_reply_header`, which has no C counterpart.
 // ---------------------------------------------------------------------------
+
+/// Read a 4-byte reply header for the request `request` (only its
+/// block and function bytes are used). If the device answered with an
+/// ERROR packet for that function, its payload is consumed — so the
+/// stream stays in sync for the next request on the same connection —
+/// and [`BoseError::DeviceError`] is returned with the first payload
+/// byte as the code. Any other header is returned for the caller to
+/// check.
+fn read_reply_header<I: BoseIo>(io: &mut I, request: &[u8; 4]) -> BoseResult<[u8; 4]> {
+    let mut header = [0u8; 4];
+    io.bose_read_exact(&mut header)?;
+    if header[0] == request[0] && header[1] == request[1] && header[2] == OP_ERROR {
+        let mut payload = vec![0u8; usize::from(header[3])];
+        io.bose_read_exact(&mut payload)?;
+        return Err(BoseError::DeviceError {
+            block: header[0],
+            function: header[1],
+            code: payload.first().copied().unwrap_or(0),
+        });
+    }
+    Ok(header)
+}
 
 /// Send a paired-device packet and validate the response with a
 /// permissive matcher. This replaces the C `write_check` for the
@@ -1178,36 +1206,37 @@ mod tests {
         #[test]
         fn set_volume_succeeds_when_device_echoes_level() {
             // Live capture: sent `05 05 02 01 0a`, received
-            // `05 05 03 02 64 0a` (battery 100%, volume 10).
+            // `05 05 03 02 64 0a` (100 volume steps, volume 10).
             let result = drive(
                 move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x0a]),
                 move |c| set_volume(c, 0x0a),
             );
-            let battery = result.expect("set_volume failed");
-            assert_eq!(battery, 0x64, "expected battery=0x64, got {battery}");
+            let steps = result.expect("set_volume failed");
+            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
         }
 
         #[test]
         fn set_volume_succeeds_at_volume_zero() {
             // Live capture: sent `05 05 02 01 00`, received
-            // `05 05 03 02 64 00` (battery 100%, volume 0 / muted).
+            // `05 05 03 02 64 00` (100 volume steps, volume 0 / muted).
             let result = drive(
                 move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x00]),
                 move |c| set_volume(c, 0x00),
             );
-            let battery = result.expect("set_volume failed");
-            assert_eq!(battery, 0x64, "expected battery=0x64, got {battery}");
+            let steps = result.expect("set_volume failed");
+            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
         }
 
         #[test]
         fn set_volume_succeeds_at_max_level() {
-            // DEVELOPMENT.md: 0x18 is the max volume level.
+            // Live capture on a SoundLink Color II: 99 is the highest
+            // level it accepts (`05 05 03 02 64 63`).
             let result = drive(
-                move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x5a, 0x18]),
-                move |c| set_volume(c, 0x18),
+                move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x63]),
+                move |c| set_volume(c, 0x63),
             );
-            let battery = result.expect("set_volume failed");
-            assert_eq!(battery, 0x5a, "expected battery=0x5a, got {battery}");
+            let steps = result.expect("set_volume failed");
+            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
         }
 
         #[test]
@@ -1230,6 +1259,34 @@ mod tests {
             // The echo mismatch surfaces as `unconfirmed(...)`, not
             // `AckMismatch` — verify it's *some* error.
             assert!(result.is_err(), "expected error, got {:?}", result);
+        }
+
+        #[test]
+        fn set_volume_out_of_range_is_device_error_and_stream_stays_in_sync() {
+            // Live capture on a SoundLink Color II: `05 05 02 01 80`
+            // is answered with the ERROR packet `05 05 04 01 06`. The
+            // error payload must be consumed so that the next request
+            // on the same connection reads its own reply.
+            let result = drive(
+                move |s| {
+                    reply(s, &[0x05, 0x05, 0x04, 0x01, 0x06]);
+                    reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x14]);
+                },
+                move |c| (set_volume(c, 0x80), set_volume(c, 0x14)),
+            );
+            assert!(
+                matches!(
+                    result.0,
+                    Err(BoseError::DeviceError {
+                        block: 0x05,
+                        function: 0x05,
+                        code: 0x06
+                    })
+                ),
+                "got {:?}",
+                result.0
+            );
+            assert_eq!(result.1.expect("second set_volume failed"), 100);
         }
 
         // ---- send_media_key ----

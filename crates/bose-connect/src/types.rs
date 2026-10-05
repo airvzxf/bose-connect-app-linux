@@ -225,10 +225,13 @@ impl SelfVoice {
 /// `send_media_key` packet (`05 03 05 01 0n`).
 ///
 /// Named `Pause` because that's what the operator-facing CLI flag
-/// calls it, but on the wire it's a play/pause toggle: live testing
-/// on the SLC II 4.0.1 firmware (Black speaker, 2C:41:A1:0B:7C:82)
-/// shows that Bose byte `0x02` does nothing — `0x01` flips between
-/// playing and paused depending on the device's current state.
+/// calls it, but on the wire it's a play/pause toggle: `0x01` flips
+/// between playing and paused depending on the current state.
+///
+/// Byte `0x02` is deliberately not exposed. On a SoundLink Color II
+/// (firmware 4.0.1) the speaker acknowledges it like the other keys,
+/// but the source's player sees nothing — neither play nor pause,
+/// whether it was playing or paused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MediaKey {

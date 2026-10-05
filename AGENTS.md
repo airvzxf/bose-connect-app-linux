@@ -77,6 +77,12 @@ For these, a real-hardware capture is the source of truth. Note in
 the doc comment which device and firmware a response layout was
 observed on; do not describe them as translated from C.
 
+When testing against a SoundLink Color II, remember it switches
+itself off after its 9th RFCOMM connection since power-on (see
+"SoundLink Color II findings" in `DEVELOPMENT.md`). Batch requests
+in one connection and count connections, or an unrelated packet
+will look like the one that crashed it.
+
 ## Bluetooth address byte order
 
 The `BdAddr` type stores bytes in **canonical MSB-first** order

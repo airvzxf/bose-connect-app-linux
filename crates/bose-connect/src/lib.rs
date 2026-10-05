@@ -192,9 +192,10 @@ impl BoseDevice {
         set_self_voice(&mut self.conn, level)
     }
 
-    /// Set the speaker's local volume level (`0..=75`). Returns the
-    /// current battery level as a percentage (0..=100) for
-    /// convenience so a caller can log it.
+    /// Set the speaker's local volume level. Returns the number of
+    /// volume steps the device supports (valid levels are
+    /// `0..steps`: 100 on the SoundLink Color II). An out-of-range
+    /// level fails with [`BoseError::DeviceError`].
     pub fn set_volume(&mut self, level: u8) -> BoseResult<u8> {
         set_volume(&mut self.conn, level)
     }
