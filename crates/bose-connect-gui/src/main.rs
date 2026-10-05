@@ -54,6 +54,8 @@ struct CliArgs {
     /// `AppMsg::NavigateTo` actually swaps the content area, even
     /// without a display server.
     tour: bool,
+    /// Print the GTK widget tree to stdout once the window is built.
+    dump_tree: bool,
     /// Start on a specific page: overview or mybose
     page: Option<String>,
     light: bool,
@@ -75,6 +77,7 @@ fn parse_cli() -> CliArgs {
             "--run-secs" => cli.run_secs = args.next().and_then(|s| s.parse().ok()),
             "--low-battery-test" => cli.low_battery_test = true,
             "--tour" => cli.tour = true,
+            "--dump-tree" => cli.dump_tree = true,
             "--page" => cli.page = args.next(),
             "--light" => cli.light = true,
             "--dark" => cli.dark = true,
@@ -680,7 +683,7 @@ fn activate(
     window.add_controller(key_controller);
 
     // Optional tree dump for smoke tests / debugging.
-    if std::env::args().any(|a| a == "--dump-tree") {
+    if cli.dump_tree {
         let mut out = String::new();
         dump_widget_tree(&root_widget, 0, &mut out);
         println!("{}", out);

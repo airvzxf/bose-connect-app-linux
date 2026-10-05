@@ -19,8 +19,6 @@
 use std::sync::Arc;
 
 #[allow(unused_imports)]
-use gtk::glib::translate::{FromGlibPtrNone, ToGlibPtr};
-#[allow(unused_imports)]
 use gtk::glib::variant::ToVariant;
 
 use parking_lot::Mutex;
@@ -475,7 +473,8 @@ fn load_pixmap(scale: i32) -> Result<(i32, i32, Vec<u8>), anyhow::Error> {
         "expected RGBA pixbuf (n_channels=4 + has_alpha)"
     );
     let stride = pixbuf.rowstride() as usize;
-    let src = unsafe { pixbuf.pixels() };
+    let bytes = pixbuf.read_pixel_bytes();
+    let src: &[u8] = &bytes;
     let src_len = stride * h as usize;
     assert_eq!(
         src.len(),
@@ -504,42 +503,29 @@ fn load_pixmap(scale: i32) -> Result<(i32, i32, Vec<u8>), anyhow::Error> {
 /// it can render natively, so the caller chooses whether to
 /// include a HiDPI copy via `scale = 2`.
 ///
-/// We build the array via the raw `g_variant_builder_*` C API
-/// because glib 0.22's `Variant::array_from_iter_with_type` helper
-/// has a known bug where the per-child type check compares
-/// against the full array type instead of the element type.
+/// If rendering fails the array is empty but still typed `a(iiay)`,
+/// so the property never changes D-Bus type.
 fn pixmap_variant(scale: i32) -> gtk::glib::Variant {
-    let arr_type = gtk::glib::VariantTy::new("a(iiay)").expect("valid d-bus type");
-    let empty = gtk::glib::Variant::from_iter(std::iter::empty::<gtk::glib::Variant>());
-    match load_pixmap(scale) {
-        Ok((w, h, data)) => {
-            let inner = gtk::glib::Variant::tuple_from_iter([
-                w.to_variant(),
-                h.to_variant(),
-                data.to_variant(),
-            ]);
-            unsafe {
-                let builder = gtk::glib::ffi::g_variant_builder_new(arr_type.as_ptr());
-                if builder.is_null() {
-                    return empty;
-                }
-                gtk::glib::ffi::g_variant_builder_add_value(builder, inner.to_glib_none().0);
-                let v = gtk::glib::ffi::g_variant_builder_end(builder);
-                if v.is_null() {
-                    gtk::glib::ffi::g_variant_builder_clear(builder);
-                    return empty;
-                }
-                gtk::glib::Variant::from_glib_none(v)
-            }
-        }
+    let pixmaps = match load_pixmap(scale) {
+        Ok((w, h, data)) => vec![gtk::glib::Variant::tuple_from_iter([
+            w.to_variant(),
+            h.to_variant(),
+            data.to_variant(),
+        ])],
         Err(err) => {
             tracing::warn!(
                 target: "tray",
                 "SVG icon render failed at scale={scale}: {err}; tray icon will be blank",
             );
-            empty
+            Vec::new()
         }
-    }
+    };
+    gtk::glib::Variant::array_from_iter_with_type(pixmap_element_type(), pixmaps)
+}
+
+/// D-Bus element type of an SNI pixmap array: `(width, height, ARGB32 bytes)`.
+fn pixmap_element_type() -> &'static gtk::glib::VariantTy {
+    gtk::glib::VariantTy::new("(iiay)").expect("valid d-bus type")
 }
 
 /// Map an SNI property name to a `glib::Variant` value the
@@ -585,19 +571,11 @@ fn prop_value(snap: &TraySnapshot, property: &str) -> gtk::glib::Variant {
         "OverlayIconName" => String::new().to_variant(),
         "OverlayIconPixmap" => {
             // a(iiay) — empty array; KDE represents "no
-            // overlay" as a zero-length array. Constructed via
-            // the raw C API to avoid the same
-            // `array_from_iter_with_type` bug we hit on the
-            // non-empty path.
-            let elt_type = gtk::glib::VariantTy::new("(iiay)").expect("valid d-bus type");
-            unsafe {
-                let v = gtk::glib::ffi::g_variant_new_array(
-                    elt_type.to_glib_none().0,
-                    std::ptr::null(),
-                    0,
-                );
-                gtk::glib::Variant::from_glib_none(v)
-            }
+            // overlay" as a zero-length array.
+            gtk::glib::Variant::array_from_iter_with_type(
+                pixmap_element_type(),
+                std::iter::empty::<gtk::glib::Variant>(),
+            )
         }
         "OverlayIconDescription" => String::new().to_variant(),
         "ItemIsMenu" => false.to_variant(),
@@ -786,6 +764,22 @@ mod tests {
             (ICON_PX * 2 * ICON_PX * 2) as usize * 4,
             "HiDPI pixmap buffer must be w × h × 4 bytes"
         );
+    }
+
+    #[test]
+    fn pixmap_variant_is_a_typed_sni_pixmap_array() {
+        let v = pixmap_variant(1);
+        assert_eq!(v.type_().as_str(), "a(iiay)");
+        assert_eq!(v.n_children(), 1, "one pixmap per scale");
+    }
+
+    #[test]
+    fn overlay_pixmap_is_an_empty_typed_array() {
+        // An untyped empty array would be `av` and violate the SNI
+        // spec; the same construction is the render-failure fallback.
+        let v = prop_value(&snap(80, true, "Bose"), "OverlayIconPixmap");
+        assert_eq!(v.type_().as_str(), "a(iiay)");
+        assert_eq!(v.n_children(), 0);
     }
 
     #[test]
