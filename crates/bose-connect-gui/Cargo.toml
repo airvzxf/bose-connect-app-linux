@@ -1,0 +1,73 @@
+[package]
+name = "bose-connect-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+description = "GTK4 desktop GUI for controlling Bose Bluetooth headphones over RFCOMM."
+
+[dependencies]
+bose-connect.workspace = true
+
+# Async runtime: tokio for the few async service tasks.
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+
+# Serde for persistent state and friends.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging: stderr, honouring RUST_LOG.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Config persistence: store `~/.config/bose-connect/state.json`.
+directories = "5"
+
+# Pure-Rust desktop notifications via D-Bus (libnotify).
+notify-rust = { version = "4", default-features = false, features = ["z", "z-with-tokio"] }
+
+# GUI core. We pin the stack together so `gtk4-sys` doesn't mismatch.
+gtk = { package = "gtk4", version = "0.11", features = ["v4_22", "gnome_50"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
+# Image loading for the SNI IconPixmap. We render the SVG from
+# the GResource bundle at tray size and 2× for HiDPI.
+gdk-pixbuf = "0.22"
+
+once_cell = "1"
+parking_lot = "0.12"
+rand = "0.8"
+flume = "0.12"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+cairo-rs = "0.22"
+
+[features]
+# By default the GUI ships with the *real* Bluetooth transport. In
+# offline / headless smoke tests we turn this off and fall back to
+# the in-memory mock device.
+default = ["real-bluetooth"]
+
+real-bluetooth = []
+
+[build-dependencies]
+glib-build-tools = "0.20"
+
+[dev-dependencies]
+# `assets` module tests use a tempdir-backed $XDG_DATA_HOME.
+tempfile = "3"
+
+[lib]
+name = "bose_connect_gui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bose-connect-gui"
+path = "src/main.rs"

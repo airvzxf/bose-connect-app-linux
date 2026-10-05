@@ -1,0 +1,208 @@
+/*
+ * Bose Connect for Linux — GTK4 / Libadwaita custom CSS.
+ *
+ * Visual language: 100% Libadwaita tokens and standard color palettes,
+ * adapting seamlessly to both Light and Dark modes.
+ */
+
+window,
+adw-toolbar-view,
+.toolbar-view {
+    background-color: @window_bg_color;
+    color: @window_fg_color;
+}
+
+/* -------------------------------------------------------------------------
+ * Hero card
+ * ------------------------------------------------------------------------- */
+
+.hero-card {
+    background: linear-gradient(135deg,
+        alpha(@accent_color, 0.12),
+        alpha(@accent_color, 0.03));
+    border-radius: 16px;
+    padding: 20px 22px;
+    border: 1px solid alpha(@window_fg_color, 0.08);
+    box-shadow: 0 4px 16px alpha(#000, 0.04);
+}
+
+/* -------------------------------------------------------------------------
+ * HeaderBar fixed height (prevents jumping during page navigation)
+ * ------------------------------------------------------------------------- */
+
+headerbar {
+    min-height: 52px;
+}
+
+.hero-avatar {
+    background: @accent_bg_color;
+    color: @accent_fg_color;
+    border-radius: 50%;
+    min-width: 56px;
+    min-height: 56px;
+}
+
+.hero-avatar image {
+    color: @accent_fg_color;
+}
+
+/* -------------------------------------------------------------------------
+ * Battery icon status colors:
+ *   70% – 100%: Green (@success_color)
+ *   35% – 70%:  Yellow (@warning_color)
+ *    0% – 35%:  Red (@error_color)
+ * ------------------------------------------------------------------------- */
+
+.battery-icon.success {
+    color: @success_color;
+}
+
+.battery-icon.warning {
+    color: @warning_color;
+}
+
+.battery-icon.error,
+.battery-icon.danger {
+    color: @error_color;
+}
+
+/* -------------------------------------------------------------------------
+ * Sparkline
+ * ------------------------------------------------------------------------- */
+
+.sparkline {
+    background: alpha(@window_fg_color, 0.06);
+    border-radius: 6px;
+    padding: 3px;
+}
+
+.sparkline .sparkline-bar {
+    background: alpha(@accent_color, 0.65);
+    border-radius: 2px;
+    margin: 0 1px;
+}
+
+.sparkline .sparkline-bar.empty {
+    background: alpha(@window_fg_color, 0.10);
+}
+
+/* -------------------------------------------------------------------------
+ * Segmented control (Off / Low / High)
+ * ------------------------------------------------------------------------- */
+
+.segmented {
+    background: alpha(@window_fg_color, 0.06);
+    border-radius: 10px;
+    padding: 3px;
+}
+
+.segmented > .segmented-button {
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-weight: 600;
+    font-size: 12.5px;
+    color: alpha(@window_fg_color, 0.75);
+    background: transparent;
+    border: none;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.segmented > .segmented-button:hover {
+    background: alpha(@window_fg_color, 0.08);
+}
+
+.segmented > .segmented-button.selected {
+    background: @accent_bg_color;
+    color: @accent_fg_color;
+    box-shadow: 0 1px 3px alpha(#000, 0.18);
+}
+
+/* -------------------------------------------------------------------------
+ * Pills (status chips)
+ * ------------------------------------------------------------------------- */
+
+.pill {
+    border-radius: 999px;
+    padding: 3px 10px;
+    background: alpha(@accent_color, 0.12);
+    color: @accent_color;
+    font-weight: 700;
+    font-size: 11px;
+}
+
+.pill.accent,
+.pill.info {
+    background: alpha(@accent_color, 0.20);
+    color: @accent_color;
+}
+
+.pill.success {
+    background: alpha(@success_color, 0.18);
+    color: @success_color;
+}
+
+.pill.idle,
+.pill.muted {
+    background: alpha(@window_fg_color, 0.08);
+    color: alpha(@window_fg_color, 0.65);
+}
+
+.pill.danger,
+.pill.error {
+    background: alpha(@error_color, 0.18);
+    color: @error_color;
+}
+
+/* -------------------------------------------------------------------------
+ * Device switcher (HeaderBar)
+ * ------------------------------------------------------------------------- */
+
+menubutton.device-switcher {
+    min-height: 32px;
+    padding: 0;
+    margin: 0;
+}
+
+menubutton.device-switcher > button {
+    min-height: 32px;
+    padding: 3px 12px;
+    margin: 0;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 12.5px;
+}
+
+.theme-toggle {
+    border-radius: 999px;
+}
+
+/* -------------------------------------------------------------------------
+ * Typography & values
+ * ------------------------------------------------------------------------- */
+
+.row-desc {
+    color: alpha(@window_fg_color, 0.60);
+    font-size: 12px;
+}
+
+.row-value {
+    color: alpha(@window_fg_color, 0.85);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.mono {
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    background: alpha(@window_fg_color, 0.06);
+    padding: 3px 8px;
+    border-radius: 6px;
+}
+
+.packet-response-box {
+    background: alpha(@window_fg_color, 0.05);
+    border: 1px solid alpha(@window_fg_color, 0.08);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+}

@@ -139,7 +139,10 @@ jobs:
           cache-on-failure: true
 
       - name: 'Sanity: workspace builds clean at the tag'
-        run: cargo build --workspace --release --locked
+        # The GUI needs a newer GTK than ubuntu-latest ships and is
+        # not part of the release artefacts; ci.yml checks it in an
+        # Arch Linux container.
+        run: cargo build --workspace --exclude bose-connect-gui --release --locked
 
       - name: 'Sanity: cbindgen header is well-formed'
         # `cargo doc` exercises the build.rs and would surface any
@@ -148,8 +151,8 @@ jobs:
         # publishable (publish is dry-run; actual publish is the
         # next step).
         run: |
-          cargo doc --no-deps --workspace
-          cargo package --workspace --no-verify
+          cargo doc --no-deps --workspace --exclude bose-connect-gui
+          cargo package --workspace --exclude bose-connect-gui --no-verify
 
       - name: Publish to crates.io
         env:

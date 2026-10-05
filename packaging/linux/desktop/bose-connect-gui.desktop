@@ -1,0 +1,29 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Bose Connect for Linux
+GenericName=Bluetooth Headphone Controller
+Comment=GTK4 + libadwaita front-end for the bose_connect RFCOMM library
+# Icon shipped as a GResource; load via the resource URI that the
+# binary registers. If the resource isn't reachable the desktop
+# environment falls back to a theme icon.
+Icon=bose-connect-gui
+Exec=bose-connect-gui
+Terminal=false
+Categories=AudioVideo;Settings;
+Keywords=Bose;Bluetooth;Headphones;QuietComfort;SoundLink;
+StartupNotify=true
+StartupWMClass=com.airvzxf.bose-connect-gui
+# KDE Plasma 6 reads these too; the D-Bus name should match the
+# `application_id` passed to `adw::Application::builder()`.
+MimeType=
+SingleMainWindow=true
+Actions=refresh;quit-quiet-mode;
+
+[Desktop Action refresh]
+Name=Refresh state
+Exec=bose-connect-gui --refresh
+
+[Desktop Action quit-quiet-mode]
+Name=Quit quiet mode
+Exec=bose-connect-gui --toggle-quiet-mode
