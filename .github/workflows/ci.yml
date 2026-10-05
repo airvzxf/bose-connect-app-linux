@@ -30,7 +30,8 @@ permissions:
 #                          │
 #   test                 ─┤
 #   doc                  ─┤   Round 2 (no inter-job deps)
-#   build                ─┘
+#   build                ─┤
+#   gui                  ─┘   (Arch Linux container, see below)
 #
 # Wall-clock critical path:
 #   round 1 = max(fmt-check, clippy)                       ~30 s
@@ -45,6 +46,11 @@ permissions:
 #   - test
 #   - doc
 #   - build
+#
+# `bose-connect-gui` needs GTK 4.22 / libadwaita 1.9 / GLib 2.88
+# system libraries, far newer than what ubuntu-latest ships. The
+# jobs above therefore exclude it and cover the library + CLI only;
+# the `gui` job checks it inside an Arch Linux container instead.
 jobs:
   fmt-check:
     name: 'T0 · fmt-check'
@@ -68,7 +74,7 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --exclude bose-connect-gui --all-targets -- -D warnings
 
   test:
     name: 'T2 · cargo test --workspace'
@@ -79,7 +85,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
-      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --exclude bose-connect-gui --all-targets
 
   doc:
     name: 'T2 · cargo doc --no-deps --workspace strict'
@@ -92,7 +98,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
-      - run: cargo doc --no-deps --workspace
+      - run: cargo doc --no-deps --workspace --exclude bose-connect-gui
       # Reject tracked build artifacts. Mirrors voxora's `fmt-check`
       # tracked-artifact guard (defensive — Cargo's gitignore
       # already filters `target/` but a copy-pasted `cargo package`
@@ -113,7 +119,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
         with:
           toolchain: stable
-      - run: cargo build --workspace --release --locked
+      - run: cargo build --workspace --exclude bose-connect-gui --release --locked
       - name: Smoke-test the binary --help
         # Sanity check that the CLI parses its arguments. Mirrors
         # the original CMake CI which would just build, never run.
@@ -127,3 +133,27 @@ jobs:
             target/release/libbose_connect.so*
             target/release/libbose_connect.a
           if-no-files-found: warn
+
+  gui:
+    name: 'T2 · gui (Arch Linux: GTK 4.22, libadwaita 1.9)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Rolling distro on purpose: it tracks the GTK stack the GUI
+    # targets. The digest only pins the base image; `pacman -Syu`
+    # pulls current packages on every run.
+    container:
+      image: archlinux:base-devel@sha256:8edb44f40a0cb5d3e44ef474f02780098ce0084e591c8641bdc01f02f185cc40
+    env:
+      RUSTDOCFLAGS: "-D warnings"
+    steps:
+      - name: Install GTK 4 / libadwaita
+        run: pacman -Syu --noconfirm --needed git gtk4 libadwaita
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # master
+        with:
+          toolchain: stable
+          components: clippy
+      - run: cargo clippy -p bose-connect-gui --all-targets --locked -- -D warnings
+      - run: cargo test -p bose-connect-gui --all-targets --locked
+      - run: cargo doc --no-deps -p bose-connect-gui --locked
+      - run: cargo build -p bose-connect-gui --release --locked
