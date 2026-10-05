@@ -60,6 +60,31 @@ real Bose headphone and capture the on-wire bytes (the
 `--send-packet` flag passes raw hex packets through for
 ad-hoc fuzzing).
 
+### Commands without a C counterpart
+
+`set_volume`, `send_media_key`, `get_active_device` and
+`get_device_bd_addr` do **not** exist in `based.c`, so the rule
+above cannot apply to them. "Capture" below means a live capture
+against a Bose SoundLink Color, second generation (II), referred to
+as SoundLink Color II from here on. Their sources are:
+
+| Command              | Request          | Source                    |
+| -------------------- | ---------------- | ------------------------- |
+| `set_volume`         | `05 05 02 01 xx` | `DEVELOPMENT.md`, capture |
+| `send_media_key`     | `05 03 05 01 xx` | `DEVELOPMENT.md`, capture |
+| `get_active_device`  | `05 01 01 00`    | `DEVELOPMENT.md`, capture |
+| `get_device_bd_addr` | `00 06 01 00`    | capture only              |
+
+For these, a real-hardware capture is the source of truth. Note in
+the doc comment which device and firmware a response layout was
+observed on; do not describe them as translated from C.
+
+When testing against a SoundLink Color II, remember it switches
+itself off after its 9th RFCOMM connection since power-on (see
+"SoundLink Color II findings" in `DEVELOPMENT.md`). Batch requests
+in one connection and count connections, or an unrelated packet
+will look like the one that crashed it.
+
 ## Bluetooth address byte order
 
 The `BdAddr` type stores bytes in **canonical MSB-first** order

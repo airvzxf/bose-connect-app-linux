@@ -19,12 +19,16 @@
 //!
 //! ## Wire protocol fidelity
 //!
-//! Every public function in this crate corresponds to one C function
-//! in the original `library/based.c`. The packet byte sequences,
-//! masked-ACK masks, and short-read / short-write semantics are
-//! preserved verbatim. If the original code sends
-//! `[0x01, 0x02, 0x02, ANY]`, the Rust code sends exactly the same
-//! bytes in the same order.
+//! Every public function in this crate that has a counterpart in the
+//! original `library/based.c` preserves its packet byte sequences,
+//! masked-ACK masks, and short-read / short-write semantics verbatim.
+//! If the original code sends `[0x01, 0x02, 0x02, ANY]`, the Rust code
+//! sends exactly the same bytes in the same order.
+//!
+//! The media / volume / addressing commands (`set_volume`,
+//! `send_media_key`, `active_device`, `device_bd_addr`) have no C
+//! counterpart. Their packets come from `DEVELOPMENT.md` and from live
+//! captures against a Bose SoundLink Color II (firmware 4.0.1).
 //!
 //! ## Quick start
 //!
@@ -55,15 +59,16 @@ pub use crate::connection::Connection;
 pub use crate::error::{BoseError, BoseResult};
 pub use crate::io::BoseIo;
 pub use crate::protocol::{
-    get_battery_level, get_device_id, get_device_info, get_device_status, get_firmware_version,
-    get_paired_devices, get_serial_number, has_noise_cancelling, has_pairing_toggle,
-    has_self_voice, set_auto_off, set_name, set_noise_cancelling, set_pairing, set_prompt_language,
-    set_self_voice, set_voice_prompts, DeviceStatusReport, PairedDevices,
+    get_active_device, get_battery_level, get_device_bd_addr, get_device_id, get_device_info,
+    get_device_status, get_firmware_version, get_paired_devices, get_serial_number,
+    has_noise_cancelling, has_pairing_toggle, has_self_voice, send_media_key, set_auto_off,
+    set_name, set_noise_cancelling, set_pairing, set_prompt_language, set_self_voice,
+    set_voice_prompts, set_volume, DeviceStatusReport, PairedDevices,
 };
 pub use crate::types::{
-    AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, NoiseCancelling,
-    Pairing, PromptLanguage, SelfVoice, BOSE_CHANNEL, MAX_BT_PACK_LEN, MAX_NAME_LEN,
-    MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
+    AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, MediaKey,
+    NoiseCancelling, Pairing, PromptLanguage, SelfVoice, BOSE_CHANNEL, MAX_BT_PACK_LEN,
+    MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
 };
 
 /// High-level driver: owns a `Connection` and exposes every
@@ -185,6 +190,34 @@ impl BoseDevice {
     /// Set the self-voice (sidetone) level.
     pub fn set_self_voice(&mut self, level: SelfVoice) -> BoseResult<()> {
         set_self_voice(&mut self.conn, level)
+    }
+
+    /// Set the speaker's local volume level. Returns the number of
+    /// volume steps the device supports (valid levels are
+    /// `0..steps`: 100 on the SoundLink Color II). An out-of-range
+    /// level fails with [`BoseError::DeviceError`].
+    pub fn set_volume(&mut self, level: u8) -> BoseResult<u8> {
+        set_volume(&mut self.conn, level)
+    }
+
+    /// Send a media key (pause toggle, next, previous). The `pause`
+    /// variant is a play↔pause toggle on the Bose wire.
+    pub fn send_media_key(&mut self, key: MediaKey) -> BoseResult<()> {
+        send_media_key(&mut self.conn, key)
+    }
+
+    /// Fetch the BT address of the device currently feeding audio to
+    /// the speaker's A2DP sink. Returns
+    /// [`BoseError::AckMismatch`] if no source is connected.
+    pub fn active_device(&mut self) -> BoseResult<BdAddr> {
+        get_active_device(&mut self.conn)
+    }
+
+    /// Fetch the speaker's *own* Bluetooth address. Useful when more
+    /// than one speaker is paired and you need to disambiguate which
+    /// physical device a given socket is bound to.
+    pub fn device_bd_addr(&mut self) -> BoseResult<BdAddr> {
+        get_device_bd_addr(&mut self.conn)
     }
 
     /// Connect to a paired device.

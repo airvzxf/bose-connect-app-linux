@@ -23,7 +23,7 @@
 use crate::error::{unconfirmed, BoseError, BoseResult};
 use crate::io::BoseIo;
 use crate::types::{
-    AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, NoiseCancelling, Pairing,
+    AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, MediaKey, NoiseCancelling, Pairing,
     PromptLanguage, SelfVoice, MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NOISE_CANCELLING_0C,
     NOISE_CANCELLING_14, NOISE_CANCELLING_20, VP_ENABLE_BIT, VP_MASK,
 };
@@ -93,6 +93,89 @@ const SET_PAIRING_ACK: [u8; 5] = [0x04, 0x08, 0x06, 0x01, 0x00];
 const SET_SELF_VOICE_SEND: [u8; 7] = [0x01, 0x0b, 0x02, 0x02, 0x01, 0x00, 0x38];
 const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
 
+// ---------------------------------------------------------------------------
+// Media / volume / audio-routing commands. These are NOT in the
+// original C source (`based.c` has no counterpart). The request
+// packets for media keys, volume and active device are listed in
+// DEVELOPMENT.md (sniffed by the original author); the responses and
+// `get_device_bd_addr` were captured live against a Bose SoundLink
+// Color II (Foreman, firmware 4.0.1).
+//
+// These are *direct* Bose codes — they are not generic volume /
+// media-key commands that ride on a separate standard (AVCTP, HSP,
+// etc.). The Bose firmware implements them at the RFCOMM layer;
+// the device echoes back a status byte so callers can verify the
+// change took effect.
+//
+// A rejected request is answered with an ERROR packet
+// `[block, function, 0x04, len, code…]` instead of the usual STATUS
+// (0x03) / RESULT (0x06) reply; see `read_reply_header`.
+// ---------------------------------------------------------------------------
+
+/// Operator byte of an ERROR reply.
+const OP_ERROR: u8 = 0x04;
+
+/// `set_volume` request — subsystem 0x05, opcode 0x05, command
+/// 0x02 (SET), length 0x01, payload = volume level. The valid range
+/// is device-specific and reported by the device itself (see
+/// [`SET_VOLUME_ACK_PREFIX`]): `0..=99` on the SoundLink Color II,
+/// `0..=24` on the QC35 per DEVELOPMENT.md. Out-of-range levels are
+/// rejected with the ERROR packet `05 05 04 01 06`.
+const SET_VOLUME_SEND_PREFIX: [u8; 4] = [0x05, 0x05, 0x02, 0x01];
+
+/// Response header for `set_volume`. The full response is 6 bytes:
+/// `[0x05, 0x05, 0x03, 0x02, levels, volume_echo]`. `levels` is the
+/// number of volume steps the device supports (`0x64` = 100 on the
+/// SoundLink Color II, `0x19` = 25 on the QC35), so the highest valid
+/// level is `levels - 1`. It is *not* the battery level: verified on
+/// hardware by sweeping the level, the byte stayed `0x64` and 100 was
+/// the first value rejected.
+const SET_VOLUME_ACK_PREFIX: [u8; 4] = [0x05, 0x05, 0x03, 0x02];
+
+/// Media-key request — subsystem 0x05, opcode 0x03, operator 0x05,
+/// length 0x01, payload = media key code. Keys:
+/// 0x01 play/pause toggle, 0x03 next, 0x04 previous. The play/pause
+/// toggle is exposed as `MediaKey::Pause` — see
+/// [`crate::types::MediaKey`] for why.
+const SEND_MEDIA_KEY_SEND_PREFIX: [u8; 4] = [0x05, 0x03, 0x05, 0x01];
+
+/// First reply packet of `send_media_key`. The full response is 8
+/// bytes (two concatenated packets, verified on a SoundLink Color II):
+/// `[0x05, 0x03, 0x07, 0x00]` (PROCESSING) followed by
+/// `[0x05, 0x03, 0x06, 0x00]` (RESULT).
+const SEND_MEDIA_KEY_ACK_PREFIX: [u8; 4] = [0x05, 0x03, 0x07, 0x00];
+
+/// Second reply packet of `send_media_key` (RESULT). Concatenated
+/// immediately after the PROCESSING packet on the wire.
+const SEND_MEDIA_KEY_FINAL_ACK: [u8; 4] = [0x05, 0x03, 0x06, 0x00];
+
+/// `get_active_device` request — returns the BT address of the
+/// source currently feeding the A2DP sink. Subsystem 0x05, opcode
+/// 0x01, command 0x01 (GET), length 0x00. Response is 13 bytes;
+/// the last 6 bytes are the MSB-first BT address of the source.
+const GET_ACTIVE_DEVICE_SEND: [u8; 4] = [0x05, 0x01, 0x01, 0x00];
+
+/// Header of the `get_active_device` response. 9-byte payload
+/// follows (length byte = 0x09). The payload structure observed on
+/// the live capture is `[0x00, 0x02, 0x01, addr_0..addr_5]`; the
+/// first three bytes are an unknown status triple, the last six
+/// are the BT address.
+const GET_ACTIVE_DEVICE_ACK_PREFIX: [u8; 4] = [0x05, 0x01, 0x03, 0x09];
+
+/// `get_device_bd_addr` — returns the speaker's *own* Bluetooth
+/// address. Subsystem 0x00, opcode 0x06, command 0x01 (GET),
+/// length 0x00. Response is 10 bytes; the last 6 bytes are the
+/// MSB-first BT address of the speaker itself (not the source).
+/// Useful for distinguishing which physical speaker a given socket
+/// is bound to when the same laptop has two paired speakers (e.g.
+/// the test rig with the White + Black Foremans).
+const GET_DEVICE_BD_ADDR_SEND: [u8; 4] = [0x00, 0x06, 0x01, 0x00];
+
+/// Header of the `get_device_bd_addr` response. 6-byte payload
+/// follows (length byte = 0x06). Payload is the speaker's own BT
+/// address in MSB-first order.
+const GET_DEVICE_BD_ADDR_ACK_PREFIX: [u8; 4] = [0x00, 0x06, 0x03, 0x06];
+
 const GET_DEVICE_INFO_SEND_PREFIX: [u8; 4] = [0x04, 0x05, 0x01, 6];
 const GET_DEVICE_INFO_ACK: [u8; 3] = [0x04, 0x05, 0x03];
 
@@ -160,25 +243,26 @@ pub fn has_pairing_toggle(device_id: u16) -> bool {
 /// uint8_t received[MAX_BT_PACK_LEN])` in `based.c`. Returns the
 /// bytes received, or a [`BoseError::ShortRead`] /
 /// [`BoseError::ShortWrite`] on partial IO.
+///
+/// Faithful to the C version: a single `write()` followed by a
+/// single `read()`. The C code never looped — it relied on `read()`
+/// returning however many bytes the kernel had buffered, which on a
+/// stream socket is exactly one short packet's worth for typical
+/// Bose responses (5–15 bytes).
+///
+/// The original Rust port added a drain-the-socket loop with
+/// `TimedOut`/`WouldBlock` break conditions. That was a behavioural
+/// deviation from the C source: it made `--send-packet` block for
+/// at least one full `SO_RCVTIMEO` (1 s on `Connection`) after the
+/// device finished sending, and it caused infinite hangs in
+/// `UnixStream`-driven tests that don't set a receive timeout
+/// (see `tests/send_packet_timeout.rs`). Reverted to a single
+/// `read()` to match `based.c` byte-for-byte.
 pub fn send_packet<I: BoseIo>(io: &mut I, send: &[u8]) -> BoseResult<Vec<u8>> {
     io.bose_write_all(send)?;
     let mut buf = vec![0u8; MAX_BT_PACK_LEN_T];
-    let mut total = 0usize;
-    loop {
-        match io.read(&mut buf[total..]) {
-            Ok(0) => break,
-            Ok(n) => {
-                total += n;
-                if total == buf.len() {
-                    break;
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
-            Err(e) => return Err(e.into()),
-        }
-    }
-    buf.truncate(total);
+    let n = io.read(&mut buf)?;
+    buf.truncate(n);
     Ok(buf)
 }
 
@@ -258,6 +342,117 @@ pub fn get_battery_level<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
     let mut level = [0u8; 1];
     io.bose_read_exact(&mut level)?;
     Ok(level[0])
+}
+
+/// No C counterpart (see the packet-constant comment above). Sets the
+/// speaker's local volume level.
+///
+/// The device responds with `[0x05, 0x05, 0x03, 0x02, levels,
+/// volume_echo]`. We verify the volume echo matches `level` and
+/// return `levels`, the number of volume steps the device supports
+/// (valid levels are `0..levels`). The range is not checked here:
+/// an out-of-range level comes back as [`BoseError::DeviceError`].
+pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
+    let send = [
+        SET_VOLUME_SEND_PREFIX[0],
+        SET_VOLUME_SEND_PREFIX[1],
+        SET_VOLUME_SEND_PREFIX[2],
+        SET_VOLUME_SEND_PREFIX[3],
+        level,
+    ];
+    io.bose_write_all(&send)?;
+
+    let header = read_reply_header(io, &SET_VOLUME_SEND_PREFIX)?;
+    if header != SET_VOLUME_ACK_PREFIX {
+        return Err(BoseError::AckMismatch);
+    }
+
+    let mut payload = [0u8; 2];
+    io.bose_read_exact(&mut payload)?;
+    // payload[0] = number of volume steps. payload[1] = the volume
+    // level the device now has, which should equal `level` on success.
+    if payload[1] != level {
+        return Err(unconfirmed(level, payload[1]));
+    }
+    Ok(payload[0])
+}
+
+/// No C counterpart (see the packet-constant comment above). Sends a media transport key
+/// (pause/play toggle, next, previous) to the A2DP source currently
+/// feeding the speaker.
+///
+/// The device responds with two concatenated 4-byte packets:
+/// `[0x05, 0x03, 0x07, 0x00]` (PROCESSING) and
+/// `[0x05, 0x03, 0x06, 0x00]` (RESULT). We read both and verify them.
+pub fn send_media_key<I: BoseIo>(io: &mut I, key: MediaKey) -> BoseResult<()> {
+    let send = [
+        SEND_MEDIA_KEY_SEND_PREFIX[0],
+        SEND_MEDIA_KEY_SEND_PREFIX[1],
+        SEND_MEDIA_KEY_SEND_PREFIX[2],
+        SEND_MEDIA_KEY_SEND_PREFIX[3],
+        key as u8,
+    ];
+    io.bose_write_all(&send)?;
+
+    let data = read_reply_header(io, &SEND_MEDIA_KEY_SEND_PREFIX)?;
+    if data != SEND_MEDIA_KEY_ACK_PREFIX {
+        return Err(BoseError::AckMismatch);
+    }
+
+    let mut final_ack = [0u8; 4];
+    io.bose_read_exact(&mut final_ack)?;
+    if final_ack != SEND_MEDIA_KEY_FINAL_ACK {
+        return Err(BoseError::AckMismatch);
+    }
+    Ok(())
+}
+
+/// No C counterpart (see the packet-constant comment above). Returns the BT address of
+/// the device currently feeding audio to the speaker's A2DP sink.
+///
+/// The response is 13 bytes total: `[0x05, 0x01, 0x03, 0x09, 0x00,
+/// 0x02, 0x01, addr_0, addr_1, addr_2, addr_3, addr_4, addr_5]`.
+/// The first three payload bytes are an unknown status triple;
+/// the last six are the MSB-first BT address.
+pub fn get_active_device<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
+    io.bose_write_all(&GET_ACTIVE_DEVICE_SEND)?;
+
+    let mut header = [0u8; 4];
+    io.bose_read_exact(&mut header)?;
+    if header != GET_ACTIVE_DEVICE_ACK_PREFIX {
+        return Err(BoseError::AckMismatch);
+    }
+
+    // Skip the 3-byte status triple. The Bose firmware emits these
+    // unconditionally; their meaning is unknown but they are stable
+    // across the observed SLC II captures (`0x00, 0x02, 0x01`).
+    let mut status = [0u8; 3];
+    io.bose_read_exact(&mut status)?;
+
+    let mut addr = BdAddr { b: [0; 6] };
+    io.bose_read_exact(&mut addr.b)?;
+    Ok(addr)
+}
+
+/// No C counterpart (see the packet-constant comment above). Returns the speaker's
+/// *own* Bluetooth address, regardless of whether an audio source
+/// is connected.
+///
+/// The response is 10 bytes: `[0x00, 0x06, 0x03, 0x06, addr_0,
+/// addr_1, addr_2, addr_3, addr_4, addr_5]`. The payload is just
+/// the 6-byte MSB-first BT address.
+pub fn get_device_bd_addr<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
+    io.bose_write_all(&GET_DEVICE_BD_ADDR_SEND)?;
+
+    let mut header = [0u8; 4];
+    io.bose_read_exact(&mut header)?;
+    if header != GET_DEVICE_BD_ADDR_ACK_PREFIX {
+        return Err(BoseError::AckMismatch);
+    }
+
+    let mut addr = BdAddr { b: [0; 6] };
+    io.bose_read_exact(&mut addr.b)?;
+    Ok(addr)
 }
 
 /// `int get_device_status(int sock, char name[MAX_NAME_LEN], enum
@@ -525,8 +720,31 @@ pub fn remove_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Private helpers. Mirror the static C functions in `based.c`.
+// Private helpers. Mirror the static C functions in `based.c`, except
+// `read_reply_header`, which has no C counterpart.
 // ---------------------------------------------------------------------------
+
+/// Read a 4-byte reply header for the request `request` (only its
+/// block and function bytes are used). If the device answered with an
+/// ERROR packet for that function, its payload is consumed — so the
+/// stream stays in sync for the next request on the same connection —
+/// and [`BoseError::DeviceError`] is returned with the first payload
+/// byte as the code. Any other header is returned for the caller to
+/// check.
+fn read_reply_header<I: BoseIo>(io: &mut I, request: &[u8; 4]) -> BoseResult<[u8; 4]> {
+    let mut header = [0u8; 4];
+    io.bose_read_exact(&mut header)?;
+    if header[0] == request[0] && header[1] == request[1] && header[2] == OP_ERROR {
+        let mut payload = vec![0u8; usize::from(header[3])];
+        io.bose_read_exact(&mut payload)?;
+        return Err(BoseError::DeviceError {
+            block: header[0],
+            function: header[1],
+            code: payload.first().copied().unwrap_or(0),
+        });
+    }
+    Ok(header)
+}
 
 /// Send a paired-device packet and validate the response with a
 /// permissive matcher. This replaces the C `write_check` for the
@@ -908,6 +1126,371 @@ mod tests {
             );
             assert!(result.is_err(), "expected Err, got {:?}", result);
             assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
+    }
+
+    // ========================================================================
+    // Media / volume / audio-routing command tests. Bytes are taken from
+    // live captures against two SoundLink Color II speakers and from
+    // DEVELOPMENT.md.
+    //
+    // These tests are hermetic: they use `UnixStream` to drive the
+    // protocol side and verify the byte sequence is correct *regardless*
+    // of whether the real Bose firmware still emits the same bytes in
+    // the future. If a future firmware revision changes a header byte
+    // the test will fail loudly, which is the desired signal.
+    // ========================================================================
+
+    mod media_volume_tests {
+        // The closures below look like `|c| get_active_device(c)`,
+        // which clippy flags as a redundant closure. They aren't —
+        // the closure is required to fix the generic `BoseIo` type
+        // parameter to `UnixStream`. Suppress the lint for this
+        // module.
+        #![allow(clippy::redundant_closure)]
+
+        use super::*;
+        use crate::types::MediaKey;
+        use std::io::{Read, Write};
+        use std::os::unix::net::UnixStream;
+        use std::sync::mpsc;
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        /// Drive `client_op` on a fresh `UnixStream` pair, with
+        /// `device_side` simulating the Bose device in a background
+        /// thread. `device_side` runs with a 5-second hard timeout so
+        /// a buggy client can't hang the test forever.
+        fn drive<F, G, R>(device_side: G, client_op: F) -> R
+        where
+            F: FnOnce(&mut UnixStream) -> R + Send + 'static,
+            G: FnOnce(&mut UnixStream) + Send + 'static,
+            R: Send + 'static,
+        {
+            let (mut client, mut server) = UnixStream::pair().expect("UnixStream::pair");
+            let (tx, rx) = mpsc::channel();
+
+            let server_handle = thread::spawn(move || {
+                let _result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    device_side(&mut server);
+                }));
+                let _ = tx.send(());
+            });
+
+            let client_result = client_op(&mut client);
+            drop(client);
+
+            // Give the server thread up to 5 s to finish naturally.
+            // If it doesn't, just leave it; the OS will reap it when
+            // the test process exits. Don't `join()` — that would
+            // mask a buggy protocol function that hangs.
+            let _ = rx.recv_timeout(Duration::from_secs(5));
+            let _ = server_handle.join();
+            client_result
+        }
+
+        /// Drain whatever the client sent, then write `reply` back.
+        /// The drain reads up to 64 bytes, which is enough for every
+        /// command in this module (longest send is 5 bytes).
+        fn reply(server: &mut UnixStream, reply: &[u8]) {
+            let mut buf = [0u8; 64];
+            let _ = server.read(&mut buf);
+            if !reply.is_empty() {
+                server.write_all(reply).unwrap();
+                server.flush().ok();
+            }
+        }
+
+        // ---- set_volume ----
+
+        #[test]
+        fn set_volume_succeeds_when_device_echoes_level() {
+            // Live capture: sent `05 05 02 01 0a`, received
+            // `05 05 03 02 64 0a` (100 volume steps, volume 10).
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x0a]),
+                move |c| set_volume(c, 0x0a),
+            );
+            let steps = result.expect("set_volume failed");
+            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
+        }
+
+        #[test]
+        fn set_volume_succeeds_at_volume_zero() {
+            // Live capture: sent `05 05 02 01 00`, received
+            // `05 05 03 02 64 00` (100 volume steps, volume 0 / muted).
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x00]),
+                move |c| set_volume(c, 0x00),
+            );
+            let steps = result.expect("set_volume failed");
+            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
+        }
+
+        #[test]
+        fn set_volume_succeeds_at_max_level() {
+            // Live capture on a SoundLink Color II: 99 is the highest
+            // level it accepts (`05 05 03 02 64 63`).
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x63]),
+                move |c| set_volume(c, 0x63),
+            );
+            let steps = result.expect("set_volume failed");
+            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
+        }
+
+        #[test]
+        fn set_volume_rejects_wrong_header() {
+            // Reply starts with the wrong subsystem — must be rejected.
+            let result = drive(
+                move |s| reply(s, &[0x06, 0x05, 0x03, 0x02, 0x64, 0x0a]),
+                move |c| set_volume(c, 0x0a),
+            );
+            assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
+
+        #[test]
+        fn set_volume_rejects_echo_mismatch() {
+            // Reply echoes volume 5 even though we asked for 10.
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x05]),
+                move |c| set_volume(c, 0x0a),
+            );
+            // The echo mismatch surfaces as `unconfirmed(...)`, not
+            // `AckMismatch` — verify it's *some* error.
+            assert!(result.is_err(), "expected error, got {:?}", result);
+        }
+
+        #[test]
+        fn set_volume_out_of_range_is_device_error_and_stream_stays_in_sync() {
+            // Live capture on a SoundLink Color II: `05 05 02 01 80`
+            // is answered with the ERROR packet `05 05 04 01 06`. The
+            // error payload must be consumed so that the next request
+            // on the same connection reads its own reply.
+            let result = drive(
+                move |s| {
+                    reply(s, &[0x05, 0x05, 0x04, 0x01, 0x06]);
+                    reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x14]);
+                },
+                move |c| (set_volume(c, 0x80), set_volume(c, 0x14)),
+            );
+            assert!(
+                matches!(
+                    result.0,
+                    Err(BoseError::DeviceError {
+                        block: 0x05,
+                        function: 0x05,
+                        code: 0x06
+                    })
+                ),
+                "got {:?}",
+                result.0
+            );
+            assert_eq!(result.1.expect("second set_volume failed"), 100);
+        }
+
+        // ---- send_media_key ----
+
+        #[test]
+        fn send_media_key_pause() {
+            // Live capture for `05 03 05 01 01` (toggle play/pause):
+            // two-packet ACK. Verified live on both White and Black
+            // speakers — sending the toggle while paused resumes,
+            // sending it while playing pauses.
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x03, 0x07, 0x00, 0x05, 0x03, 0x06, 0x00]),
+                move |c| send_media_key(c, MediaKey::Pause),
+            );
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        }
+
+        #[test]
+        fn send_media_key_next() {
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x03, 0x07, 0x00, 0x05, 0x03, 0x06, 0x00]),
+                move |c| send_media_key(c, MediaKey::Next),
+            );
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        }
+
+        #[test]
+        fn send_media_key_previous() {
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x03, 0x07, 0x00, 0x05, 0x03, 0x06, 0x00]),
+                move |c| send_media_key(c, MediaKey::Previous),
+            );
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        }
+
+        #[test]
+        fn send_media_key_rejects_wrong_first_packet() {
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x03, 0x06, 0x00, 0x05, 0x03, 0x06, 0x00]),
+                move |c| send_media_key(c, MediaKey::Pause),
+            );
+            assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
+
+        #[test]
+        fn send_media_key_rejects_wrong_final_ack() {
+            // First packet is correct, second (final ACK) is wrong.
+            let result = drive(
+                move |s| reply(s, &[0x05, 0x03, 0x07, 0x00, 0x05, 0x03, 0x04, 0x00]),
+                move |c| send_media_key(c, MediaKey::Pause),
+            );
+            assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
+
+        // ---- get_active_device ----
+
+        #[test]
+        fn get_active_device_returns_bt_address() {
+            // Live capture: sent `05 01 01 00`, received
+            // `05 01 03 09 00 02 01 d4 6d 6d 17 4d a4`
+            // (active source = D4:6D:6D:17:4D:A4).
+            let result = drive(
+                move |s| {
+                    reply(
+                        s,
+                        &[
+                            0x05, 0x01, 0x03, 0x09, 0x00, 0x02, 0x01, 0xd4, 0x6d, 0x6d, 0x17, 0x4d,
+                            0xa4,
+                        ],
+                    )
+                },
+                move |c| get_active_device(c),
+            );
+            let addr = result.expect("get_active_device failed");
+            assert_eq!(
+                addr,
+                BdAddr {
+                    b: [0xd4, 0x6d, 0x6d, 0x17, 0x4d, 0xa4]
+                },
+                "got {addr:?}"
+            );
+        }
+
+        #[test]
+        fn get_active_device_rejects_wrong_header() {
+            let result = drive(
+                move |s| {
+                    reply(
+                        s,
+                        &[
+                            0x05, 0x02, 0x03, 0x09, 0x00, 0x02, 0x01, 0xd4, 0x6d, 0x6d, 0x17, 0x4d,
+                            0xa4,
+                        ],
+                    )
+                },
+                move |c| get_active_device(c),
+            );
+            assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
+
+        // ---- get_device_bd_addr ----
+
+        #[test]
+        fn get_device_bd_addr_returns_speakers_own_address() {
+            // Live capture from the White speaker: sent `00 06 01 00`,
+            // received `00 06 03 06 04 52 c7 ba 68 0d`
+            // (own address = 04:52:C7:BA:68:0D).
+            let result = drive(
+                move |s| {
+                    reply(
+                        s,
+                        &[0x00, 0x06, 0x03, 0x06, 0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d],
+                    )
+                },
+                move |c| get_device_bd_addr(c),
+            );
+            let addr = result.expect("get_device_bd_addr failed");
+            assert_eq!(
+                addr,
+                BdAddr {
+                    b: [0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d]
+                },
+                "got {addr:?}"
+            );
+        }
+
+        #[test]
+        fn get_device_bd_addr_rejects_wrong_header() {
+            let result = drive(
+                move |s| {
+                    reply(
+                        s,
+                        &[0x00, 0x07, 0x03, 0x06, 0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d],
+                    )
+                },
+                move |c| get_device_bd_addr(c),
+            );
+            assert!(matches!(result, Err(BoseError::AckMismatch)));
+        }
+
+        /// Sanity-check: all four new command functions must return
+        /// promptly. If this test takes more than 1 second, the read
+        /// loop in any of the new functions has regressed to the bug
+        /// fixed in `tests/send_packet_timeout.rs`.
+        #[test]
+        fn all_commands_return_promptly() {
+            const BUDGET: Duration = Duration::from_millis(500);
+
+            let start = Instant::now();
+            let _ = drive(
+                move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x0a]),
+                move |c| set_volume(c, 0x0a),
+            );
+            assert!(
+                start.elapsed() < BUDGET,
+                "set_volume took {:?}",
+                start.elapsed()
+            );
+
+            let start = Instant::now();
+            let _ = drive(
+                move |s| reply(s, &[0x05, 0x03, 0x07, 0x00, 0x05, 0x03, 0x06, 0x00]),
+                move |c| send_media_key(c, MediaKey::Pause),
+            );
+            assert!(
+                start.elapsed() < BUDGET,
+                "send_media_key took {:?}",
+                start.elapsed()
+            );
+
+            let start = Instant::now();
+            let _ = drive(
+                move |s| {
+                    reply(
+                        s,
+                        &[
+                            0x05, 0x01, 0x03, 0x09, 0x00, 0x02, 0x01, 0xd4, 0x6d, 0x6d, 0x17, 0x4d,
+                            0xa4,
+                        ],
+                    )
+                },
+                move |c| get_active_device(c),
+            );
+            assert!(
+                start.elapsed() < BUDGET,
+                "get_active_device took {:?}",
+                start.elapsed()
+            );
+
+            let start = Instant::now();
+            let _ = drive(
+                move |s| {
+                    reply(
+                        s,
+                        &[0x00, 0x06, 0x03, 0x06, 0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d],
+                    )
+                },
+                move |c| get_device_bd_addr(c),
+            );
+            assert!(
+                start.elapsed() < BUDGET,
+                "get_device_bd_addr took {:?}",
+                start.elapsed()
+            );
         }
     }
 }

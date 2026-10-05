@@ -80,3 +80,46 @@ Get Music Status:
 < 05 02 04 01 0c
 # Sent if unknown music
 ```
+
+SoundLink Color II findings
+---------------------------
+
+Verified on two SoundLink Color II speakers (firmware 4.0.1) with a raw
+RFCOMM client that reads *every* byte of each reply.
+
+**The speaker powers off after its 9th RFCOMM connection.** Counting from
+power-on, a few seconds after the 9th connection to channel 8 is closed
+the speaker beeps and switches itself off; it has to be put on charge to
+power on again. Reproduced four times. It does not depend on what is
+sent (read-only battery queries are enough), on the spacing between
+connections (7 s and 30 s both fail at the 9th), or on the Bluetooth
+link: disconnecting and reconnecting the speaker does not reset the
+count, only powering it off does. A single connection kept open for
+minutes with many requests is fine.
+
+Every CLI invocation opens and closes one connection, so on this speaker
+a handful of commands in a row is enough to switch it off. Long-lived
+clients (the GUI) should keep one connection open.
+
+Media keys (`05 03 05 01 xx`): every key is answered with two packets,
+`05 03 07 00` (processing) then `05 03 06 00` (result). `01` toggles
+play/pause, `03` is next, `04` is previous (restarts the current track
+when it has been playing for a few seconds, like a physical button).
+`02` is acknowledged the same way but has no visible effect on the
+player, whether it is playing or paused.
+
+Volume (`05 05 02 01 xx`):
+
+```text
+> 05 05 02 01 14
+< 05 05 03 02 64 14
+# 64: number of volume steps (100, so the range is 00..63)
+# 14: the volume now set
+> 05 05 02 01 64
+< 05 05 04 01 06
+# ERROR packet (operator 04): out-of-range level
+```
+
+The `64` byte is not the battery level: it stays `64` whatever the level,
+and `64` itself is the first value rejected. The QC35 value above
+(`19`, 25 steps for a `00..18` range) fits the same reading.

@@ -200,6 +200,46 @@ struct Cli {
         "connect_device", "disconnect_device", "remove_device",
     ])]
     send_packet: Option<String>,
+
+    /// Set the volume. The range is device-specific (0..=99 on a SoundLink Color II)
+    #[arg(long = "set-volume", value_name = "LEVEL", conflicts_with_all = &[
+        "info", "device_status", "firmware_version", "serial_number", "battery_level",
+        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
+        "prompt_language", "voice_prompts", "pairing", "self_voice",
+        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "send_media_key", "active_device", "device_bd_addr",
+    ])]
+    set_volume: Option<u8>,
+
+    /// Send a media key. key: pause (play/pause), next, prev
+    #[arg(long = "send-media-key", value_name = "KEY", conflicts_with_all = &[
+        "info", "device_status", "firmware_version", "serial_number", "battery_level",
+        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
+        "prompt_language", "voice_prompts", "pairing", "self_voice",
+        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "set_volume", "active_device", "device_bd_addr",
+    ])]
+    send_media_key: Option<String>,
+
+    /// Print the active audio source's BT address.
+    #[arg(long = "active-device", conflicts_with_all = &[
+        "info", "device_status", "firmware_version", "serial_number", "battery_level",
+        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
+        "prompt_language", "voice_prompts", "pairing", "self_voice",
+        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "set_volume", "send_media_key", "device_bd_addr",
+    ])]
+    active_device: bool,
+
+    /// Print the device's BT address.
+    #[arg(long = "device-bd-addr", conflicts_with_all = &[
+        "info", "device_status", "firmware_version", "serial_number", "battery_level",
+        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
+        "prompt_language", "voice_prompts", "pairing", "self_voice",
+        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "set_volume", "send_media_key", "active_device",
+    ])]
+    device_bd_addr: bool,
 }
 
 fn main() -> ExitCode {
@@ -300,6 +340,23 @@ fn dispatch(cli: Cli) -> Result<()> {
         do_paired_op_verify(&mut device, "remove", addr, |d, a| d.remove_device(a))?;
     } else if let Some(hex) = cli.send_packet.as_deref() {
         do_send_packet(&mut device, hex)?;
+    } else if let Some(level) = cli.set_volume {
+        let steps = device.set_volume(level)?;
+        println!(
+            "Volume: {} (device range 0..={})",
+            level,
+            steps.saturating_sub(1)
+        );
+    } else if let Some(key) = cli.send_media_key.as_deref() {
+        let parsed = parse_media_key(key)?;
+        device.send_media_key(parsed)?;
+        println!("Sent media key: {:?}", parsed);
+    } else if cli.active_device {
+        let addr = device.active_device()?;
+        println!("Active device: {}", format_address(&addr));
+    } else if cli.device_bd_addr {
+        let addr = device.device_bd_addr()?;
+        println!("Device BD addr: {}", format_address(&addr));
     } else {
         // No command flag. The C code prints the usage on bare
         // invocation; mirror that.
@@ -684,6 +741,11 @@ fn parse_pairing(s: &str) -> Result<bool> {
 fn parse_self_voice(s: &str) -> Result<SelfVoice> {
     bose_connect::SelfVoice::from_arg(s)
         .ok_or_else(|| anyhow::anyhow!("invalid self voice argument: {s}"))
+}
+
+fn parse_media_key(s: &str) -> Result<bose_connect::MediaKey> {
+    bose_connect::MediaKey::from_arg(s)
+        .ok_or_else(|| anyhow::anyhow!("invalid media key argument: {s}"))
 }
 
 fn parse_address(s: &str) -> Result<BdAddr> {
