@@ -17,7 +17,7 @@ cargo build --workspace --release --locked
 ```
 
 Locally these also cover the graphical user interface (GUI) crate,
-which needs the development files of GTK (the GIMP Toolkit) 4.22,
+which needs the development files of the widget toolkit (GTK) 4.22,
 libadwaita 1.9 and GLib 2.88. CI runs them on `ubuntu-latest` with
 `--exclude bose-connect-gui` (its GTK is too old) and checks the GUI
 separately in an Arch Linux container (the `gui` job).
