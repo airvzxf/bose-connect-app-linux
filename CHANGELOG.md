@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
-## [0.2.0] - 2026-10-05
+## [0.2.0][] - 2026-10-05
 
 ### Added
 
@@ -58,7 +58,7 @@ the project uses [Semantic Versioning](https://semver.org/).
   volume scale, which each product treats differently; see the table
   in `DEVELOPMENT.md`.
 
-## [0.1.0] - 2026-09-27
+## [0.1.0][] - 2026-09-27
 
 First Rust release: a port of the original C implementation, with the
 `bose-connect` library, the `bose-connect-app-linux` CLI and a C FFI
