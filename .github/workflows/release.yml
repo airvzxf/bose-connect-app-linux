@@ -199,7 +199,7 @@ jobs:
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@9b18e7b8b8b56e2e8218c9219b1611f6cde7c4b8 # v2.3.2
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           name: ${{ needs.validate-tag-input.outputs.tag }}
           # Explicit, so a workflow_dispatch run releases the tag and
