@@ -43,6 +43,11 @@ cover the Rust migration + CI/CD.
     - [ ] Media keys on the QC Ultra: find what the Bose app sends
           (every `05 03 05 01 xx` gets ERROR `0c`).
 
+- [ ] **Architecture idea: device profiles** (not a decision).
+    - [ ] Spike [`docs/ideas/device-profiles.md`](docs/ideas/device-profiles.md)
+          before building anything: answer its open questions and
+          compare alternatives.
+
 - [ ] **Documentation.**
     - [ ] Move DEVELOPMENT.md's protocol-analysis content into a
           `docs/protocol.md` and add Rust snippets.
