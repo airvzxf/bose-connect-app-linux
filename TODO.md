@@ -37,9 +37,9 @@ cover the Rust migration + CI/CD.
           operator byte `04` is ERROR (code `0b`), so the speaker may
           be rejecting the request. Needs a hardware test (does the
           source actually connect?) before changing the matcher.
-    - [ ] Once the QC Ultra PR (#60) lands, fold `read_reply_header`
-          into its `read_response`: two readers now handle ERROR
-          replies for different commands.
+    - [ ] Fold `read_reply_header` (set_volume, send_media_key) into
+          `read_response` (#60): two readers now handle ERROR replies
+          for different commands.
     - [ ] Media keys on the QC Ultra: find what the Bose app sends
           (every `05 03 05 01 xx` gets ERROR `0c`).
 
