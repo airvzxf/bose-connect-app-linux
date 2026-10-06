@@ -232,6 +232,12 @@ impl SelfVoice {
 /// (firmware 4.0.1) the speaker acknowledges it like the other keys,
 /// but the source's player sees nothing — neither play nor pause,
 /// whether it was playing or paused.
+///
+/// Works on the SoundLink Color II (4.0.1) and the QC35 II (4.8.1).
+/// The QC Ultra (1.6.7) answers every key with the ERROR packet
+/// `05 03 04 01 0c`, whether the player is playing or paused, so
+/// [`crate::send_media_key`] returns [`crate::BoseError::DeviceError`]
+/// there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MediaKey {

@@ -113,16 +113,40 @@ Volume (`05 05 02 01 xx`):
 ```text
 > 05 05 02 01 14
 < 05 05 03 02 64 14
-# 64: number of volume steps (100, so the range is 00..63)
+# 64: top of the volume scale (100)
 # 14: the volume now set
 > 05 05 02 01 64
 < 05 05 04 01 06
 # ERROR packet (operator 04): out-of-range level
 ```
 
-The `64` byte is not the battery level: it stays `64` whatever the level,
-and `64` itself is the first value rejected. The QC35 value above
-(`19`, 25 steps for a `00..18` range) fits the same reading.
+The first byte is not the battery level: it never changes with the level
+or the battery. It is the top of the volume scale, but devices treat it
+differently:
+
+| Device                     | Scale byte | Accepted | Above the range        |
+| -------------------------- | ---------- | -------- | ---------------------- |
+| QC35 II, firmware 4.8.1    | `19` (25)  | `00..19` | ERROR `05 05 04 01 06` |
+| QC Ultra, firmware 1.6.7   | `1f` (31)  | `00..1f` | clamped to `1f`        |
+| SoundLink Color II, 4.0.1  | `64` (100) | `00..63` | ERROR `05 05 04 01 06` |
+
+The QC35 range above (`00 <= xx <= 18`) is off by one: `19` is accepted.
+
+Device status (`01 01 05 00`) on a QC35 II with firmware 4.8.1 returns
+more packets than the C parser expected (`01 09` and `01 0b` among
+them), which is why `--info` failed on it before the header-based
+reply parser (#60):
+
+```text
+< 01 01 07 00
+< 01 02 03 12 00 <name>
+< 01 03 03 05 a6 00 04 cf de
+< 01 04 03 01 14
+< 01 06 03 02 01 0b
+< 01 09 03 04 10 04 01 07
+< 01 0b 03 03 01 01 0f
+< 01 01 06 00
+```
 
 QuietComfort Ultra Headphones
 -----------------------------
@@ -186,3 +210,9 @@ Audio modes:
 > 1f 03 05 02 xx 00                 # Switch to the audio mode of slot xx
 < 1f 03 06 01 xx
 ```
+
+Media keys: every key (`01` to `04`) is answered with `05 03 04 01 0c`
+(ERROR, code `0c`), whether the player is playing or paused, while the
+same packets work on the QC35 II and the SoundLink Color II. Once, right
+after an audio-mode change, `01` did start playback; that was not
+reproducible.
