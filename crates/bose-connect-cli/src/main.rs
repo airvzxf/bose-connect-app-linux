@@ -218,7 +218,7 @@ struct Cli {
     ])]
     send_packet: Option<String>,
 
-    /// Set the volume. The range is device-specific (0..=99 on a SoundLink Color II)
+    /// Set the volume. The range is device-specific (e.g. 0..=25 on a QC35 II)
     #[arg(long = "set-volume", value_name = "LEVEL", conflicts_with_all = &[
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
@@ -372,12 +372,8 @@ fn dispatch(cli: Cli) -> Result<()> {
     } else if let Some(hex) = cli.send_packet.as_deref() {
         do_send_packet(&mut device, hex)?;
     } else if let Some(level) = cli.set_volume {
-        let steps = device.set_volume(level)?;
-        println!(
-            "Volume: {} (device range 0..={})",
-            level,
-            steps.saturating_sub(1)
-        );
+        let max = device.set_volume(level)?;
+        println!("Volume: {} (device scale max {})", level, max);
     } else if let Some(key) = cli.send_media_key.as_deref() {
         let parsed = parse_media_key(key)?;
         device.send_media_key(parsed)?;

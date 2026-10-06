@@ -223,10 +223,11 @@ impl BoseDevice {
         set_self_voice(&mut self.conn, level)
     }
 
-    /// Set the speaker's local volume level. Returns the number of
-    /// volume steps the device supports (valid levels are
-    /// `0..steps`: 100 on the SoundLink Color II). An out-of-range
-    /// level fails with [`BoseError::DeviceError`].
+    /// Set the device's local volume level. Returns the top of the
+    /// device's volume scale (25 on a QC35 II, 31 on a QC Ultra, 100
+    /// on a SoundLink Color II, which accepts at most 99). An
+    /// out-of-range level fails with [`BoseError::DeviceError`], or
+    /// [`BoseError::UnconfirmedValue`] on a device that clamps it.
     pub fn set_volume(&mut self, level: u8) -> BoseResult<u8> {
         set_volume(&mut self.conn, level)
     }

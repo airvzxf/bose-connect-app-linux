@@ -107,19 +107,12 @@ const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
 
 /// `set_volume` request — subsystem 0x05, opcode 0x05, command
 /// 0x02 (SET), length 0x01, payload = volume level. The valid range
-/// is device-specific and reported by the device itself (see
-/// [`SET_VOLUME_ACK_PREFIX`]): `0..=99` on the SoundLink Color II,
-/// `0..=24` on the QC35 per DEVELOPMENT.md. Out-of-range levels are
-/// rejected with the ERROR packet `05 05 04 01 06`.
+/// is device-specific; see [`SET_VOLUME_ACK_PREFIX`].
 const SET_VOLUME_SEND_PREFIX: [u8; 4] = [0x05, 0x05, 0x02, 0x01];
 
 /// Response header for `set_volume`. The full response is 6 bytes:
-/// `[0x05, 0x05, 0x03, 0x02, levels, volume_echo]`. `levels` is the
-/// number of volume steps the device supports (`0x64` = 100 on the
-/// SoundLink Color II, `0x19` = 25 on the QC35), so the highest valid
-/// level is `levels - 1`. It is *not* the battery level: verified on
-/// hardware by sweeping the level, the byte stayed `0x64` and 100 was
-/// the first value rejected.
+/// `[0x05, 0x05, 0x03, 0x02, max, volume_echo]`; see [`set_volume`]
+/// for what `max` means on each device.
 const SET_VOLUME_ACK_PREFIX: [u8; 4] = [0x05, 0x05, 0x03, 0x02];
 
 /// Media-key request — subsystem 0x05, opcode 0x03, operator 0x05,
@@ -376,13 +369,25 @@ pub fn get_battery_level<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
 }
 
 /// No C counterpart (see the packet-constant comment above). Sets the
-/// speaker's local volume level.
+/// device's local volume level.
 ///
-/// The device responds with `[0x05, 0x05, 0x03, 0x02, levels,
+/// The device responds with `[0x05, 0x05, 0x03, 0x02, max,
 /// volume_echo]`. We verify the volume echo matches `level` and
-/// return `levels`, the number of volume steps the device supports
-/// (valid levels are `0..levels`). The range is not checked here:
-/// an out-of-range level comes back as [`BoseError::DeviceError`].
+/// return `max`, the top of the device's volume scale. It is *not*
+/// the battery level: it never changes with the level or the battery.
+/// How devices treat it differs (verified on hardware):
+///
+/// | Device                     | `max`        | Accepted | Above the range         |
+/// | -------------------------- | ------------ | -------- | ----------------------- |
+/// | QC35 II (fw 4.8.1)         | `0x19` (25)  | `0..=25` | ERROR `05 05 04 01 06`  |
+/// | QC Ultra (fw 1.6.7)        | `0x1f` (31)  | `0..=31` | clamped to 31, no error |
+/// | SoundLink Color II (4.0.1) | `0x64` (100) | `0..=99` | ERROR `05 05 04 01 06`  |
+///
+/// So `max` is the highest accepted level except on the SoundLink
+/// Color II, which rejects it. The range is not checked here: an
+/// out-of-range level comes back as [`BoseError::DeviceError`], or, on
+/// a device that clamps instead (QC Ultra), as
+/// [`BoseError::UnconfirmedValue`].
 pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
     let send = [
         SET_VOLUME_SEND_PREFIX[0],
@@ -400,7 +405,7 @@ pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
 
     let mut payload = [0u8; 2];
     io.bose_read_exact(&mut payload)?;
-    // payload[0] = number of volume steps. payload[1] = the volume
+    // payload[0] = top of the volume scale. payload[1] = the volume
     // level the device now has, which should equal `level` on success.
     if payload[1] != level {
         return Err(unconfirmed(level, payload[1]));
@@ -1346,25 +1351,25 @@ mod tests {
         #[test]
         fn set_volume_succeeds_when_device_echoes_level() {
             // Live capture: sent `05 05 02 01 0a`, received
-            // `05 05 03 02 64 0a` (100 volume steps, volume 10).
+            // `05 05 03 02 64 0a` (scale max 100, volume 10).
             let result = drive(
                 move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x0a]),
                 move |c| set_volume(c, 0x0a),
             );
-            let steps = result.expect("set_volume failed");
-            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
+            let max = result.expect("set_volume failed");
+            assert_eq!(max, 100, "expected scale max 100, got {max}");
         }
 
         #[test]
         fn set_volume_succeeds_at_volume_zero() {
             // Live capture: sent `05 05 02 01 00`, received
-            // `05 05 03 02 64 00` (100 volume steps, volume 0 / muted).
+            // `05 05 03 02 64 00` (scale max 100, volume 0 / muted).
             let result = drive(
                 move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x00]),
                 move |c| set_volume(c, 0x00),
             );
-            let steps = result.expect("set_volume failed");
-            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
+            let max = result.expect("set_volume failed");
+            assert_eq!(max, 100, "expected scale max 100, got {max}");
         }
 
         #[test]
@@ -1375,8 +1380,8 @@ mod tests {
                 move |s| reply(s, &[0x05, 0x05, 0x03, 0x02, 0x64, 0x63]),
                 move |c| set_volume(c, 0x63),
             );
-            let steps = result.expect("set_volume failed");
-            assert_eq!(steps, 100, "expected 100 steps, got {steps}");
+            let max = result.expect("set_volume failed");
+            assert_eq!(max, 100, "expected scale max 100, got {max}");
         }
 
         #[test]
