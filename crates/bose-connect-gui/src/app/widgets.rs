@@ -399,7 +399,10 @@ pub fn show_about_dialog(parent: &impl glib::object::IsA<gtk::Window>) {
         .application_name("Bose Connect")
         .developer_name("airvzxf")
         .version(env!("CARGO_PKG_VERSION"))
-        .comments("Control de auriculares y altavoces Bose sobre RFCOMM Bluetooth en Linux.\nMotor de protocolo: bose-connect v0.1.0")
+        .comments(concat!(
+            "Control de auriculares y altavoces Bose sobre RFCOMM Bluetooth en Linux.\nMotor de protocolo: bose-connect v",
+            env!("CARGO_PKG_VERSION")
+        ))
         .website("https://github.com/airvzxf/bose-connect-app-linux")
         .issue_url("https://github.com/airvzxf/bose-connect-app-linux/issues")
         .license_type(gtk::License::Gpl30)
@@ -1139,7 +1142,7 @@ impl OverviewPage {
         ver_row.set_title("Versiones del sistema");
         ver_row.add_prefix(&Image::from_icon_name("system-software-update-symbolic"));
         let ver_lbl = Label::new(Some(&format!(
-            "bose-connect-gui v{}  ·  bose-connect v0.1.0",
+            "bose-connect-gui v{0}  ·  bose-connect v{0}",
             env!("CARGO_PKG_VERSION")
         )));
         ver_lbl.set_selectable(true);

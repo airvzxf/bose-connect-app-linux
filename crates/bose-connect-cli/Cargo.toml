@@ -3,6 +3,8 @@ name = "bose-connect-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+# Not published to crates.io; only the `bose-connect` library is.
+publish = false
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

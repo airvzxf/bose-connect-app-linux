@@ -26,7 +26,8 @@ cd "$repo_root"
 cargo build --workspace --release --locked
 
 # 2. Spot-check the version output.
-./target/release/bose-connect-gui --version | grep -q '^bose-connect-gui 0\.1\.0$'
+version=$(cargo pkgid -p bose-connect-gui | sed 's/.*[#@]//')
+./target/release/bose-connect-gui --version | grep -qx "bose-connect-gui ${version}"
 
 # 3. Capture the StatusNotifierWatcher `Register` call on the
 #    session bus. Run `dbus-monitor` in the background so it

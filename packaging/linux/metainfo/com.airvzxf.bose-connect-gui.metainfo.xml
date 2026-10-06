@@ -52,6 +52,11 @@
     <binary>bose-connect-gui</binary>
   </provides>
   <releases>
+    <release version="0.2.0" date="2026-10-05" urgency="medium">
+      <description>
+        <p>Redesigned single-page control panel (still a mockup: it runs on a simulated device and is not yet connected to the library), with volume and media-transport controls. The protocol library adds volume, media keys, active-source and own-address commands, and QC Ultra Headphones support.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-09-27" urgency="medium">
       <description>
         <p>First GUI release. Hero battery card, four setting tiles, four profiles, paired-devices panel, and a live activity log. KDE Plasma 6 libnotify integration verified end-to-end. Tray icon and BlueZ discovery are scaffolded; full D-Bus bindings land in a follow-up.</p>

@@ -28,7 +28,7 @@ fn main() {
     // downstream C/C++ project that `#include`s the generated header
     // in environments without the kernel uapi headers installed.
     if let Err(e) = pkg_config::probe("bluez") {
-        eprintln!(
+        println!(
             "cargo:warning=libbluetooth (BlueZ) headers not found via pkg-config: {e}. \
              The Rust crate builds without them, but downstream C/C++ \
              consumers of `bose_connect.h` will need `bluez-libs` (Arch) \
@@ -46,7 +46,7 @@ fn main() {
 
     let config = if config_path.exists() {
         cbindgen::Config::from_file(&config_path).unwrap_or_else(|e| {
-            eprintln!(
+            println!(
                 "cargo:warning=cbindgen.toml exists but failed to parse ({e}); \
                  falling back to defaults"
             );
@@ -63,17 +63,23 @@ fn main() {
                 "cargo:rustc-env=BOSE_CONNECT_HEADER_PATH={}",
                 header_path.display()
             );
-            // Also drop a copy at the crate root so consumers browsing
-            // the source tree can see the C surface.
-            let repo_header = crate_dir.join("bose_connect.h");
-            if let Ok(bindings_text) = fs::read_to_string(&header_path) {
-                let _ = fs::write(&repo_header, bindings_text);
+            // Inside the git checkout, also drop a copy at the crate
+            // root so the source tree shows the C surface (release.yml
+            // attaches it). Never when building the packaged crate
+            // (crates.io, docs.rs, `cargo publish` verification): build
+            // scripts must not write outside OUT_DIR, and docs.rs
+            // mounts the source read-only.
+            if crate_dir.join("../../.git").exists() {
+                let repo_header = crate_dir.join("bose_connect.h");
+                if let Ok(bindings_text) = fs::read_to_string(&header_path) {
+                    let _ = fs::write(&repo_header, bindings_text);
+                }
             }
         }
         Err(e) => {
             // `cbindgen` failures are not fatal: the Rust crate still
             // builds. We surface a warning so maintainers see it.
-            eprintln!("cargo:warning=cbindgen failed to generate header: {e}");
+            println!("cargo:warning=cbindgen failed to generate header: {e}");
         }
     }
 }
