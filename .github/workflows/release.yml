@@ -146,55 +146,28 @@ jobs:
 
       - name: 'Sanity: cbindgen header is well-formed'
         # `cargo doc` exercises the build.rs and would surface any
-        # cbindgen misconfiguration as a build failure. Also runs
-        # `cargo package` to verify the crate metadata is
-        # publishable (publish is dry-run; actual publish is the
-        # next step).
+        # cbindgen misconfiguration as a build failure. `cargo package`
+        # (with verification) builds the library exactly as crates.io
+        # and docs.rs will, before anything is published.
         run: |
           cargo doc --no-deps --workspace --exclude bose-connect-gui
-          cargo package --workspace --exclude bose-connect-gui --no-verify
-
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          set -euo pipefail
-          # `cargo publish` is one-shot per crate; the workspace
-          # publishes each member in dependency order. The
-          # `bose-connect` library has no internal deps so it
-          # publishes first; `bose-connect-cli` is a binary and is
-          # not published.
-          cargo publish -p bose-connect --locked --no-verify
-          # Wait briefly for crates.io index propagation so a
-          # downstream consumer who watches this release can pull
-          # the new version immediately.
-          sleep 30
+          cargo package -p bose-connect --locked
 
       - name: Build release artefacts
-        # Build the CLI binary and the C-ABI library so the
-        # release page has everything a downstream consumer needs.
+        # Build everything the release ships *before* publishing to
+        # crates.io, so a build failure cannot leave a published crate
+        # without a matching GitHub Release.
         run: |
           set -euo pipefail
           cargo build --release --locked -p bose-connect-cli
+          # rlib + cdylib (libbose_connect.so), per the crate's [lib].
           cargo build --release --locked -p bose-connect --lib
-          # Also build a staticlib target for C/C++ consumers who
-          # link the FFI library statically.
-          cargo build --release --locked -p bose-connect \
-            --target x86_64-unknown-linux-gnu \
-            --lib \
-            --crate-type staticlib,cdylib
+          # Static library for C/C++ consumers. `--crate-type` is a
+          # `cargo rustc` flag; `cargo build` does not accept it.
+          cargo rustc --release --locked -p bose-connect --lib --crate-type staticlib
           ls -la target/release/bose-connect-app-linux \
                  target/release/libbose_connect.so \
-                 target/release/libbose_connect.a \
-                 target/x86_64-unknown-linux-gnu/release/libbose_connect.a
-
-      - name: Generate the C header at the tag
-        run: |
-          set -euo pipefail
-          # The build.rs already generates `bose_connect.h` next
-          # to the crate's Cargo.toml at every build. Copy it
-          # into a stable path for the release artefact.
-          cp crates/bose-connect/bose_connect.h bose_connect.h
+                 target/release/libbose_connect.a
 
       - name: Stage release artefacts
         run: |
@@ -203,20 +176,40 @@ jobs:
           cp target/release/bose-connect-app-linux release/
           cp target/release/libbose_connect.so release/
           cp target/release/libbose_connect.a release/
-          cp target/x86_64-unknown-linux-gnu/release/libbose_connect.a release/libbose_connect-static.a
-          cp bose_connect.h release/
-          (cd release && sha256sum -b * > SHA256SUMS)
+          # build.rs writes the cbindgen header next to the crate when
+          # building inside the git checkout.
+          cp crates/bose-connect/bose_connect.h release/
+          (cd release && sha256sum -b -- * > SHA256SUMS)
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Only the library is published; the CLI and the GUI are
+          # `publish = false`. Idempotent so a re-run (for example
+          # after a failed GitHub Release step) does not fail on
+          # "version already exists".
+          VERSION="$(cargo pkgid -p bose-connect | sed 's/.*[#@]//')"
+          if curl -fsS -A "bose-connect release workflow" \
+               "https://crates.io/api/v1/crates/bose-connect/${VERSION}" >/dev/null 2>&1; then
+            echo "bose-connect ${VERSION} is already on crates.io; skipping publish"
+          else
+            cargo publish -p bose-connect --locked
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@9b18e7b8b8b56e2e8218c9219b1611f6cde7c4b8 # v2.3.2
         with:
           name: ${{ needs.validate-tag-input.outputs.tag }}
+          # Explicit, so a workflow_dispatch run releases the tag and
+          # not the branch it was dispatched from.
+          tag_name: ${{ needs.validate-tag-input.outputs.tag }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
             release/bose-connect-app-linux
             release/libbose_connect.so
             release/libbose_connect.a
-            release/libbose_connect-static.a
             release/bose_connect.h
             release/SHA256SUMS

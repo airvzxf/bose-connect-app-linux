@@ -7,9 +7,9 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.85"
 license = "GPL-3.0-only"
 authors = ["Israel Roldan <israel.alberto.rv@gmail.com>"]
 repository = "https://github.com/airvzxf/bose-connect-app-linux"
@@ -29,7 +29,7 @@ clap = { version = "4", features = ["derive"] }
 cbindgen = "0.29"
 
 # Crate-specific paths
-bose-connect = { path = "crates/bose-connect", version = "0.1.0" }
+bose-connect = { path = "crates/bose-connect", version = "0.2.0" }
 
 [profile.release]
 opt-level = 3
