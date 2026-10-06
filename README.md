@@ -126,7 +126,8 @@ Usage: bose-connect-app-linux [options] <address>
   --remove-device=<address>
     Remove the device at address from the pairing list.
   -m <mode>, --audio-mode=<mode>
-    Change the audio mode (QC Ultra).  mode: quiet, aware, immersion, or a slot index
+    Change the audio mode (QC Ultra).
+    mode: quiet, aware, immersion, or a slot index
   --channel=<channel>
     Use this RFCOMM channel instead of the automatic choice (8, then 2).
 ```
@@ -222,7 +223,8 @@ back to it automatically (`--channel` forces one). Their audio
 modes replace the noise-cancelling levels:
 
 ```bash
-bose-connect-app-linux AA:BB:CC:DD:EE:FF --audio-mode aware   # or quiet, immersion, or a slot index
+# mode: quiet, aware, immersion, or a slot index
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --audio-mode aware
 ```
 
 Supported: `--info`, `--device-status` (including the current

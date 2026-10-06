@@ -57,8 +57,9 @@ from the C source files in the `main` branch's git history:
 
 The replies are the exception: `protocol.rs` parses every reply
 from its `block, function, operator, length` header instead of a
-fixed-size ACK, because the QC Ultra Headphones (device id
-`0x4066`) send longer payloads for the same functions. The
+fixed-size acknowledgement (ACK), because the QuietComfort (QC)
+Ultra Headphones (device id `0x4066`) send longer payloads for the
+same functions. The
 audio-mode functions (block `0x1f`), the RFCOMM channel fallback
 (8, then 2) and the connection retry have no C counterpart; their
 byte sequences were captured from a real QC Ultra Headphones on
