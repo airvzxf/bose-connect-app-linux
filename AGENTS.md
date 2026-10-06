@@ -150,7 +150,8 @@ Security / code-scanning tabs only.
 
 Publishing to crates.io uses trusted publishing: the `publish` job
 runs in the `release` environment (deployment rules: `v*` tags and
-`main`) and exchanges its OIDC token for a 30-minute crates.io token
+`main`) and exchanges its OpenID Connect (OIDC) token for a
+30-minute crates.io token
 with `rust-lang/crates-io-auth-action`. The crate's trusted publisher
 on crates.io is bound to `airvzxf/bose-connect-app-linux`,
 `release.yml` and the `release` environment; renaming the workflow
