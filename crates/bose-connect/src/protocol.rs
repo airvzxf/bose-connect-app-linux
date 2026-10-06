@@ -8,6 +8,12 @@
 //! `[0x01, 0x02, 0x02, ANY]`", the Rust code sends exactly the same
 //! bytes in the same order.
 //!
+//! Replies are read as `block, function, operator, length` followed
+//! by `length` payload bytes rather than compared against fixed-size
+//! ACKs: the QC Ultra Headphones send the same packets with longer
+//! payloads. The audio-mode functions (block `0x1f`) are new and were
+//! captured from a QC Ultra Headphones on firmware 1.6.7.
+//!
 //! The protocol functions are **generic** over [`crate::io::BoseIo`]:
 //! production code passes a `Connection` (RFCOMM socket) and tests
 //! pass a `UnixStream` pair. This keeps the byte-level guarantees
@@ -24,8 +30,9 @@ use crate::error::{unconfirmed, BoseError, BoseResult};
 use crate::io::BoseIo;
 use crate::types::{
     AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, MediaKey, NoiseCancelling, Pairing,
-    PromptLanguage, SelfVoice, MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NOISE_CANCELLING_0C,
-    NOISE_CANCELLING_14, NOISE_CANCELLING_20, VP_ENABLE_BIT, VP_MASK,
+    PromptLanguage, SelfVoice, MAX_AUDIO_MODES, MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES,
+    NOISE_CANCELLING_0C, NOISE_CANCELLING_14, NOISE_CANCELLING_20, QC_ULTRA_HEADPHONES,
+    VP_ENABLE_BIT, VP_MASK,
 };
 
 // Re-export the helper that wraps CN_BASE_PACK_LEN + MAX_NAME_LEN - 1
@@ -50,23 +57,11 @@ const BYTES_POSITION_11: usize = 11;
 const GET_DEVICE_ID_SEND: [u8; 4] = [0x00, 0x03, 0x01, 0x00];
 const GET_DEVICE_ID_ACK: [u8; 4] = [0x00, 0x03, 0x03, 0x03];
 
-const GET_NAME_ACK: [u8; 5] = [0x01, 0x02, 0x03, 0x00, 0x00];
-const GET_NAME_MASK: [u8; 5] = [0xff, 0xff, 0xff, 0x00, 0xff];
-
 const SET_NAME_SEND_PREFIX: [u8; 4] = [0x01, 0x02, 0x02, 0x00];
-
-const GET_PROMPT_LANGUAGE_ACK: [u8; 9] = [0x01, 0x03, 0x03, 0x05, 0x00, 0x00, 0x00, 0x00, 0xde];
-const GET_PROMPT_LANGUAGE_MASK: [u8; 9] = [0xff, 0xff, 0xff, 0xff, 0x00, 0xff, 0x00, 0x00, 0xff];
 
 const SET_PROMPT_LANGUAGE_SEND: [u8; 5] = [0x01, 0x03, 0x02, 0x01, 0x00];
 
-const GET_AUTO_OFF_ACK: [u8; 5] = [0x01, 0x04, 0x03, 0x01, 0x00];
-const GET_AUTO_OFF_MASK: [u8; 5] = [0xff, 0xff, 0xff, 0xff, 0x00];
-
 const SET_AUTO_OFF_SEND: [u8; 5] = [0x01, 0x04, 0x02, 0x01, 0x00];
-
-const GET_NOISE_CANCELLING_ACK: [u8; 6] = [0x01, 0x06, 0x03, 0x02, 0x00, 0x0b];
-const GET_NOISE_CANCELLING_MASK: [u8; 6] = [0xff, 0xff, 0xff, 0xff, 0x00, 0xff];
 
 const SET_NOISE_CANCELLING_SEND: [u8; 5] = [0x01, 0x06, 0x02, 0x01, 0x00];
 
@@ -76,13 +71,11 @@ const GET_DEVICE_STATUS_ACK: [u8; 4] = [0x01, 0x01, 0x07, 0x00];
 const GET_DEVICE_STATUS_FINAL_ACK: [u8; 4] = [0x01, 0x01, 0x06, 0x00];
 
 const GET_FIRMWARE_VERSION_SEND: [u8; 4] = [0x00, 0x05, 0x01, 0x00];
-const GET_FIRMWARE_VERSION_ACK: [u8; 4] = [0x00, 0x05, 0x03, 0x05];
 
 const GET_SERIAL_NUMBER_SEND: [u8; 4] = [0x00, 0x07, 0x01, 0x00];
 const GET_SERIAL_NUMBER_ACK: [u8; 3] = [0x00, 0x07, 0x03];
 
 const GET_BATTERY_LEVEL_SEND: [u8; 4] = [0x02, 0x02, 0x01, 0x00];
-const GET_BATTERY_LEVEL_ACK: [u8; 4] = [0x02, 0x02, 0x03, 0x01];
 
 const GET_PAIRED_DEVICES_SEND: [u8; 4] = [0x04, 0x04, 0x01, 0x00];
 const GET_PAIRED_DEVICES_ACK: [u8; 3] = [0x04, 0x04, 0x03];
@@ -111,9 +104,6 @@ const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
 // `[block, function, 0x04, len, code…]` instead of the usual STATUS
 // (0x03) / RESULT (0x06) reply; see `read_reply_header`.
 // ---------------------------------------------------------------------------
-
-/// Operator byte of an ERROR reply.
-const OP_ERROR: u8 = 0x04;
 
 /// `set_volume` request — subsystem 0x05, opcode 0x05, command
 /// 0x02 (SET), length 0x01, payload = volume level. The valid range
@@ -191,10 +181,28 @@ const REMOVE_DEVICE_SEND_PREFIX: [u8; 4] = [0x04, 0x03, 0x05, 6];
 #[allow(dead_code)]
 const REMOVE_DEVICE_ACK_PREFIX: [u8; 4] = [0x04, 0x03, 0x06, 6];
 
+// Audio modes (function block 0x1f). Only present on the newer
+// "Bose app" generation (QC Ultra Headphones); captured from a real
+// QC Ultra Headphones on firmware 1.6.7.
+const GET_AUDIO_MODE_SEND: [u8; 4] = [0x1f, 0x03, 0x01, 0x00];
+const SET_AUDIO_MODE_SEND_PREFIX: [u8; 4] = [0x1f, 0x03, 0x05, 0x02];
+const GET_AUDIO_MODE_CONFIG_SEND_PREFIX: [u8; 4] = [0x1f, 0x06, 0x01, 0x01];
+/// Offset of the NUL-padded mode name inside a `1f 06` payload.
+const AUDIO_MODE_NAME_OFFSET: usize = 6;
+/// Width of the NUL-padded mode name field.
+const AUDIO_MODE_NAME_LEN: usize = 32;
+/// Name the device reports for an unused audio-mode slot.
+const AUDIO_MODE_EMPTY_NAME: &str = "None";
+
+// Operator byte (packet byte 2) of the device's replies.
+const OP_STATUS: u8 = 0x03;
+const OP_ERROR: u8 = 0x04;
+const OP_RESULT: u8 = 0x06;
+const OP_PROCESSING: u8 = 0x07;
+
 const BT_ADDR_LEN: usize = 6;
 const CN_BASE_PACK_LEN: usize = 4;
 const MAX_BT_PACK_LEN_T: usize = crate::types::MAX_BT_PACK_LEN;
-const VER_STR_LEN_T: usize = crate::types::VER_STR_LEN;
 const MAX_SERIAL_SIZE_T: usize = crate::types::MAX_SERIAL_SIZE;
 const MAX_NAME_LEN_T: usize = t::MAX_NAME_LEN;
 const MAX_NAME_PACK_LEN: usize = MAX_NAME_PACK_LEN_HELPER;
@@ -218,13 +226,34 @@ pub fn has_noise_cancelling(device_id: u16) -> bool {
 /// the 1 s `SO_RCVTIMEO` × 3 retry budget on a command the
 /// device will never answer).
 ///
-/// Conservative allow-list: only the QC35 series (device IDs
-/// `0x4014` and `0x4020`) is known to expose self-voice. The
+/// Conservative allow-list: the QC35 series (device IDs `0x4014`
+/// and `0x4020`) and the QC Ultra Headphones (`0x4066`, same
+/// packet format, verified on hardware) expose self-voice. The
 /// SoundLink II (`0x400d`) does not. If a new device is found
 /// to support self-voice, add its device ID here and the CLI's
 /// pre-flight check will start allowing the command.
 pub fn has_self_voice(device_id: u16) -> bool {
-    matches!(device_id, NOISE_CANCELLING_14 | NOISE_CANCELLING_20)
+    matches!(
+        device_id,
+        NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | QC_ULTRA_HEADPHONES
+    )
+}
+
+/// `has_audio_modes` is true for devices that replace the
+/// noise-cancelling levels with named audio modes (Quiet, Aware,
+/// Immersion, …) in function block `0x1f`. Only the QC Ultra
+/// Headphones (`0x4066`) are known so far.
+pub fn has_audio_modes(device_id: u16) -> bool {
+    matches!(device_id, QC_ULTRA_HEADPHONES)
+}
+
+/// `has_legacy_settings` is false for devices whose prompt-language
+/// and auto-off payloads do not use the 1-byte QC35 layout. On those
+/// devices the `set_prompt_language` / `set_voice_prompts` /
+/// `set_auto_off` packets are not known to be correct, so the CLI
+/// refuses them instead of writing a guessed value.
+pub fn has_legacy_settings(device_id: u16) -> bool {
+    !matches!(device_id, QC_ULTRA_HEADPHONES)
 }
 
 /// `has_pairing_toggle` is a new predicate that does not exist
@@ -314,12 +343,12 @@ pub fn set_name<I: BoseIo>(io: &mut I, name: &str) -> BoseResult<()> {
 }
 
 /// `int get_firmware_version(int sock, char version[VER_STR_LEN])` in
-/// `based.c`. Returns a 5-character firmware version string (the
-/// 6-byte buffer holds 5 chars plus a NUL).
+/// `based.c`. The QC35 returns a 5-character version (`"1.3.2"`);
+/// newer devices return a longer one (`"1.6.7+g6ebabd2"` on the QC
+/// Ultra), so the length is taken from the reply header.
 pub fn get_firmware_version<I: BoseIo>(io: &mut I) -> BoseResult<String> {
-    io.bose_write_check(&GET_FIRMWARE_VERSION_SEND, &GET_FIRMWARE_VERSION_ACK)?;
-    let mut version = [0u8; VER_STR_LEN_T - 1];
-    io.bose_read_exact(&mut version)?;
+    io.bose_write_all(&GET_FIRMWARE_VERSION_SEND)?;
+    let version = read_response(io, 0x00, 0x05)?;
     Ok(String::from_utf8_lossy(&version).into_owned())
 }
 
@@ -337,11 +366,13 @@ pub fn get_serial_number<I: BoseIo>(io: &mut I) -> BoseResult<String> {
 
 /// `int get_battery_level(int sock, unsigned int *level)` in `based.c`.
 /// Returns the battery level as a percent (0..=100).
+///
+/// The QC35 replies with a 1-byte payload; the QC Ultra appends
+/// three more bytes (`64 ff ff 00`) that are ignored here.
 pub fn get_battery_level<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
-    io.bose_write_check(&GET_BATTERY_LEVEL_SEND, &GET_BATTERY_LEVEL_ACK)?;
-    let mut level = [0u8; 1];
-    io.bose_read_exact(&mut level)?;
-    Ok(level[0])
+    io.bose_write_all(&GET_BATTERY_LEVEL_SEND)?;
+    let payload = read_response(io, 0x02, 0x02)?;
+    payload.first().copied().ok_or(BoseError::AckMismatch)
 }
 
 /// No C counterpart (see the packet-constant comment above). Sets the
@@ -458,6 +489,12 @@ pub fn get_device_bd_addr<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
 /// `int get_device_status(int sock, char name[MAX_NAME_LEN], enum
 /// PromptLanguage *language, enum AutoOff *minutes, enum
 /// NoiseCancelling *level)` in `based.c`.
+///
+/// The device answers with a burst of settings packets framed by
+/// `01 01 07 00` and `01 01 06 00`. The C code expected a fixed
+/// sequence (name, language, auto-off, NC); newer devices send more
+/// packets, in a different order and with longer payloads, so each
+/// packet is parsed from its own header and unknown ones are skipped.
 pub fn get_device_status<I: BoseIo>(io: &mut I) -> BoseResult<DeviceStatusReport> {
     // get_device_status internally calls get_device_id first. We do
     // not want the caller to do it twice, so we factor that out.
@@ -470,25 +507,32 @@ pub fn get_device_status<I: BoseIo>(io: &mut I) -> BoseResult<DeviceStatusReport
         return Err(BoseError::AckMismatch);
     }
 
-    let name = get_name(io)?;
-    let language = get_prompt_language(io)?;
-    let minutes = get_auto_off(io)?;
-
-    let level = if has_noise_cancelling(device_id) {
-        get_noise_cancelling(io)?
-    } else {
-        NoiseCancelling::Dne
-    };
-
-    let mut final_ack = [0u8; 4];
-    io.bose_read_exact(&mut final_ack)?;
-    if final_ack != GET_DEVICE_STATUS_FINAL_ACK {
-        return Err(BoseError::AckMismatch);
+    let mut name = None;
+    let mut language = None;
+    let mut minutes = None;
+    let mut level = NoiseCancelling::Dne;
+    loop {
+        let (header, payload) = read_packet(io)?;
+        if header == GET_DEVICE_STATUS_FINAL_ACK {
+            break;
+        }
+        if header[0] != 0x01 || header[2] != OP_STATUS {
+            return Err(BoseError::AckMismatch);
+        }
+        match header[1] {
+            0x02 => name = Some(parse_name(&payload)?),
+            0x03 => language = Some(first_byte(&payload)?),
+            0x04 => minutes = parse_auto_off(&payload),
+            0x06 => level = parse_noise_cancelling(&payload)?,
+            // EQ, buttons, sidetone, … are not part of the report.
+            _ => {}
+        }
     }
 
     Ok(DeviceStatusReport {
-        name,
-        language,
+        device_id,
+        name: name.ok_or(BoseError::AckMismatch)?,
+        language: language.ok_or(BoseError::AckMismatch)?,
         minutes,
         level,
     })
@@ -497,6 +541,8 @@ pub fn get_device_status<I: BoseIo>(io: &mut I) -> BoseResult<DeviceStatusReport
 /// Aggregate return type for [`get_device_status`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceStatusReport {
+    /// Device id, as returned by [`get_device_id`].
+    pub device_id: u16,
     /// Device name as reported by the device.
     pub name: String,
     /// Voice-prompt language. The high bit (`VP_ENABLE_BIT`) carries
@@ -504,8 +550,10 @@ pub struct DeviceStatusReport {
     /// language code. Use [`PromptLanguage::from_u8`] and
     /// `byte & VP_ENABLE_BIT` to split.
     pub language: u8,
-    /// Auto-off value as raw minutes. `0` means "never".
-    pub minutes: u16,
+    /// Auto-off value as raw minutes. `Some(0)` means "never";
+    /// `None` means the device uses a payload layout this crate
+    /// does not decode (QC Ultra).
+    pub minutes: Option<u16>,
     /// Current noise-cancelling level, or [`NoiseCancelling::Dne`]
     /// if the device has no noise-cancelling hardware.
     pub level: NoiseCancelling,
@@ -553,8 +601,11 @@ pub fn set_auto_off<I: BoseIo>(io: &mut I, minutes: AutoOff) -> BoseResult<()> {
     io.bose_write_all(&send)?;
 
     let got = get_auto_off(io)?;
-    if got as u16 != minutes as u16 {
-        return Err(unconfirmed(minutes as u16, got as u16));
+    if got != Some(minutes as u16) {
+        return Err(unconfirmed(
+            minutes as u16,
+            got.map_or_else(|| "undecodable".to_string(), |m| m.to_string()),
+        ));
     }
     Ok(())
 }
@@ -693,6 +744,63 @@ pub fn get_device_info<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<Dev
     device.name[length] = 0;
 
     Ok(device)
+}
+
+/// Current audio mode index (QC Ultra). Resolve it to a name with
+/// [`get_audio_mode_name`].
+pub fn get_audio_mode<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
+    io.bose_write_all(&GET_AUDIO_MODE_SEND)?;
+    let payload = read_response(io, 0x1f, 0x03)?;
+    first_byte(&payload)
+}
+
+/// Name of the audio mode stored in slot `index`, or `None` if the
+/// slot is unused. Slots run from 0 to [`MAX_AUDIO_MODES`] - 1.
+pub fn get_audio_mode_name<I: BoseIo>(io: &mut I, index: u8) -> BoseResult<Option<String>> {
+    let mut send = [0u8; 5];
+    send[..4].copy_from_slice(&GET_AUDIO_MODE_CONFIG_SEND_PREFIX);
+    send[BYTES_POSITION_4] = index;
+    io.bose_write_all(&send)?;
+
+    let payload = read_response(io, 0x1f, 0x06)?;
+    if payload.len() < AUDIO_MODE_NAME_OFFSET + AUDIO_MODE_NAME_LEN || payload[0] != index {
+        return Err(BoseError::AckMismatch);
+    }
+    let field = &payload[AUDIO_MODE_NAME_OFFSET..AUDIO_MODE_NAME_OFFSET + AUDIO_MODE_NAME_LEN];
+    let end = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+    let name = String::from_utf8_lossy(&field[..end]).into_owned();
+    if name.is_empty() || name == AUDIO_MODE_EMPTY_NAME {
+        Ok(None)
+    } else {
+        Ok(Some(name))
+    }
+}
+
+/// Every configured audio mode as `(index, name)`, in slot order.
+pub fn get_audio_modes<I: BoseIo>(io: &mut I) -> BoseResult<Vec<(u8, String)>> {
+    let mut modes = Vec::new();
+    for index in 0..MAX_AUDIO_MODES {
+        if let Some(name) = get_audio_mode_name(io, index)? {
+            modes.push((index, name));
+        }
+    }
+    Ok(modes)
+}
+
+/// Switch to the audio mode in slot `index` (QC Ultra). The device
+/// answers with a RESULT packet carrying the new mode index.
+pub fn set_audio_mode<I: BoseIo>(io: &mut I, index: u8) -> BoseResult<()> {
+    let mut send = [0u8; 6];
+    send[..4].copy_from_slice(&SET_AUDIO_MODE_SEND_PREFIX);
+    send[BYTES_POSITION_4] = index;
+    // Byte 5 = 0: switch silently, without the voice-prompt announce.
+    io.bose_write_all(&send)?;
+
+    let got = first_byte(&read_response(io, 0x1f, 0x03)?)?;
+    if got != index {
+        return Err(unconfirmed(index, got));
+    }
+    Ok(())
 }
 
 /// `int connect_device(int sock, bdaddr_t address)` in `based.c`.
@@ -865,52 +973,84 @@ fn read_check<I: BoseIo>(io: &mut I, ack: &[u8], mask: Option<&[u8]>) -> BoseRes
     }
 }
 
-fn get_name<I: BoseIo>(io: &mut I) -> BoseResult<String> {
-    let mut buffer = [0u8; 5]; // GET_NAME_ACK length
-    io.bose_read_exact(&mut buffer)?;
-    if masked_memory_cmp(&GET_NAME_ACK, &buffer, &GET_NAME_MASK) != 0 {
-        return Err(BoseError::AckMismatch);
-    }
+/// Read one packet: the 4-byte header (`block, function, operator,
+/// length`) followed by `length` payload bytes.
+fn read_packet<I: BoseIo>(io: &mut I) -> BoseResult<([u8; 4], Vec<u8>)> {
+    let mut header = [0u8; 4];
+    io.bose_read_exact(&mut header)?;
+    let mut payload = vec![0u8; header[BYTES_POSITION_3] as usize];
+    io.bose_read_exact(&mut payload)?;
+    Ok((header, payload))
+}
 
-    let length = (buffer[BYTES_POSITION_3] - 1) as usize;
-    let mut name = vec![0u8; length];
-    io.bose_read_exact(&mut name)?;
-    Ok(String::from_utf8_lossy(&name).into_owned())
+/// Read the device's reply to a `block.function` request and return
+/// its payload, whatever its length. PROCESSING packets are skipped;
+/// an ERROR packet becomes [`BoseError::DeviceError`].
+fn read_response<I: BoseIo>(io: &mut I, block: u8, function: u8) -> BoseResult<Vec<u8>> {
+    loop {
+        let (header, payload) = read_packet(io)?;
+        if header[0] != block || header[1] != function {
+            return Err(BoseError::AckMismatch);
+        }
+        match header[BYTES_POSITION_2] {
+            OP_STATUS | OP_RESULT => return Ok(payload),
+            OP_PROCESSING => continue,
+            OP_ERROR => {
+                return Err(BoseError::DeviceError {
+                    block,
+                    function,
+                    code: payload.first().copied().unwrap_or(0),
+                })
+            }
+            _ => return Err(BoseError::AckMismatch),
+        }
+    }
+}
+
+fn first_byte(payload: &[u8]) -> BoseResult<u8> {
+    payload.first().copied().ok_or(BoseError::AckMismatch)
+}
+
+/// Name payload: a `0x00` byte followed by the name.
+fn parse_name(payload: &[u8]) -> BoseResult<String> {
+    match payload.split_first() {
+        Some((0x00, name)) => Ok(String::from_utf8_lossy(name).into_owned()),
+        _ => Err(BoseError::AckMismatch),
+    }
+}
+
+/// Auto-off payload. Only the 1-byte QC35 layout (minutes) is
+/// understood; the QC Ultra sends 3 bytes (`a0 00 05`) whose meaning
+/// is unknown.
+fn parse_auto_off(payload: &[u8]) -> Option<u16> {
+    match payload {
+        [minutes] => Some(*minutes as u16),
+        _ => None,
+    }
+}
+
+fn parse_noise_cancelling(payload: &[u8]) -> BoseResult<NoiseCancelling> {
+    let byte = first_byte(payload)?;
+    NoiseCancelling::from_u8(byte).ok_or(BoseError::InvalidArgument(format!(
+        "noise cancelling byte 0x{:02x} out of range",
+        byte
+    )))
+}
+
+fn get_name<I: BoseIo>(io: &mut I) -> BoseResult<String> {
+    parse_name(&read_response(io, 0x01, 0x02)?)
 }
 
 fn get_prompt_language<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
-    let mut buffer = [0u8; 9];
-    io.bose_read_exact(&mut buffer)?;
-    if masked_memory_cmp(&GET_PROMPT_LANGUAGE_ACK, &buffer, &GET_PROMPT_LANGUAGE_MASK) != 0 {
-        return Err(BoseError::AckMismatch);
-    }
-    Ok(buffer[BYTES_POSITION_4])
+    first_byte(&read_response(io, 0x01, 0x03)?)
 }
 
-fn get_auto_off<I: BoseIo>(io: &mut I) -> BoseResult<u16> {
-    let mut buffer = [0u8; 5];
-    io.bose_read_exact(&mut buffer)?;
-    if masked_memory_cmp(&GET_AUTO_OFF_ACK, &buffer, &GET_AUTO_OFF_MASK) != 0 {
-        return Err(BoseError::AckMismatch);
-    }
-    Ok(buffer[BYTES_POSITION_4] as u16)
+fn get_auto_off<I: BoseIo>(io: &mut I) -> BoseResult<Option<u16>> {
+    Ok(parse_auto_off(&read_response(io, 0x01, 0x04)?))
 }
 
 fn get_noise_cancelling<I: BoseIo>(io: &mut I) -> BoseResult<NoiseCancelling> {
-    let mut buffer = [0u8; 6];
-    io.bose_read_exact(&mut buffer)?;
-    if masked_memory_cmp(
-        &GET_NOISE_CANCELLING_ACK,
-        &buffer,
-        &GET_NOISE_CANCELLING_MASK,
-    ) != 0
-    {
-        return Err(BoseError::AckMismatch);
-    }
-    NoiseCancelling::from_u8(buffer[BYTES_POSITION_4]).ok_or(BoseError::InvalidArgument(format!(
-        "noise cancelling byte 0x{:02x} out of range",
-        buffer[BYTES_POSITION_4]
-    )))
+    parse_noise_cancelling(&read_response(io, 0x01, 0x06)?)
 }
 
 // ---------------------------------------------------------------------------

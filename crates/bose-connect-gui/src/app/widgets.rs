@@ -846,7 +846,7 @@ impl OverviewPage {
         let ao_model = StringList::new(&ao_choices);
         ao_row.set_model(Some(&ao_model));
 
-        let current_ao = match model.snapshot.as_ref().map(|s| s.status.minutes) {
+        let current_ao = match model.snapshot.as_ref().and_then(|s| s.status.minutes) {
             Some(0) => 0,
             Some(5) => 1,
             Some(20) => 2,

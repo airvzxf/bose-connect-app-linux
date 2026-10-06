@@ -30,6 +30,12 @@
 //! counterpart. Their packets come from `DEVELOPMENT.md` and from live
 //! captures against a Bose SoundLink Color II (firmware 4.0.1).
 //!
+//! Replies are the exception: they are parsed from their own
+//! length header instead of fixed-size ACKs, so the variable-length
+//! payloads of the QC Ultra Headphones are accepted. The audio-mode
+//! functions have no C counterpart; see the "QuietComfort Ultra
+//! Headphones" section of `DEVELOPMENT.md`.
+//!
 //! ## Quick start
 //!
 //! ```no_run
@@ -59,16 +65,18 @@ pub use crate::connection::Connection;
 pub use crate::error::{BoseError, BoseResult};
 pub use crate::io::BoseIo;
 pub use crate::protocol::{
-    get_active_device, get_battery_level, get_device_bd_addr, get_device_id, get_device_info,
-    get_device_status, get_firmware_version, get_paired_devices, get_serial_number,
-    has_noise_cancelling, has_pairing_toggle, has_self_voice, send_media_key, set_auto_off,
-    set_name, set_noise_cancelling, set_pairing, set_prompt_language, set_self_voice,
+    get_active_device, get_audio_mode, get_audio_mode_name, get_audio_modes, get_battery_level,
+    get_device_bd_addr, get_device_id, get_device_info, get_device_status, get_firmware_version,
+    get_paired_devices, get_serial_number, has_audio_modes, has_legacy_settings,
+    has_noise_cancelling, has_pairing_toggle, has_self_voice, send_media_key, set_audio_mode,
+    set_auto_off, set_name, set_noise_cancelling, set_pairing, set_prompt_language, set_self_voice,
     set_voice_prompts, set_volume, DeviceStatusReport, PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, MediaKey,
-    NoiseCancelling, Pairing, PromptLanguage, SelfVoice, BOSE_CHANNEL, MAX_BT_PACK_LEN,
-    MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
+    NoiseCancelling, Pairing, PromptLanguage, SelfVoice, BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS,
+    MAX_AUDIO_MODES, MAX_BT_PACK_LEN, MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN,
+    VP_ENABLE_BIT, VP_MASK,
 };
 
 /// High-level driver: owns a `Connection` and exposes every
@@ -97,6 +105,14 @@ impl BoseDevice {
     pub fn open(address: &str) -> BoseResult<Self> {
         Ok(Self {
             conn: Connection::open(address)?,
+        })
+    }
+
+    /// Same as [`BoseDevice::open`], on a fixed RFCOMM `channel`
+    /// instead of the automatic channel selection.
+    pub fn open_channel(address: &str, channel: u8) -> BoseResult<Self> {
+        Ok(Self {
+            conn: Connection::open_channel(address, channel)?,
         })
     }
 
@@ -185,6 +201,21 @@ impl BoseDevice {
     /// Toggle pairing discoverability.
     pub fn set_pairing(&mut self, on: bool) -> BoseResult<()> {
         set_pairing(&mut self.conn, if on { Pairing::On } else { Pairing::Off })
+    }
+
+    /// Fetch the current audio-mode index (QC Ultra).
+    pub fn audio_mode(&mut self) -> BoseResult<u8> {
+        get_audio_mode(&mut self.conn)
+    }
+
+    /// Fetch every configured audio mode as `(index, name)`.
+    pub fn audio_modes(&mut self) -> BoseResult<Vec<(u8, String)>> {
+        get_audio_modes(&mut self.conn)
+    }
+
+    /// Switch to the audio mode in slot `index`.
+    pub fn set_audio_mode(&mut self, index: u8) -> BoseResult<()> {
+        set_audio_mode(&mut self.conn, index)
     }
 
     /// Set the self-voice (sidetone) level.

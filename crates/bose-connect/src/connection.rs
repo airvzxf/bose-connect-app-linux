@@ -18,7 +18,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::time::Duration;
 
 use crate::error::{BoseError, BoseResult};
-use crate::types::{BdAddr, BOSE_CHANNEL};
+use crate::types::{BdAddr, BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS};
 
 /// `BTPROTO_RFCOMM` is `3` on Linux/glibc. The `libc` crate does
 /// not export it (it's only available with the `extra_traits`
@@ -32,6 +32,11 @@ const BTPROTO_RFCOMM: libc::c_int = 3;
 pub(crate) const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 /// `SO_RCVTIMEO` for the RFCOMM socket. Mirrors the C `receive_timeout`.
 pub(crate) const RECEIVE_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Number of times a connection is attempted before giving up.
+pub(crate) const CONNECT_ATTEMPTS: usize = 3;
+/// Delay between two connection attempts.
+pub(crate) const CONNECT_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// `AF_BLUETOOTH` (Linux = 31). We define this here because the
 /// `libc` crate does not export AF_BLUETOOTH on every target — only
@@ -89,7 +94,32 @@ impl Connection {
     /// "AA:BB:CC:DD:EE:FF") and run the Bose protocol's
     /// `init_connection` handshake. Returns a ready-to-use
     /// [`Connection`] on success.
+    ///
+    /// Tries [`BOSE_CHANNEL`] first (QC35 and older), then each of
+    /// [`BOSE_FALLBACK_CHANNELS`] if the connection itself is
+    /// refused. Handshake failures are not retried on another
+    /// channel.
     pub fn open(address: &str) -> BoseResult<Self> {
+        with_connect_retries(|| {
+            let mut result = Self::connect_channel(address, BOSE_CHANNEL);
+            for &channel in &BOSE_FALLBACK_CHANNELS {
+                match result {
+                    Err(BoseError::Connect { .. }) => {
+                        result = Self::connect_channel(address, channel)
+                    }
+                    _ => break,
+                }
+            }
+            result
+        })
+    }
+
+    /// Same as [`Connection::open`], on a fixed RFCOMM `channel`.
+    pub fn open_channel(address: &str, channel: u8) -> BoseResult<Self> {
+        with_connect_retries(|| Self::connect_channel(address, channel))
+    }
+
+    fn connect_channel(address: &str, channel: u8) -> BoseResult<Self> {
         // 1. Parse the address. Mirrors `str2ba` validation.
         let addr = crate::address::parse_bdaddr_strict(address)?;
 
@@ -120,7 +150,7 @@ impl Connection {
         //    features on stable Rust. Byte-level control is also
         //    what the kernel expects (matters: the exact byte
         //    order of `sockaddr_rc`).
-        let sockaddr = build_sockaddr_rc(addr);
+        let sockaddr = build_sockaddr_rc(addr, channel);
         let res = unsafe {
             libc::connect(
                 fd.as_raw_fd(),
@@ -225,6 +255,26 @@ impl Write for Connection {
     }
 }
 
+/// Run `connect` until it succeeds or fails with something other
+/// than a refused connection, at most [`CONNECT_ATTEMPTS`] times.
+/// The QC Ultra refuses a new connection for about a second after
+/// the previous one closed.
+fn with_connect_retries<F>(mut connect: F) -> BoseResult<Connection>
+where
+    F: FnMut() -> BoseResult<Connection>,
+{
+    let mut attempt = 1;
+    loop {
+        match connect() {
+            Err(BoseError::Connect { .. }) if attempt < CONNECT_ATTEMPTS => {
+                attempt += 1;
+                std::thread::sleep(CONNECT_RETRY_DELAY);
+            }
+            result => return result,
+        }
+    }
+}
+
 fn set_timeout(fd: &OwnedFd, dur: Duration, which: &'static str) -> BoseResult<()> {
     let secs = dur.as_secs() as libc::time_t;
     let usecs = dur.subsec_micros() as libc::suseconds_t;
@@ -281,7 +331,7 @@ fn set_timeout(fd: &OwnedFd, dur: Duration, which: &'static str) -> BoseResult<(
 /// kernel sees the same wire representation the original C
 /// produced. The Bose protocol is unaffected: it operates on
 /// the MSB-first `BdAddr` directly, never touching this struct.
-fn build_sockaddr_rc(addr: BdAddr) -> SockaddrRc {
+fn build_sockaddr_rc(addr: BdAddr, channel: u8) -> SockaddrRc {
     let mut reversed = BdAddr::ANY;
     for i in 0..6 {
         // addr.b[0] is the MSB of the canonical address; we want
@@ -292,6 +342,6 @@ fn build_sockaddr_rc(addr: BdAddr) -> SockaddrRc {
     SockaddrRc {
         rc_family: AF_BLUETOOTH,
         rc_bdaddr: reversed,
-        rc_channel: BOSE_CHANNEL,
+        rc_channel: channel,
     }
 }

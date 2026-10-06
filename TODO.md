@@ -56,6 +56,13 @@ cover the Rust migration + CI/CD.
           *(All of these exist in the Rust crate now; the
           outstanding work is documentation + an example binary.)*
     - [ ] Set / get volume.
+    - [ ] QC Ultra Headphones: decode the auto-off (`01 04`,
+          `a0 00 05`) and prompt-language (`01 03`, 7 bytes)
+          payloads so `--auto-off`, `--prompt-language` and
+          `--voice-prompts` can be enabled on that device.
+    - [ ] QC Ultra Headphones: expose the equalizer (`01 07`,
+          bass / mid / treble in -10..=10) and create / edit
+          custom audio modes (`1f 06`).
     - [ ] Port to macOS (and maybe Windows). The Rust port is
           already portable; only the `connection.rs` BlueZ call
           needs a CoreBluetooth / WinRT shim.
