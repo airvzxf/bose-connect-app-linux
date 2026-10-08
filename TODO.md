@@ -36,27 +36,41 @@ cover the Rust migration + CI/CD.
           `packaging/linux/bash-completion/`). Fix the paths and
           build each package once.
 
-- [ ] **Protocol follow-ups (found in hardware tests, 2026-10-05).**
-    - [ ] `write_paired` still accepts the SoundLink Color II reply
-          `04 01 04 07 0b <addr>` to connect-device as success (the
-          constant `SLC2_CONNECT_DEVICE_ERROR_ACCEPTED`); every other
-          ERROR reply is now a `DeviceError`. Its operator byte `04`
-          is ERROR (code `0b`), so the speaker may be rejecting the
-          request. Needs a hardware test (does the source actually
-          connect?) before removing the exception.
+- [ ] **Protocol follow-ups (hardware tests 2026-10-05 and 2026-10-07).**
+          Captures: `docs/protocol.md`.
+    - [x] SoundLink Color II connect reply `04 01 04 07 0b`: ERROR
+          `0b` means "not a paired source" (seen for the device's own
+          and an unknown address on all three devices). It is a
+          `DeviceError` now.
+    - [x] Fold `read_reply_header` into `read_response` (#60). Every
+          reply, the C ones included, is read by header; notifications
+          of other functions are skipped and stale input is dropped
+          before each request.
+    - [x] The CLI no longer retries a paired-device operation after a
+          `DeviceError`.
     - [ ] `write_paired` treats "no reply before the receive timeout"
-          as success (SoundLink Color II remove-device). Check on
-          hardware whether a late reply arrives afterwards: on a
-          long-lived connection it would be read as the reply to
-          the next request.
-    - [x] Fold `read_reply_header` (set_volume, send_media_key) into
-          `read_response` (#60): one header-based reader now handles
-          every reply that is not a fixed C acknowledgement.
-    - [ ] The CLI retries a paired-device operation three times even
-          when the device answered with an ERROR packet; a
-          `DeviceError` will not change on retry.
-    - [ ] Media keys on the QC Ultra: find what the Bose app sends
-          (every `05 03 05 01 xx` gets ERROR `0c`).
+          as success (SoundLink Color II remove-device). Check whether
+          a late reply follows. Only test with a source you can pair
+          again.
+    - [ ] `set_self_voice` sends the C packet `01 0b 02 02 01 xx 38`,
+          whose last byte spills into the next request. Try
+          `01 0b 02 02 01 xx` on a QC35 II, then drop the `38`.
+    - [ ] QC Ultra media keys: after play/pause (`01`), which never
+          completes, every key and the phone's own controls lock until
+          the phone reconnects. The user also saw the lock after only
+          connecting the laptop. Test: unlock with the laptop
+          disconnected, check the phone's controls, connect the laptop
+          without sending anything, check again.
+    - [ ] QC Ultra language: changing it from the laptop is untested
+          (the setters clear bit `0x80`, which the device sets).
+    - [ ] QC Ultra: decode `1f 08`, `1f 02`, the audio-mode settings
+          bytes, and how the app creates custom modes (`1f 06` SET);
+          "Source / multipoint" settings; noise-cancelling level.
+    - [ ] `get_device_info` shows the SoundLink Color II Black's name
+          with a leading `01`: the garbage after the status byte is
+          probably 3 bytes there, not 2. Capture the raw reply.
+    - [ ] The QC Ultra sends no notifications to a second client. Find
+          out whether it needs a subscription request.
 
 - [ ] **Architecture idea: device profiles** (not a decision).
     - [ ] Spike [`docs/ideas/device-profiles.md`](docs/ideas/device-profiles.md)

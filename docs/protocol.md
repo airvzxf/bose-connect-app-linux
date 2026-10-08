@@ -19,6 +19,7 @@ Firmware-update notes (not part of the control protocol) stay in
 * [Block 04: paired devices](#block-04-paired-devices)
 * [Block 05: media and volume](#block-05-media-and-volume)
 * [Block 1f: audio modes (QC Ultra)](#block-1f-audio-modes-qc-ultra)
+* [Other blocks (QC Ultra)](#other-blocks-qc-ultra)
 * [Device notes](#device-notes)
 
 ## Conventions
@@ -45,26 +46,58 @@ Operators seen:
 | `07`     | PROCESSING | reply; more packets follow                  |
 
 The library reads every reply from its header (`check_reply` and
-`read_response` in `protocol.rs`): a packet for another
-`block.function` is a mismatch, ERROR becomes `BoseError::DeviceError`,
-PROCESSING is skipped. A few C-era commands still compare a fixed
-acknowledgement; they are marked "C" below.
+`read_response` in `protocol.rs`), including the commands whose C code
+compared a fixed acknowledgement; the bytes sent are the C ones. A
+packet for another `block.function` is a notification and is skipped,
+ERROR becomes `BoseError::DeviceError`, PROCESSING is skipped. Before
+each request the bytes still waiting in the socket are dropped
+(`BoseIo::bose_send`).
 
-Error codes seen:
+Error codes seen (first payload byte of an ERROR packet):
 
-| Code | Where                                                  |
-| ---- | ------------------------------------------------------ |
-| `06` | volume out of range (QC35 II, SoundLink Color II)      |
-| `08` | audio-mode slot 10 or above (QC Ultra)                 |
-| `0b` | connect-device on a SoundLink Color II (meaning unverified) |
-| `0c` | media keys (QC Ultra); music status with unknown music |
+| Code | Meaning (inferred)                 | Where                                                    |
+| ---- | ---------------------------------- | -------------------------------------------------------- |
+| `03` | block does not exist               | GET `xx 00` of an unknown block (QC Ultra)               |
+| `04` | function does not exist            | unknown functions (QC Ultra)                             |
+| `05` | function cannot be read this way   | e.g. `00 04`, `1f 01` (QC Ultra)                         |
+| `06` | value out of range                 | volume (QC35 II, SoundLink Color II), equalizer (QC Ultra) |
+| `08` | invalid slot / not available now   | audio-mode slot ≥ 10; `01 05` while the mode is modified (QC Ultra) |
+| `0b` | not a paired source                | connect to the device's own or an unknown address (all three) |
+| `0c` | function locked / busy             | media keys and the equalizer on the QC Ultra, see below; music status with unknown music |
+| `0d` | a started action failed            | connect to its own address, after PROCESSING (QC Ultra)  |
+| `18` | access denied                      | blocks `08`, `16`–`1a` (QC Ultra); probably need authentication |
+
+### Unsolicited packets
+
+Devices send packets nobody asked for, on the same connection:
+
+* the SoundLink Color II answers `05 05 02 01 14` (volume) twice;
+* `05 01` active-source changes after a connect or disconnect;
+* after a media key, the play state (`05 04`) and the new track
+  (`05 06`: title `00`, artist `01`, album `02`), sometimes twice:
+
+```text
+< 05 03 07 00  05 03 06 00
+< 05 04 03 03 01 00 c8
+< 05 06 07 00
+< 05 06 03 13 00 "Summertime Sadness"
+< 05 06 03 0d 01 "Lana Del Rey"
+< 05 06 03 35 02 "Born To Die - The Paradise Edition (Special Version)"
+< 05 06 06 00
+```
+
+The QC Ultra sent none of these to the laptop while the user paused
+and skipped tracks on the phone for 75 s (channel 1, Bose app on the
+phone holding channel 2): it seems to notify only the client that
+asked.
 
 ## Connection
 
 RFCOMM. The library tries channel 8 first (QC35, SoundLink Color II),
-then channel 2 (QC Ultra, SDP service "SPPS De"; channels 1 and 2 both
-answer there), and repeats that sequence up to 3 times, 1 s apart. The
-receive timeout is 1 s.
+then 2, then 1 (QC Ultra: SDP service "SPPS De" on channels 1 and 2,
+one client per channel; the phone's Bose app holds one of them,
+whichever it got first). It repeats that sequence up to 3 times, 1 s
+apart. The receive timeout is 1 s.
 
 Every connection starts with the handshake (C):
 
@@ -79,6 +112,8 @@ Limits observed:
   previous one closed.
 * The SoundLink Color II switches itself off after its 9th connection
   since power-on. See [SoundLink Color II](#soundlink-color-ii).
+* A SoundLink Color II keeps at most two connections. Asking it to
+  connect a third source drops one of the others, the laptop included.
 
 ## From Rust
 
@@ -211,14 +246,26 @@ Low 5 bits = language, bit 5 (`0x20`) = voice prompts on. Languages:
 `21` EN, `22` FR, `23` IT, `24` DE, `26` ES, `27` PT, `28` ZH, `29` KO,
 `2a` RU, `2b` PL, `2e` NL, `2f` JA, `32` SV.
 
-QC Ultra (1.6.7) sends 7 bytes; only the first is understood. The
-library refuses to set it there.
+QC Ultra (1.6.7) sends 7 bytes:
 
 ```text
 > 01 03 01 00
-< 01 03 03 07 e1 00 01 81 5e 01 01
-# Bit 6 and the other bytes are unknown.
+< 01 03 03 07 a6 00 01 81 5e 01 01
 ```
+
+| Byte    | Meaning                                                      |
+| ------- | ------------------------------------------------------------ |
+| 1, low 5 bits | language (`06` Spanish; `01` English in an older capture `e1`) |
+| 1, `0x20` | "Connections and phone calls" prompts (the voice-prompts bit) |
+| 1, `0x80`, `0x40` | unknown (`0x80` always set; `0x40` seen with English) |
+| 2–6     | unknown, constant (`00 01 81 5e 01`)                         |
+| 7       | "Battery level at power-on" prompt — `set_battery_prompt(on)` |
+
+Writes verified from a laptop: `01 03 02 01 86` (prompts off, the
+1-byte QC35 form) and `01 03 02 02 a6 00` / `a6 01` (battery prompt off
+/ on). The 7-byte write `01 03 02 07 …` changes byte 1 only. Changing
+the language itself has not been tried on the QC Ultra, so the CLI
+refuses `--prompt-language` there.
 
 ### `01 04` auto-off — `set_auto_off(minutes)`
 
@@ -228,12 +275,22 @@ library refuses to set it there.
 # mm: 00 never, 05, 14 (20), 28 (40), 3c (60), b4 (180) minutes
 ```
 
-QC Ultra (1.6.7), unknown layout; the library refuses to set it there:
+QC Ultra (1.6.7): 3 bytes, the minutes little-endian around a zero
+byte. Each value below was set in the app and read back, and 40
+minutes was then set from a laptop:
 
 ```text
 > 01 04 01 00
-< 01 04 03 03 a0 00 05
+< 01 04 03 03 05 00 00      # 5 minutes
+< 01 04 03 03 14 00 00      # 20
+< 01 04 03 03 b4 00 00      # 180
+< 01 04 03 03 a0 00 05      # 1440 (24 hours)
+< 01 04 03 03 00 00 00      # never
+> 01 04 02 03 28 00 00      # set 40 minutes
+< 01 04 03 03 28 00 00
 ```
+
+`set_auto_off` reads the layout first and writes the matching form.
 
 ### `01 06` noise cancelling — `set_noise_cancelling(level)`
 
@@ -245,15 +302,41 @@ QC Ultra (1.6.7), unknown layout; the library refuses to set it there:
 
 Only on product ids `4014`, `4020`, `400c` (`has_noise_cancelling`).
 
-### `01 07` equalizer (QC Ultra, read only)
+### `01 07` equalizer (QC Ultra) — `equalizer()`, `set_equalizer_band(band, value)`
 
 ```text
 > 01 07 01 00
 < 01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02
-# Per band: min (-10), max (10), current value, band (0 bass, 1 mid, 2 treble)
+# Per band: min (-10), max (10), current value (signed), band (0 bass, 1 mid, 2 treble)
+> 01 07 02 02 05 00         # bass +5
+< 01 07 03 0c f6 0a 05 00 f6 0a 00 01 f6 0a 00 02
+> 01 07 02 02 fd 02         # treble -3
 ```
 
-Not implemented yet.
+**Out of range locks it.** `01 07 02 02 0b 01` (mid +11) was answered
+with ERROR `06`; from then on every `01 07` request, read or write,
+got ERROR `0c`, and the Bose app showed "there was an error" for the
+equalizer, until the headphones were switched off and on. The library
+refuses values outside the reported range before sending.
+
+### `01 09` buttons: shortcut (QC Ultra) — `shortcut()`, `set_shortcut(action)`
+
+```text
+> 01 09 01 00
+< 01 09 03 07 80 09 03 00 09 40 0a
+# 80: right earcup volume strip, 09: touch and hold, 03: action,
+# 00 09 40 0a: unknown, constant
+> 01 09 02 03 80 09 13      # action: cycle immersive audio
+```
+
+Actions: `01` voice assistant, `03` battery level, `10` Spotify, `13`
+immersive audio, `0e` shortcut off. Turning the shortcut back on in
+the app always gives `03`, whatever it was before. The write was
+verified with the button itself.
+
+### `01 0a`, `01 0c` (QC Ultra)
+
+Read `07` and `01`; meaning unknown.
 
 ### `01 0b` self voice (C) — `set_self_voice(level)`
 
@@ -263,12 +346,23 @@ Not implemented yet.
 # xx: 00 off, 01 high, 02 medium, 03 low
 ```
 
-Same layout on the QC Ultra:
+The C request declares 2 payload bytes but carries 3: the device
+reads the trailing `38` as the start of the next request. On a QC
+Ultra the following read was answered with `38 01 04 01 03` (ERROR,
+block `38` does not exist). `01 0b 02 02 01 xx` without it works there
+("automatic voice" in the app). The C bytes stay until the fix is
+tried on a QC35.
+
+### `01 18`, `01 1b` on-head detection (QC Ultra)
 
 ```text
-> 01 0b 01 00
-< 01 0b 03 03 01 02 0f
+> 01 18 02 01 xx    # play/pause automatically when taken off / put on
+> 01 1b 02 01 xx    # answer calls when put on
+< 01 18 03 01 xx
+# xx: 00 off, 01 on
 ```
+
+`auto_play_pause()`, `auto_answer_calls()` and their setters.
 
 ## Block 02: battery
 
@@ -302,21 +396,39 @@ Same layout on the QC Ultra:
 
 ```text
 > 04 01 05 07 00 <addr>
-< 04 01 07 06 <addr>        # C acknowledgement
-< 04 01 04 07 0b <addr>     # SoundLink Color II 4.0.1: ERROR 0b
+< 04 01 07 06 <addr>               # PROCESSING (the C acknowledgement)
+  ... notifications (05 01 active source) ...
+< 04 01 06 07 <addr> cc            # RESULT, up to ~8 s later
 ```
 
-The library accepts the SoundLink Color II `0b` as success
-(`SLC2_CONNECT_DEVICE_ERROR_ACCEPTED`) until a hardware test shows
-whether the source really connects. Any other ERROR is a
-`DeviceError`.
+Captures on the SoundLink Color II and the QC35 II, reconnecting the
+phone: one to three RESULTs with `cc` = `01`, `05`, `07`, mixed with
+active-source notifications. A source that is already connected gets
+PROCESSING and `RESULT … 07` at once. Errors:
+
+```text
+< 04 01 04 07 0b <addr>            # not a paired source (own or unknown address)
+< 04 01 07 06 <addr>  04 01 04 07 0d <addr>   # QC Ultra, its own address
+```
+
+The library returns on the RESULT that carries the address, waiting
+up to 15 s, and reports any ERROR.
+
+**Side effects.** Asking a SoundLink Color II to connect a paired
+source that is switched off made it drop the laptop to free a slot
+and then announce "device not found". Asking the QC Ultra to connect
+its own address dropped the phone. After a disconnect and reconnect
+the phone's music stays paused, and once the speaker played nothing
+until the volume was touched.
 
 ### `04 02` disconnect a source — `disconnect_device(address)`
 
 ```text
 > 04 02 05 06 <addr>
 < 04 02 07 06 <addr>               # C acknowledgement
-< 04 02 07 00  04 02 06 06 <addr>  # SoundLink Color II 4.0.1: two packets
+< 04 02 07 00  04 02 07 06 <addr>  05 01 03 09 00 02 01 00 00 00 00 00 00  04 02 06 06 <addr>
+                                   # SoundLink Color II
+< 04 02 07 07 21 <addr>  05 01 …  04 02 06 06 <addr>     # QC35 II
 ```
 
 ### `04 03` forget a source — `remove_device(address)`
@@ -328,6 +440,7 @@ whether the source really connects. Any other ERROR is a
 ```
 
 The library treats "no byte before the receive timeout" as success.
+Whether a late reply follows is not known.
 
 ### `04 08` pairing mode (C) — `set_pairing(on)`
 
@@ -354,7 +467,7 @@ named below. None of them exists in the C code.
 ```
 
 The meaning of `00 02 01` is unknown; it was the same on every capture
-(SoundLink Color II 4.0.1).
+on the SoundLink Color II and the QC35 II; the QC Ultra sends `00 0f 01`.
 
 ### `05 02` music status (not implemented)
 
@@ -378,7 +491,6 @@ The meaning of `00 02 01` is unknown; it was the same on every capture
 > 05 03 05 01 xx
 # xx: 01 play/pause toggle, 03 next, 04 previous
 < 05 03 07 00  05 03 06 00     # QC35 II, SoundLink Color II
-< 05 03 04 01 0c               # QC Ultra 1.6.7: ERROR 0c
 ```
 
 SoundLink Color II (4.0.1): `04` restarts the current track when it has
@@ -386,9 +498,25 @@ been playing for a few seconds, like a physical button. `02` is
 acknowledged the same way but has no visible effect, whether the player
 is playing or paused.
 
-QC Ultra (1.6.7): every key `01` to `04` gets ERROR `0c`, playing or
-paused. Once, right after an audio-mode change, `01` did start playback;
-that was not reproducible. What the Bose app sends instead is not known.
+QC Ultra (1.6.7, 2026-10-07), with multipoint on, the phone playing
+and the laptop connected on channel 1:
+
+```text
+> 05 03 05 01 03               # next: the track changed
+< 05 03 07 01 03  05 03 06 01 03
+> 05 03 05 01 01               # play/pause: nothing happened
+< 05 03 07 01 01               # PROCESSING, never a RESULT
+> 05 03 05 01 xx               # any key afterwards, 00 to 0f
+< 05 03 04 01 0c
+```
+
+After the unanswered `01`, every key got ERROR `0c`, from new
+connections too, and the phone's own play, pause and skip stopped
+working, until the phone and headphones were disconnected and
+reconnected. The library refuses to send `01` to a QC Ultra from the
+CLI. The user noticed that media control on the phone also stopped
+once when the laptop connected, before any key was sent: whether the
+laptop connection alone causes it is open.
 
 ### `05 05` volume — `set_volume(level)`
 
@@ -426,13 +554,13 @@ Captured on firmware 1.6.7.
 ```text
 > 1f 03 01 00                       # Current audio mode — audio_mode()
 < 1f 03 03 01 xx
-# xx = slot index
+# xx = slot index; ff = the mode was modified (e.g. immersive audio
+#      changed away from the mode's own setting)
 
 > 1f 06 01 01 xx                    # Audio mode of slot xx — audio_modes()
 < 1f 06 03 2f xx 00 01 00 00 01 51 75 69 65 74 00 ...
 # 47-byte payload: slot index, 5 bytes of settings, the name NUL-padded
 # to 32 bytes ("Quiet"), then 9 more bytes of settings.
-# Slots 0, 1, 2 are Quiet, Aware, Immersion; slots 3 to 9 are named "None".
 < 1f 06 04 01 08                    # Error for slot 10 and above
 
 > 1f 03 05 02 xx 00                 # Switch to slot xx — set_audio_mode(xx)
@@ -440,7 +568,62 @@ Captured on firmware 1.6.7.
 # The last request byte 00 switches without the voice-prompt announce.
 ```
 
+The settings bytes of the three built-in modes:
+
+| Slot | Name      | Bytes 1–5          | Last 9 bytes                    |
+| ---- | --------- | ------------------ | ------------------------------- |
+| 0    | Quiet     | `00 01 00 00 01`   | `00 00 00 00 00 00 00 00 00`    |
+| 1    | Aware     | `00 02 00 00 01`   | `00 00 00 02 0a 00 00 00 00`    |
+| 2    | Immersion | `00 22 00 00 01`   | `00 00 00 00 00 00 02 00 00`    |
+| 3–9  | None      | `00 00 01 00 00`   | `00 00 00 0d 0a 00 00 01 00`    |
+
 Creating or editing modes (`1f 06` SET) is not known yet.
+
+Other functions of the block:
+
+```text
+> 1f 00 01 00   < 1f 00 03 05 "1.0.0"          # block version
+> 1f 02 01 00   < 1f 02 03 07 03 07 00 00 00 1f 02   # unknown
+> 1f 05 01 00   < 1f 05 03 01 01               # "Remember my mode" — remember_audio_mode()
+> 1f 08 01 00   < 1f 08 03 03 0a 00 07         # unknown
+```
+
+`1f 05 02 01 xx` sets "Remember my mode" (verified).
+
+## Other blocks (QC Ultra)
+
+A GET of function `00` of every block from `00` to `3f` (firmware
+1.6.7) answers the block version for `00`–`07`, `09`, `0d`, `12` and
+`1f` (all "1.1.0" except `03` "1.2.0" and `1f` "1.0.0"), ERROR `18`
+for `08` and `16`–`1a`, and ERROR `03` for the rest. A GET of every
+function `00`–`1f` of the existing blocks answered 111 times; the
+known ones are in the sections above. Some others:
+
+| Request    | Reply payload                                | Note                         |
+| ---------- | -------------------------------------------- | ---------------------------- |
+| `00 0c`    | 16 bytes                                     | an id                        |
+| `00 0f`    | "Bose QC Ultra Headphones"                   | product name                 |
+| `00 11`    | `00` + own address                           |                              |
+| `04 09`    | the laptop's address                         | the requesting device?       |
+| `05 0f`    | `00`/`01`/`02`                               | immersive audio, see below   |
+| `05 11`    | 98 bytes                                     | unknown                      |
+| `07 01`    | `08 73`                                      | unknown                      |
+| `0d 01`    | `1f 83`                                      | unknown                      |
+| `12 09`    | a PEM public key                             | authentication               |
+| `12 0c`    | "Lonestarr"                                  | platform codename            |
+| `12 0d`    | "OTG-QCC-384"                                | Qualcomm QCC384x chip        |
+
+### `05 0f` immersive audio — `immersive_audio()`, `set_immersive_audio(setting)`
+
+```text
+> 05 0f 01 00
+< 05 0f 03 01 xx
+# xx: 00 off, 01 still ("Fijo"), 02 motion ("Movimiento")
+> 05 0f 02 01 01    # set still: the app followed and the sound stayed in front
+```
+
+Any value other than the mode's own makes `1f 03` read `ff` and `01 05`
+answer ERROR `08`.
 
 ## Device notes
 
@@ -451,10 +634,14 @@ packets (above). Volume scale 25. Media keys work.
 
 ### QC Ultra Headphones
 
-Product `4066`, firmware 1.6.7. Channel 2. Longer payloads for firmware,
-battery, language and auto-off; no noise cancelling, audio modes
-instead. Volume scale 31, clamped. Media keys refused (`0c`). Refuses a
-new connection for about a second after the previous one.
+Product `4066`, firmware 1.6.7, codename "Lonestarr", Qualcomm
+QCC384x. Channels 2 and 1, one client each. Longer payloads for
+firmware, battery, language and auto-off; no noise cancelling, audio
+modes instead. Volume scale 31, clamped. "Next" works; play/pause
+locks media control (see block 05). With multipoint off it accepts
+one source at a time, so the laptop needs multipoint on to connect
+next to the phone. Refuses a new connection for about a second after
+the previous one. Sends no notifications to a second client.
 
 ### SoundLink Color II
 
@@ -476,5 +663,7 @@ a handful of commands in a row is enough to switch it off. Long-lived
 clients (the GUI) should keep one connection open.
 
 Media keys work; volume scale 100 with 99 the highest accepted level;
-the paired-device replies differ from the C acknowledgements (see block
-04).
+the volume reply comes twice; the paired-device replies differ from
+the C acknowledgements (see block 04). Keeps at most two connections.
+`device_info` returns the Black speaker's name with a leading `01`
+byte, so the 2-byte skip after the status is probably 3 bytes there.

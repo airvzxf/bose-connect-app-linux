@@ -107,7 +107,7 @@ Usage: bose-connect-app-linux [options] <address>
   -n <name>, --name=<name>
     Change the name of the device.
   -o <minutes>, --auto-off=<minutes>
-    Change the auto-off time.  minutes: never, 5, 20, 40, 60, 180
+    Change the auto-off time.  minutes: never, 5, 20, 40, 60, 180, 1440 (QC Ultra)
   -c <level>, --noise-cancelling=<level>
     Change the noise cancelling level.  level: high, low, off
   -l <language>, --prompt-language=<language>
@@ -228,13 +228,27 @@ modes replace the noise-cancelling levels:
 bose-connect-app-linux AA:BB:CC:DD:EE:FF --audio-mode aware
 ```
 
-Supported: `--info`, `--device-status` (including the current
-audio mode), `--firmware-version`, `--serial-number`,
+Supported: `--info`, `--device-status` (including the audio mode
+and the settings below), `--firmware-version`, `--serial-number`,
 `--battery-level`, `--paired-devices`, `--device-id`,
-`--audio-mode` and `--self-voice`. `--auto-off`,
-`--prompt-language` and `--voice-prompts` are refused because the
-QC Ultra's payloads for them differ from the QC35's and have not
-been decoded yet.
+`--audio-mode`, `--self-voice`, `--auto-off` (also `1440`, 24 hours),
+`--voice-prompts`, `--set-volume` (0 to 31) and
+`--send-media-key next|prev`. Settings only the QC Ultra has:
+
+```bash
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --equalizer bass=4,treble=-3   # -10..=10
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --immersive-audio still       # off, still, motion
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --battery-prompt off          # on, off
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --auto-play-pause on          # on, off
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --auto-answer off             # on, off
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --remember-mode on            # on, off
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --shortcut immersive          # battery, immersive, assistant, spotify, off
+```
+
+Refused on purpose: `--prompt-language` (the language write is
+untested there) and `--send-media-key pause` (on firmware 1.6.7 it
+locks media control until the phone reconnects). See
+[`docs/protocol.md`](docs/protocol.md) for the captures.
 
 ## Disclaimer
 
