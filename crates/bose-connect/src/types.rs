@@ -54,6 +54,9 @@ pub enum AutoOff {
     Min60 = 60,
     /// 180 minutes (3 hours).
     Min180 = 180,
+    /// 1440 minutes (24 hours). Only on devices with the 3-byte
+    /// auto-off layout (QC Ultra); the 1-byte layout cannot hold it.
+    Min1440 = 1440,
 }
 
 impl AutoOff {
@@ -68,6 +71,7 @@ impl AutoOff {
                 40 => Self::Min40,
                 60 => Self::Min60,
                 180 => Self::Min180,
+                1440 => Self::Min1440,
                 _ => return None,
             },
         })
@@ -234,10 +238,15 @@ impl SelfVoice {
 /// whether it was playing or paused.
 ///
 /// Works on the SoundLink Color II (4.0.1) and the QC35 II (4.8.1).
-/// The QC Ultra (1.6.7) answers every key with the ERROR packet
-/// `05 03 04 01 0c`, whether the player is playing or paused, so
-/// [`crate::send_media_key`] returns [`crate::BoseError::DeviceError`]
-/// there.
+///
+/// On the QC Ultra (1.6.7, captured 2026-10-07) `Next` works while the
+/// phone is playing (PROCESSING `05 03 07 01 03`, then RESULT
+/// `05 03 06 01 03`). `Pause` is answered with PROCESSING only and
+/// never completes; after it every key returns the ERROR packet
+/// `05 03 04 01 0c`, and the phone's own player controls stopped
+/// responding too, until the phone reconnected. Do not send `Pause`
+/// to a QC Ultra. Connecting the laptop may cause the same lock-up;
+/// that is not settled yet (see `TODO.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MediaKey {
@@ -437,3 +446,98 @@ pub(crate) const QC_ULTRA_HEADPHONES: u16 = 0x4066;
 /// here so any drift in the constants above shows up as a compile
 /// error at the definition site.
 pub const MAX_NAME_PACK_LEN_HELPER: usize = 4 + MAX_NAME_LEN - 1;
+
+/// Equalizer band of the QC Ultra (`01 07`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum EqBand {
+    /// Bass.
+    Bass = 0x00,
+    /// Mid.
+    Mid = 0x01,
+    /// Treble.
+    Treble = 0x02,
+}
+
+impl EqBand {
+    /// Decode the band byte of an equalizer reply.
+    pub fn from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0x00 => Self::Bass,
+            0x01 => Self::Mid,
+            0x02 => Self::Treble,
+            _ => return None,
+        })
+    }
+}
+
+/// One equalizer band as the device reports it: its range and current
+/// value. The QC Ultra (1.6.7) reports `-10..=10` for every band.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EqualizerBand {
+    /// Which band.
+    pub band: EqBand,
+    /// Lowest accepted value.
+    pub min: i8,
+    /// Highest accepted value.
+    pub max: i8,
+    /// Current value.
+    pub value: i8,
+}
+
+/// Immersive (spatial) audio of the QC Ultra (`05 0f`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum ImmersiveAudio {
+    /// Off.
+    Off = 0x00,
+    /// "Still" (Bose app in Spanish: "Fijo"): the sound stays in front
+    /// of the listener when the head turns.
+    Still = 0x01,
+    /// "Motion" ("Movimiento"): the sound follows the head.
+    Motion = 0x02,
+}
+
+impl ImmersiveAudio {
+    /// Decode the setting byte.
+    pub fn from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0x00 => Self::Off,
+            0x01 => Self::Still,
+            0x02 => Self::Motion,
+            _ => return None,
+        })
+    }
+}
+
+/// Action of the QC Ultra shortcut (touch and hold the volume strip of
+/// the right earcup; `01 09`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum ShortcutAction {
+    /// Start the phone's voice assistant.
+    VoiceAssistant = 0x01,
+    /// Announce the battery level.
+    BatteryLevel = 0x03,
+    /// Spotify Tap.
+    Spotify = 0x10,
+    /// Cycle the immersive-audio setting.
+    ImmersiveAudio = 0x13,
+    /// Shortcut turned off. When the app turns it back on, the device
+    /// reports [`ShortcutAction::BatteryLevel`] whatever it was before.
+    Off = 0x0e,
+}
+
+impl ShortcutAction {
+    /// Decode the action byte.
+    pub fn from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0x01 => Self::VoiceAssistant,
+            0x03 => Self::BatteryLevel,
+            0x10 => Self::Spotify,
+            0x13 => Self::ImmersiveAudio,
+            0x0e => Self::Off,
+            _ => return None,
+        })
+    }
+}

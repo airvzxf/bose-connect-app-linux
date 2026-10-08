@@ -31,10 +31,10 @@ use std::time::{Duration, Instant};
 use crate::error::{unconfirmed, BoseError, BoseResult};
 use crate::io::BoseIo;
 use crate::types::{
-    AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, MediaKey, NoiseCancelling, Pairing,
-    PromptLanguage, SelfVoice, MAX_AUDIO_MODES, MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES,
-    NOISE_CANCELLING_0C, NOISE_CANCELLING_14, NOISE_CANCELLING_20, QC_ULTRA_HEADPHONES,
-    VP_ENABLE_BIT, VP_MASK,
+    AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, EqBand, EqualizerBand, ImmersiveAudio,
+    MediaKey, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, ShortcutAction, MAX_AUDIO_MODES,
+    MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NOISE_CANCELLING_0C, NOISE_CANCELLING_14,
+    NOISE_CANCELLING_20, QC_ULTRA_HEADPHONES, VP_ENABLE_BIT, VP_MASK,
 };
 
 // Re-export the helper that wraps CN_BASE_PACK_LEN + MAX_NAME_LEN - 1
@@ -63,6 +63,32 @@ const SET_NAME_SEND_PREFIX: [u8; 4] = [0x01, 0x02, 0x02, 0x00];
 const SET_PROMPT_LANGUAGE_SEND: [u8; 5] = [0x01, 0x03, 0x02, 0x01, 0x00];
 
 const SET_AUTO_OFF_SEND: [u8; 5] = [0x01, 0x04, 0x02, 0x01, 0x00];
+const GET_AUTO_OFF_SEND: [u8; 4] = [0x01, 0x04, 0x01, 0x00];
+/// `01 04 02 03 lo 00 hi`: auto-off in the QC Ultra's 3-byte layout.
+const SET_AUTO_OFF_WIDE_SEND_PREFIX: [u8; 4] = [0x01, 0x04, 0x02, 0x03];
+
+const GET_PROMPT_LANGUAGE_SEND: [u8; 4] = [0x01, 0x03, 0x01, 0x00];
+/// `01 03 02 02 <language byte> <battery prompt>`, QC Ultra.
+const SET_BATTERY_PROMPT_SEND_PREFIX: [u8; 4] = [0x01, 0x03, 0x02, 0x02];
+/// Length of the QC Ultra prompt-language payload; its last byte is
+/// the "battery level at power-on" prompt.
+const PROMPT_LANGUAGE_WIDE_LEN: usize = 7;
+
+const GET_EQUALIZER_SEND: [u8; 4] = [0x01, 0x07, 0x01, 0x00];
+/// `01 07 02 02 <value> <band>`, QC Ultra.
+const SET_EQUALIZER_SEND_PREFIX: [u8; 4] = [0x01, 0x07, 0x02, 0x02];
+
+const GET_SHORTCUT_SEND: [u8; 4] = [0x01, 0x09, 0x01, 0x00];
+/// `01 09 02 03 80 09 <action>`, QC Ultra.
+const SET_SHORTCUT_SEND_PREFIX: [u8; 4] = [0x01, 0x09, 0x02, 0x03];
+/// Button id and event of the shortcut: the right earcup's volume
+/// strip, touch and hold.
+const SHORTCUT_BUTTON_EVENT: [u8; 2] = [0x80, 0x09];
+
+const IMMERSIVE_AUDIO: (u8, u8) = (0x05, 0x0f);
+const AUTO_PLAY_PAUSE: (u8, u8) = (0x01, 0x18);
+const AUTO_ANSWER_CALLS: (u8, u8) = (0x01, 0x1b);
+const REMEMBER_AUDIO_MODE: (u8, u8) = (0x1f, 0x05);
 
 const SET_NOISE_CANCELLING_SEND: [u8; 5] = [0x01, 0x06, 0x02, 0x01, 0x00];
 
@@ -218,10 +244,11 @@ pub fn has_audio_modes(device_id: u16) -> bool {
 }
 
 /// `has_legacy_settings` is false for devices whose prompt-language
-/// and auto-off payloads do not use the 1-byte QC35 layout. On those
-/// devices the `set_prompt_language` / `set_voice_prompts` /
-/// `set_auto_off` packets are not known to be correct, so the CLI
-/// refuses them instead of writing a guessed value.
+/// payload is not the 1-byte QC35 layout. Changing the *language* there
+/// has not been tested (the QC Ultra's byte carries an extra bit `0x80`
+/// that the language setters would clear), so the CLI refuses
+/// `--prompt-language` on them. Auto-off and voice prompts follow the
+/// layout the device reports and work on both.
 pub fn has_legacy_settings(device_id: u16) -> bool {
     !matches!(device_id, QC_ULTRA_HEADPHONES)
 }
@@ -573,15 +600,42 @@ pub fn set_noise_cancelling<I: BoseIo>(io: &mut I, level: NoiseCancelling) -> Bo
 }
 
 /// `int set_auto_off(int sock, enum AutoOff minutes)` in `based.c`.
+///
+/// The payload layout follows what the device reports for `01 04`
+/// first: the QC35 sends 1 byte of minutes (the C packet
+/// `01 04 02 01 mm`), the QC Ultra 3 bytes `lo 00 hi` (minutes,
+/// little-endian, split around a zero byte: `05 00 00` is 5 minutes,
+/// `a0 00 05` is 1440). Both were set from a laptop on hardware.
+/// [`AutoOff::Min1440`] is refused on the 1-byte layout.
 pub fn set_auto_off<I: BoseIo>(io: &mut I, minutes: AutoOff) -> BoseResult<()> {
-    let mut send = SET_AUTO_OFF_SEND;
-    send[BYTES_POSITION_4] = minutes as u8;
-    io.bose_send(&send)?;
+    let value = minutes as u16;
+    let [lo, hi] = value.to_le_bytes();
+
+    io.bose_send(&GET_AUTO_OFF_SEND)?;
+    match read_response(io, 0x01, 0x04)?.len() {
+        1 if hi == 0 => {
+            let mut send = SET_AUTO_OFF_SEND;
+            send[BYTES_POSITION_4] = lo;
+            io.bose_send(&send)?;
+        }
+        1 => {
+            return Err(BoseError::InvalidArgument(format!(
+                "this device cannot set auto-off to {value} minutes"
+            )))
+        }
+        3 => {
+            let mut send = [0u8; 7];
+            send[..4].copy_from_slice(&SET_AUTO_OFF_WIDE_SEND_PREFIX);
+            send[4..].copy_from_slice(&[lo, 0x00, hi]);
+            io.bose_send(&send)?;
+        }
+        _ => return Err(BoseError::AckMismatch),
+    }
 
     let got = get_auto_off(io)?;
-    if got != Some(minutes as u16) {
+    if got != Some(value) {
         return Err(unconfirmed(
-            minutes as u16,
+            value,
             got.map_or_else(|| "undecodable".to_string(), |m| m.to_string()),
         ));
     }
@@ -790,6 +844,204 @@ pub fn remove_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<()> {
     send[..4].copy_from_slice(&REMOVE_DEVICE_SEND_PREFIX);
     send[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
     write_paired(io, &send, &address.b)
+}
+
+/// Whether the QC Ultra announces the battery level at power-on (the
+/// last byte of its 7-byte `01 03` prompt-language payload). Devices
+/// with the 1-byte layout have no such setting:
+/// [`BoseError::InvalidArgument`].
+pub fn get_battery_prompt<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    io.bose_send(&GET_PROMPT_LANGUAGE_SEND)?;
+    wide_prompt_payload(read_response(io, 0x01, 0x03)?)
+        .map(|p| p[PROMPT_LANGUAGE_WIDE_LEN - 1] != 0)
+}
+
+/// Turn the QC Ultra's battery-level prompt at power-on on or off,
+/// keeping the language byte: `01 03 02 02 <language byte> <on>`
+/// (verified on hardware, firmware 1.6.7; the 7-byte write is ignored
+/// for this byte).
+pub fn set_battery_prompt<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    io.bose_send(&GET_PROMPT_LANGUAGE_SEND)?;
+    let language = wide_prompt_payload(read_response(io, 0x01, 0x03)?)?[0];
+
+    let mut send = [0u8; 6];
+    send[..4].copy_from_slice(&SET_BATTERY_PROMPT_SEND_PREFIX);
+    send[4] = language;
+    send[5] = u8::from(on);
+    io.bose_send(&send)?;
+
+    let got =
+        wide_prompt_payload(read_response(io, 0x01, 0x03)?)?[PROMPT_LANGUAGE_WIDE_LEN - 1] != 0;
+    if got != on {
+        return Err(unconfirmed(on, got));
+    }
+    Ok(())
+}
+
+/// The 7-byte QC Ultra prompt-language payload, or
+/// [`BoseError::InvalidArgument`] for the 1-byte layout.
+fn wide_prompt_payload(payload: Vec<u8>) -> BoseResult<Vec<u8>> {
+    match payload.len() {
+        PROMPT_LANGUAGE_WIDE_LEN => Ok(payload),
+        1 => Err(BoseError::InvalidArgument(
+            "this device has no battery-prompt setting".to_string(),
+        )),
+        _ => Err(BoseError::AckMismatch),
+    }
+}
+
+/// Equalizer bands (QC Ultra, `01 07`), as `min max value band` per
+/// band: `01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02` is bass, mid
+/// and treble at 0, each in `-10..=10`.
+pub fn get_equalizer<I: BoseIo>(io: &mut I) -> BoseResult<Vec<EqualizerBand>> {
+    io.bose_send(&GET_EQUALIZER_SEND)?;
+    parse_equalizer(&read_response(io, 0x01, 0x07)?)
+}
+
+/// Set one equalizer band (QC Ultra): `01 07 02 02 <value> <band>`.
+///
+/// The value is checked against the range the device reports first.
+/// On firmware 1.6.7 an out-of-range value is answered with ERROR `06`
+/// and then every equalizer request fails with ERROR `0c` until the
+/// headphones are switched off and on (captured 2026-10-07), so it is
+/// never sent.
+pub fn set_equalizer_band<I: BoseIo>(io: &mut I, band: EqBand, value: i8) -> BoseResult<()> {
+    let current = get_equalizer(io)?;
+    let range = current
+        .iter()
+        .find(|b| b.band == band)
+        .ok_or_else(|| BoseError::InvalidArgument(format!("this device has no {band:?} band")))?;
+    if !(range.min..=range.max).contains(&value) {
+        return Err(BoseError::InvalidArgument(format!(
+            "{band:?} must be in {}..={}, got {value}",
+            range.min, range.max
+        )));
+    }
+
+    let mut send = [0u8; 6];
+    send[..4].copy_from_slice(&SET_EQUALIZER_SEND_PREFIX);
+    send[4] = value as u8;
+    send[5] = band as u8;
+    io.bose_send(&send)?;
+
+    let after = parse_equalizer(&read_response(io, 0x01, 0x07)?)?;
+    match after.iter().find(|b| b.band == band) {
+        Some(b) if b.value == value => Ok(()),
+        Some(b) => Err(unconfirmed(value, b.value)),
+        None => Err(BoseError::AckMismatch),
+    }
+}
+
+fn parse_equalizer(payload: &[u8]) -> BoseResult<Vec<EqualizerBand>> {
+    if payload.is_empty() || payload.len() % 4 != 0 {
+        return Err(BoseError::AckMismatch);
+    }
+    payload
+        .chunks_exact(4)
+        .map(|c| {
+            Ok(EqualizerBand {
+                band: EqBand::from_u8(c[3]).ok_or(BoseError::AckMismatch)?,
+                min: c[0] as i8,
+                max: c[1] as i8,
+                value: c[2] as i8,
+            })
+        })
+        .collect()
+}
+
+/// Immersive audio (QC Ultra, `05 0f`): `00` off, `01` still, `02`
+/// motion.
+pub fn get_immersive_audio<I: BoseIo>(io: &mut I) -> BoseResult<ImmersiveAudio> {
+    ImmersiveAudio::from_u8(get_byte(io, IMMERSIVE_AUDIO)?).ok_or(BoseError::AckMismatch)
+}
+
+/// Set immersive audio (QC Ultra): `05 0f 02 01 xx`. Verified on
+/// hardware: the app follows and the sound changes. Any value other
+/// than the audio mode's own makes the current mode read `ff`.
+pub fn set_immersive_audio<I: BoseIo>(io: &mut I, setting: ImmersiveAudio) -> BoseResult<()> {
+    set_byte(io, IMMERSIVE_AUDIO, setting as u8)
+}
+
+/// Whether playback pauses when the headphones are taken off and resumes
+/// when they are put on (QC Ultra, `01 18`).
+pub fn get_auto_play_pause<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, AUTO_PLAY_PAUSE)? != 0)
+}
+
+/// Turn automatic play/pause on or off (QC Ultra): `01 18 02 01 xx`.
+pub fn set_auto_play_pause<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    set_byte(io, AUTO_PLAY_PAUSE, u8::from(on))
+}
+
+/// Whether a call is answered when the headphones are put on (QC
+/// Ultra, `01 1b`).
+pub fn get_auto_answer_calls<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, AUTO_ANSWER_CALLS)? != 0)
+}
+
+/// Turn automatic call answering on or off (QC Ultra): `01 1b 02 01 xx`.
+pub fn set_auto_answer_calls<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    set_byte(io, AUTO_ANSWER_CALLS, u8::from(on))
+}
+
+/// Whether the headphones start in the last audio mode used (QC Ultra,
+/// `1f 05`, "Remember my mode").
+pub fn get_remember_audio_mode<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, REMEMBER_AUDIO_MODE)? != 0)
+}
+
+/// Turn "remember my mode" on or off (QC Ultra): `1f 05 02 01 xx`.
+pub fn set_remember_audio_mode<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    set_byte(io, REMEMBER_AUDIO_MODE, u8::from(on))
+}
+
+/// Shortcut action (QC Ultra, `01 09`): reply
+/// `01 09 03 07 80 09 <action> 00 09 40 0a`; the last 4 bytes are
+/// unknown and constant.
+pub fn get_shortcut<I: BoseIo>(io: &mut I) -> BoseResult<ShortcutAction> {
+    io.bose_send(&GET_SHORTCUT_SEND)?;
+    parse_shortcut(&read_response(io, 0x01, 0x09)?)
+}
+
+/// Set the shortcut action (QC Ultra): `01 09 02 03 80 09 <action>`.
+/// Verified on hardware for [`ShortcutAction::ImmersiveAudio`]: the
+/// app follows and the button does it. Writing
+/// [`ShortcutAction::Off`] has not been tried from a laptop yet.
+pub fn set_shortcut<I: BoseIo>(io: &mut I, action: ShortcutAction) -> BoseResult<()> {
+    let mut send = [0u8; 7];
+    send[..4].copy_from_slice(&SET_SHORTCUT_SEND_PREFIX);
+    send[4..6].copy_from_slice(&SHORTCUT_BUTTON_EVENT);
+    send[6] = action as u8;
+    io.bose_send(&send)?;
+    let got = parse_shortcut(&read_response(io, 0x01, 0x09)?)?;
+    if got != action {
+        return Err(unconfirmed(format!("{action:?}"), format!("{got:?}")));
+    }
+    Ok(())
+}
+
+fn parse_shortcut(payload: &[u8]) -> BoseResult<ShortcutAction> {
+    match *payload {
+        [0x80, 0x09, action, ..] => ShortcutAction::from_u8(action).ok_or(BoseError::AckMismatch),
+        _ => Err(BoseError::AckMismatch),
+    }
+}
+
+/// GET a 1-byte setting: `block function 01 00`.
+fn get_byte<I: BoseIo>(io: &mut I, (block, function): (u8, u8)) -> BoseResult<u8> {
+    io.bose_send(&[block, function, 0x01, 0x00])?;
+    first_byte(&read_response(io, block, function)?)
+}
+
+/// SET a 1-byte setting, `block function 02 01 value`, and check the
+/// echo.
+fn set_byte<I: BoseIo>(io: &mut I, (block, function): (u8, u8), value: u8) -> BoseResult<()> {
+    io.bose_send(&[block, function, 0x02, 0x01, value])?;
+    let got = first_byte(&read_response(io, block, function)?)?;
+    if got != value {
+        return Err(unconfirmed(value, got));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,12 +1294,12 @@ fn parse_name(payload: &[u8]) -> BoseResult<String> {
     }
 }
 
-/// Auto-off payload. Only the 1-byte QC35 layout (minutes) is
-/// understood; the QC Ultra sends 3 bytes (`a0 00 05`) whose meaning
-/// is unknown.
+/// Auto-off payload in minutes: 1 byte on the QC35, `lo 00 hi` on the
+/// QC Ultra. `None` for any other layout.
 fn parse_auto_off(payload: &[u8]) -> Option<u16> {
-    match payload {
-        [minutes] => Some(*minutes as u16),
+    match *payload {
+        [minutes] => Some(u16::from(minutes)),
+        [lo, 0x00, hi] => Some(u16::from_le_bytes([lo, hi])),
         _ => None,
     }
 }
