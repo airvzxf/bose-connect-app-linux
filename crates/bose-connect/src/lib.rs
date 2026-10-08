@@ -27,14 +27,14 @@
 //!
 //! The media / volume / addressing commands (`set_volume`,
 //! `send_media_key`, `active_device`, `device_bd_addr`) have no C
-//! counterpart. Their packets come from `DEVELOPMENT.md` and from live
+//! counterpart. Their packets come from `docs/protocol.md` and from live
 //! captures against a Bose SoundLink Color II (firmware 4.0.1).
 //!
 //! Replies are the exception: they are parsed from their own
 //! length header instead of fixed-size ACKs, so the variable-length
 //! payloads of the QC Ultra Headphones are accepted. The audio-mode
 //! functions have no C counterpart; see the "QuietComfort Ultra
-//! Headphones" section of `DEVELOPMENT.md`.
+//! Headphones" section of `docs/protocol.md`.
 //!
 //! ## Quick start
 //!

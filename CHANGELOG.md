@@ -27,6 +27,10 @@ the project uses [Semantic Versioning](https://semver.org/).
   `get_device_bd_addr` read their replies through the same header-based
   reader as the other commands: a PROCESSING packet before the reply is
   skipped, and a payload of the wrong length is `AckMismatch`.
+* The protocol notes moved from `DEVELOPMENT.md` to `docs/protocol.md`,
+  organised by command, with the device and firmware of each capture and
+  the Rust call that sends it. `DEVELOPMENT.md` keeps the firmware-update
+  notes.
 
 ## [0.2.0][] - 2026-10-05
 

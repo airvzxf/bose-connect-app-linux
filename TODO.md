@@ -64,7 +64,7 @@ cover the Rust migration + CI/CD.
           compare alternatives.
 
 - [ ] **Documentation.**
-    - [ ] Move DEVELOPMENT.md's protocol-analysis content into a
+    - [x] Move DEVELOPMENT.md's protocol-analysis content into a
           `docs/protocol.md` and add Rust snippets.
     - [ ] Add an example under `crates/bose-connect/examples/`
           that drives a real device end-to-end.

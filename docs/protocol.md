@@ -1,0 +1,480 @@
+# The Bose Connect protocol
+
+What is known about the protocol, packet by packet, with the device and
+firmware each observation comes from. The library implements it in
+`crates/bose-connect/src/protocol.rs`; each command below names the
+Rust call that sends it.
+
+Firmware-update notes (not part of the control protocol) stay in
+[`DEVELOPMENT.md`](../DEVELOPMENT.md).
+
+## Contents
+
+* [Conventions](#conventions)
+* [Connection](#connection)
+* [From Rust](#from-rust)
+* [Block 00: device identity](#block-00-device-identity)
+* [Block 01: settings](#block-01-settings)
+* [Block 02: battery](#block-02-battery)
+* [Block 04: paired devices](#block-04-paired-devices)
+* [Block 05: media and volume](#block-05-media-and-volume)
+* [Block 1f: audio modes (QC Ultra)](#block-1f-audio-modes-qc-ultra)
+* [Device notes](#device-notes)
+
+## Conventions
+
+`>` means a packet sent to the device, `<` a packet received. Bytes are
+hexadecimal.
+
+Every packet is a 4-byte header followed by a payload:
+
+```text
+block  function  operator  length  payload (length bytes)
+```
+
+Operators seen:
+
+| Operator | Meaning    | Direction                                   |
+| -------- | ---------- | ------------------------------------------- |
+| `01`     | GET        | request                                     |
+| `02`     | SET        | request                                     |
+| `03`     | STATUS     | reply with the current value                |
+| `04`     | ERROR      | reply; the first payload byte is a code     |
+| `05`     | (action)   | request that starts an action: status dump, connect, media key |
+| `06`     | RESULT     | reply; the action finished                  |
+| `07`     | PROCESSING | reply; more packets follow                  |
+
+The library reads every reply from its header (`check_reply` and
+`read_response` in `protocol.rs`): a packet for another
+`block.function` is a mismatch, ERROR becomes `BoseError::DeviceError`,
+PROCESSING is skipped. A few C-era commands still compare a fixed
+acknowledgement; they are marked "C" below.
+
+Error codes seen:
+
+| Code | Where                                                  |
+| ---- | ------------------------------------------------------ |
+| `06` | volume out of range (QC35 II, SoundLink Color II)      |
+| `08` | audio-mode slot 10 or above (QC Ultra)                 |
+| `0b` | connect-device on a SoundLink Color II (meaning unverified) |
+| `0c` | media keys (QC Ultra); music status with unknown music |
+
+## Connection
+
+RFCOMM. The library tries channel 8 first (QC35, SoundLink Color II),
+then channel 2 (QC Ultra, SDP service "SPPS De"; channels 1 and 2 both
+answer there), and repeats that sequence up to 3 times, 1 s apart. The
+receive timeout is 1 s.
+
+Every connection starts with the handshake (C):
+
+```text
+> 00 01 01 00
+< 00 01 03 05 ...
+```
+
+Limits observed:
+
+* The QC Ultra refuses a new connection for about a second after the
+  previous one closed.
+* The SoundLink Color II switches itself off after its 9th connection
+  since power-on. See [SoundLink Color II](#soundlink-color-ii).
+
+## From Rust
+
+`BoseDevice` opens the connection, runs the handshake and exposes one
+method per command. Keep one `BoseDevice` for a whole session instead
+of reconnecting per command (see the SoundLink Color II limit).
+
+```rust
+use bose_connect::{BoseDevice, BoseError, MediaKey};
+
+fn main() -> Result<(), BoseError> {
+    let mut device = BoseDevice::open("AA:BB:CC:DD:EE:FF")?;
+
+    let (product, _index) = device.device_id()?;
+    println!("product {product:#06x}, firmware {}", device.firmware_version()?);
+    println!("battery {} %", device.battery_level()?);
+
+    match device.send_media_key(MediaKey::Next) {
+        Err(BoseError::DeviceError { code, .. }) => println!("refused, code {code:#04x}"),
+        other => other?,
+    }
+    Ok(())
+}
+```
+
+The protocol functions are also public and generic over the `BoseIo`
+transport, which is how the tests drive them over a `UnixStream`:
+
+```rust
+use std::os::unix::net::UnixStream;
+use bose_connect::protocol::get_battery_level;
+
+fn battery(stream: &mut UnixStream) -> bose_connect::BoseResult<u8> {
+    get_battery_level(stream)
+}
+```
+
+## Block 00: device identity
+
+### `00 03` device id (C) — `device_id()`
+
+```text
+> 00 03 01 00
+< 00 03 03 03 pp pp ii
+# pppp: product id, big endian. ii: index.
+```
+
+Product ids seen: `4014`, `4020` (QC35 series), `400c` (noise
+cancelling, from the C code), `400d` (SoundLink Color II), `4066` (QC
+Ultra).
+
+### `00 05` firmware version — `firmware_version()`
+
+Length taken from the header: 5 characters on the QC35 (`1.3.2`),
+longer on the QC Ultra:
+
+```text
+> 00 05 01 00
+< 00 05 03 0e 31 2e 36 2e 37 2b 67 36 65 62 61 62 64 32
+# "1.6.7+g6ebabd2"
+```
+
+### `00 06` own Bluetooth address — `device_bd_addr()`
+
+No C counterpart. Captured on a SoundLink Color II (4.0.1):
+
+```text
+> 00 06 01 00
+< 00 06 03 06 04 52 c7 ba 68 0d
+# the speaker's own address, 04:52:C7:BA:68:0D
+```
+
+### `00 07` serial number (C) — `serial_number()`
+
+```text
+> 00 07 01 00
+< 00 07 03 ll <ll bytes of ASCII>
+```
+
+## Block 01: settings
+
+### `01 01` status dump — `device_status()`
+
+```text
+> 01 01 05 00
+< 01 01 07 00
+< 01 xx 03 ll ...      # one STATUS packet per setting
+< 01 01 06 00
+```
+
+The library reads the name (`01 02`), language (`01 03`), auto-off
+(`01 04`) and noise cancelling (`01 06`) and skips the rest.
+
+QC35 II, firmware 4.8.1 (more packets than the C parser expected, which
+is why `--info` failed on it before #60):
+
+```text
+< 01 01 07 00
+< 01 02 03 12 00 <name>
+< 01 03 03 05 a6 00 04 cf de
+< 01 04 03 01 14
+< 01 06 03 02 01 0b
+< 01 09 03 04 10 04 01 07
+< 01 0b 03 03 01 01 0f
+< 01 01 06 00
+```
+
+QC Ultra, firmware 1.6.7: `01 00`, `01 02`, `01 03`, `01 04`, `01 05`,
+`01 07`, `01 09`, `01 0a`, `01 0b`, `01 0c`, `01 18` and `01 1b`. There is
+no `01 06`: noise cancelling is replaced by the audio modes of block
+`1f`.
+
+### `01 02` name — `set_name(name)`
+
+```text
+> 01 02 02 ll <name>
+< 01 02 03 ll 00 <name>
+```
+
+At most 31 bytes. The reply echoes the name after a `00` byte.
+
+### `01 03` prompt language and voice prompts — `set_prompt_language(byte)`, `set_voice_prompts(on)`
+
+```text
+> 01 03 02 01 xx
+< 01 03 03 ll xx ...
+```
+
+Low 5 bits = language, bit 5 (`0x20`) = voice prompts on. Languages:
+`21` EN, `22` FR, `23` IT, `24` DE, `26` ES, `27` PT, `28` ZH, `29` KO,
+`2a` RU, `2b` PL, `2e` NL, `2f` JA, `32` SV.
+
+QC Ultra (1.6.7) sends 7 bytes; only the first is understood. The
+library refuses to set it there.
+
+```text
+> 01 03 01 00
+< 01 03 03 07 e1 00 01 81 5e 01 01
+# Bit 6 and the other bytes are unknown.
+```
+
+### `01 04` auto-off — `set_auto_off(minutes)`
+
+```text
+> 01 04 02 01 mm
+< 01 04 03 01 mm
+# mm: 00 never, 05, 14 (20), 28 (40), 3c (60), b4 (180) minutes
+```
+
+QC Ultra (1.6.7), unknown layout; the library refuses to set it there:
+
+```text
+> 01 04 01 00
+< 01 04 03 03 a0 00 05
+```
+
+### `01 06` noise cancelling — `set_noise_cancelling(level)`
+
+```text
+> 01 06 02 01 xx
+< 01 06 03 02 xx 0b
+# xx: 00 off, 01 high, 03 low. The second byte (0b on a QC35 II) is unknown.
+```
+
+Only on product ids `4014`, `4020`, `400c` (`has_noise_cancelling`).
+
+### `01 07` equalizer (QC Ultra, read only)
+
+```text
+> 01 07 01 00
+< 01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02
+# Per band: min (-10), max (10), current value, band (0 bass, 1 mid, 2 treble)
+```
+
+Not implemented yet.
+
+### `01 0b` self voice (C) — `set_self_voice(level)`
+
+```text
+> 01 0b 02 02 01 xx 38
+< 01 0b 03 03 01 xx 0f
+# xx: 00 off, 01 high, 02 medium, 03 low
+```
+
+Same layout on the QC Ultra:
+
+```text
+> 01 0b 01 00
+< 01 0b 03 03 01 02 0f
+```
+
+## Block 02: battery
+
+### `02 02` battery level — `battery_level()`
+
+```text
+> 02 02 01 00
+< 02 02 03 01 xx          # QC35: xx = percent
+< 02 02 03 04 64 ff ff 00 # QC Ultra: 0x64 = 100 %, last 3 bytes unknown
+```
+
+## Block 04: paired devices
+
+### `04 04` paired list (C) — `paired_devices()`
+
+```text
+> 04 04 01 00
+< 04 04 03 ll cc <ll bytes: one 6-byte address per device>
+# number of devices = ll / 6. cc: 01 one device connected, 03 two
+```
+
+### `04 05` device info (C) — `device_info(address)`
+
+```text
+> 04 05 01 06 <addr>
+< 04 05 03 ll <addr> ss gg gg <name>
+# ss: 00 disconnected, 01 connected, 03 this device. gg gg: unknown.
+```
+
+### `04 01` connect a source — `connect_device(address)`
+
+```text
+> 04 01 05 07 00 <addr>
+< 04 01 07 06 <addr>        # C acknowledgement
+< 04 01 04 07 0b <addr>     # SoundLink Color II 4.0.1: ERROR 0b
+```
+
+The library accepts the SoundLink Color II `0b` as success
+(`SLC2_CONNECT_DEVICE_ERROR_ACCEPTED`) until a hardware test shows
+whether the source really connects. Any other ERROR is a
+`DeviceError`.
+
+### `04 02` disconnect a source — `disconnect_device(address)`
+
+```text
+> 04 02 05 06 <addr>
+< 04 02 07 06 <addr>               # C acknowledgement
+< 04 02 07 00  04 02 06 06 <addr>  # SoundLink Color II 4.0.1: two packets
+```
+
+### `04 03` forget a source — `remove_device(address)`
+
+```text
+> 04 03 05 06 <addr>
+< 04 03 06 06 <addr>        # C acknowledgement
+                            # SoundLink Color II 4.0.1: no reply at all
+```
+
+The library treats "no byte before the receive timeout" as success.
+
+### `04 08` pairing mode (C) — `set_pairing(on)`
+
+```text
+> 04 08 05 01 xx
+< 04 08 06 01 xx
+# xx: 00 off, 01 on
+```
+
+Only on the QC35 series (`has_pairing_toggle`).
+
+## Block 05: media and volume
+
+These packets were first listed by the original author, who could not
+make media keys work; the replies were captured later on the devices
+named below. None of them exists in the C code.
+
+### `05 01` active source — `active_device()`
+
+```text
+> 05 01 01 00
+< 05 01 03 09 00 02 01 xx xx xx xx xx xx
+# xx…: the address of the source playing now
+```
+
+The meaning of `00 02 01` is unknown; it was the same on every capture
+(SoundLink Color II 4.0.1).
+
+### `05 02` music status (not implemented)
+
+```text
+> 05 02 05 00
+< 05 02 07 00 05 03 03 02 01 fe 05 04 03 03 xx yy yy
+  05 05 03 02 19 0b zz 06 07 00 xx = 02
+# Paused xx = 01
+# Playing xx = 00
+# Unknown yyyy
+# Elapsed time of music (may be ffff for unknown?)
+# 00 <= zz <= 18: volume
+
+< 05 02 04 01 0c
+# Sent if unknown music
+```
+
+### `05 03` media keys — `send_media_key(key)`
+
+```text
+> 05 03 05 01 xx
+# xx: 01 play/pause toggle, 03 next, 04 previous
+< 05 03 07 00  05 03 06 00     # QC35 II, SoundLink Color II
+< 05 03 04 01 0c               # QC Ultra 1.6.7: ERROR 0c
+```
+
+SoundLink Color II (4.0.1): `04` restarts the current track when it has
+been playing for a few seconds, like a physical button. `02` is
+acknowledged the same way but has no visible effect, whether the player
+is playing or paused.
+
+QC Ultra (1.6.7): every key `01` to `04` gets ERROR `0c`, playing or
+paused. Once, right after an audio-mode change, `01` did start playback;
+that was not reproducible. What the Bose app sends instead is not known.
+
+### `05 05` volume — `set_volume(level)`
+
+```text
+> 05 05 02 01 xx
+< 05 05 03 02 mm xx     # mm: top of the scale, xx: the level now set
+< 05 05 04 01 06        # ERROR: out of range
+```
+
+`mm` is not the battery level: it never changes with the level or the
+battery. Devices treat it differently:
+
+| Device                     | `mm`       | Accepted | Above the range        |
+| -------------------------- | ---------- | -------- | ---------------------- |
+| QC35 II, firmware 4.8.1    | `19` (25)  | `00..19` | ERROR `05 05 04 01 06` |
+| QC Ultra, firmware 1.6.7   | `1f` (31)  | `00..1f` | clamped to `1f`        |
+| SoundLink Color II, 4.0.1  | `64` (100) | `00..63` | ERROR `05 05 04 01 06` |
+
+The original note gave the QC35 range as `00 <= xx <= 18`; `19` is
+accepted too. Each source seems to keep its own volume.
+
+SoundLink Color II capture:
+
+```text
+> 05 05 02 01 14
+< 05 05 03 02 64 14
+> 05 05 02 01 64
+< 05 05 04 01 06
+```
+
+## Block 1f: audio modes (QC Ultra)
+
+Captured on firmware 1.6.7.
+
+```text
+> 1f 03 01 00                       # Current audio mode — audio_mode()
+< 1f 03 03 01 xx
+# xx = slot index
+
+> 1f 06 01 01 xx                    # Audio mode of slot xx — audio_modes()
+< 1f 06 03 2f xx 00 01 00 00 01 51 75 69 65 74 00 ...
+# 47-byte payload: slot index, 5 bytes of settings, the name NUL-padded
+# to 32 bytes ("Quiet"), then 9 more bytes of settings.
+# Slots 0, 1, 2 are Quiet, Aware, Immersion; slots 3 to 9 are named "None".
+< 1f 06 04 01 08                    # Error for slot 10 and above
+
+> 1f 03 05 02 xx 00                 # Switch to slot xx — set_audio_mode(xx)
+< 1f 03 06 01 xx
+# The last request byte 00 switches without the voice-prompt announce.
+```
+
+Creating or editing modes (`1f 06` SET) is not known yet.
+
+## Device notes
+
+### QC35 II
+
+Product `4020`, firmware 4.8.1. Channel 8. Status dump with extra
+packets (above). Volume scale 25. Media keys work.
+
+### QC Ultra Headphones
+
+Product `4066`, firmware 1.6.7. Channel 2. Longer payloads for firmware,
+battery, language and auto-off; no noise cancelling, audio modes
+instead. Volume scale 31, clamped. Media keys refused (`0c`). Refuses a
+new connection for about a second after the previous one.
+
+### SoundLink Color II
+
+Product `400d`, firmware 4.0.1. Verified on two speakers with a raw
+RFCOMM client that reads every byte of each reply.
+
+**The speaker powers off after its 9th RFCOMM connection.** Counting
+from power-on, a few seconds after the 9th connection to channel 8 is
+closed the speaker beeps and switches itself off; it has to be put on
+charge to power on again. Reproduced four times. It does not depend on
+what is sent (read-only battery queries are enough), on the spacing
+between connections (7 s and 30 s both fail at the 9th), or on the
+Bluetooth link: disconnecting and reconnecting the speaker does not
+reset the count, only powering it off does. A single connection kept
+open for minutes with many requests is fine.
+
+Every CLI invocation opens and closes one connection, so on this speaker
+a handful of commands in a row is enough to switch it off. Long-lived
+clients (the GUI) should keep one connection open.
+
+Media keys work; volume scale 100 with 99 the highest accepted level;
+the paired-device replies differ from the C acknowledgements (see block
+04).
