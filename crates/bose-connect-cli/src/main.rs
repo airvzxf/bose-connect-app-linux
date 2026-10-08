@@ -644,7 +644,7 @@ fn do_paired_devices(device: &mut BoseDevice) -> Result<()> {
 /// Run one of the paired-device operations (connect / disconnect /
 /// remove) and verify the effect took place by re-querying
 /// `get_paired_devices` afterwards. This is the A4 layer: the
-/// permissive ACK matcher at the protocol level (A2) tells us the
+/// header-based reply check at the protocol level (A2) tells us the
 /// device didn't return an error, but the device may have
 /// silently rejected the command (e.g. it doesn't support
 /// `REMOVE_DEVICE` while in party-mode). The verification step

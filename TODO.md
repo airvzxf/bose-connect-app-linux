@@ -28,18 +28,33 @@ cover the Rust migration + CI/CD.
     - [ ] Docker image for the Rust build (the original C Docker
           setup used `archlinux` + `cmake`; the Rust equivalent is
           a `rust:1.83-bookworm` image with `libbluetooth-dev`).
-    - [ ] Ubuntu / Debian package recipe (was on the C-roadmap).
-    - [ ] AUR recipe (was on the C-roadmap).
+    - [ ] Debian and AUR recipes exist in `packaging/` but have not
+          been built: both install `.desktop`, metainfo and
+          bash-completion files from paths that do not exist (the
+          files live under `packaging/linux/desktop/`,
+          `packaging/linux/metainfo/` and
+          `packaging/linux/bash-completion/`). Fix the paths and
+          build each package once.
 
 - [ ] **Protocol follow-ups (found in hardware tests, 2026-10-05).**
-    - [ ] `write_paired` accepts the SoundLink Color II reply
-          `04 01 04 07 0b <addr>` to connect-device as success. Its
-          operator byte `04` is ERROR (code `0b`), so the speaker may
-          be rejecting the request. Needs a hardware test (does the
-          source actually connect?) before changing the matcher.
-    - [ ] Fold `read_reply_header` (set_volume, send_media_key) into
-          `read_response` (#60): two readers now handle ERROR replies
-          for different commands.
+    - [ ] `write_paired` still accepts the SoundLink Color II reply
+          `04 01 04 07 0b <addr>` to connect-device as success (the
+          constant `SLC2_CONNECT_DEVICE_ERROR_ACCEPTED`); every other
+          ERROR reply is now a `DeviceError`. Its operator byte `04`
+          is ERROR (code `0b`), so the speaker may be rejecting the
+          request. Needs a hardware test (does the source actually
+          connect?) before removing the exception.
+    - [ ] `write_paired` treats "no reply before the receive timeout"
+          as success (SoundLink Color II remove-device). Check on
+          hardware whether a late reply arrives afterwards: on a
+          long-lived connection it would be read as the reply to
+          the next request.
+    - [x] Fold `read_reply_header` (set_volume, send_media_key) into
+          `read_response` (#60): one header-based reader now handles
+          every reply that is not a fixed C acknowledgement.
+    - [ ] The CLI retries a paired-device operation three times even
+          when the device answered with an ERROR packet; a
+          `DeviceError` will not change on retry.
     - [ ] Media keys on the QC Ultra: find what the Bose app sends
           (every `05 03 05 01 xx` gets ERROR `0c`).
 
@@ -57,6 +72,10 @@ cover the Rust migration + CI/CD.
           `libbose_connect.so`.
 
 - [ ] **QA.**
+    - [ ] `crates/bose-connect-gui/build.rs` rewrites the tracked
+          `resources/gresource.xml` in `read_dir` order, so building
+          the GUI in a new checkout can leave the tree dirty. Sort the
+          entries (or stop tracking the generated file).
     - [ ] Cargo-fuzz harnesses for `parse_hex_packet` and
           `parse_bdaddr` (the public-input parsers).
     - [ ] Coverage reporting (cargo-llvm-cov) on the protocol

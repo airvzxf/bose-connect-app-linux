@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased][]
+
+### Fixed
+
+* `connect_device`, `disconnect_device` and `remove_device` report an
+  ERROR reply as `BoseError::DeviceError` instead of success. The one
+  exception is the SoundLink Color II reply to `connect_device`
+  (ERROR `0b`), still accepted until a hardware test says what it
+  means.
+* The same three commands read their reply packet by packet and return
+  as soon as it is complete, instead of reading up to 64 bytes until the
+  receive timeout. They no longer wait a second after the device
+  answered, and no longer swallow the start of the next reply.
+* `get_active_device` and `get_device_bd_addr` turn an ERROR reply into
+  `BoseError::DeviceError` and consume it, so the next request on the
+  same connection reads its own reply.
+
+### Changed
+
+* `set_volume`, `send_media_key`, `get_active_device` and
+  `get_device_bd_addr` read their replies through the same header-based
+  reader as the other commands: a PROCESSING packet before the reply is
+  skipped, and a payload of the wrong length is `AckMismatch`.
+
 ## [0.2.0][] - 2026-10-05
 
 ### Added
@@ -64,5 +88,6 @@ First Rust release: a port of the original C implementation, with the
 `bose-connect` library, the `bose-connect-app-linux` CLI and a C FFI
 (`bose_connect.h`).
 
+[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/airvzxf/bose-connect-app-linux/releases/tag/v0.1.0
