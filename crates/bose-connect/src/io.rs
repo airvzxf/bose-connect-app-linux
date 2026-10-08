@@ -37,6 +37,22 @@ pub trait BoseIo: Read + Write + private::Sealed {
     /// Write all `buf` bytes, retrying on partial writes.
     fn bose_write_all(&mut self, buf: &[u8]) -> BoseResult<()>;
 
+    /// Read and drop every byte that is already waiting, without
+    /// blocking. Devices send packets nobody asked for (a second
+    /// volume reply, active-source changes, track metadata, late
+    /// results of a connect); none of them can be the reply to a
+    /// request that has not been sent yet.
+    fn bose_discard_pending(&mut self) -> BoseResult<()>;
+
+    /// Send one request: drop whatever is still waiting from earlier
+    /// traffic ([`BoseIo::bose_discard_pending`]), then write `packet`.
+    /// Every protocol request goes through here, so its reply is the
+    /// first thing read after it.
+    fn bose_send(&mut self, packet: &[u8]) -> BoseResult<()> {
+        self.bose_discard_pending()?;
+        self.bose_write_all(packet)
+    }
+
     /// Write `send`, then read `ack.len()` bytes and compare to
     /// `ack` byte-for-byte.
     fn bose_write_check(&mut self, send: &[u8], ack: &[u8]) -> BoseResult<()> {
@@ -94,6 +110,19 @@ impl BoseIo for crate::connection::Connection {
         }
         Ok(())
     }
+
+    fn bose_discard_pending(&mut self) -> BoseResult<()> {
+        let mut buf = [0u8; 256];
+        loop {
+            match self.recv_nonblocking(&mut buf) {
+                Ok(0) => return Ok(()),
+                Ok(_) => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
 }
 
 /// `UnixStream` adapter that implements [`BoseIo`] for tests and
@@ -143,5 +172,21 @@ impl BoseIo for std::os::unix::net::UnixStream {
             }
         }
         Ok(())
+    }
+
+    fn bose_discard_pending(&mut self) -> BoseResult<()> {
+        self.set_nonblocking(true)?;
+        let mut buf = [0u8; 256];
+        let result = loop {
+            match Read::read(self, &mut buf) {
+                Ok(0) => break Ok(()),
+                Ok(_) => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break Ok(()),
+                Err(e) => break Err(e.into()),
+            }
+        };
+        self.set_nonblocking(false)?;
+        result
     }
 }

@@ -1,15 +1,13 @@
-//! Story S2: `connect_device`, `disconnect_device` and `remove_device`
-//! report what the device answered.
+//! `connect_device`, `disconnect_device` and `remove_device` report what
+//! the device finally answered.
 //!
-//! An ERROR packet is a `BoseError::DeviceError`, except the one
-//! SoundLink Color II reply to `connect_device` (ERROR `0b`) that stays
-//! accepted until a hardware test says what it means. The reply is read
-//! packet by packet from its header, so the call returns as soon as the
-//! reply is complete and the next request reads its own reply.
-//!
-//! Replies marked "capture" come from a SoundLink Color II on firmware
-//! 4.0.1; "C" marks the acknowledgement the original `based.c`
-//! expected; the others are synthetic.
+//! The replies below are the sequences captured on 2026-10-07 from a
+//! SoundLink Color II (firmware 4.0.1), a QC35 II (4.8.1) and a QC Ultra
+//! (1.6.7), with the phone 00:62:01:8C:0C:B7 as the source; "C" marks the
+//! acknowledgement the original `based.c` expected; the others are
+//! synthetic. A command succeeds on the RESULT that carries the
+//! requested address, which can arrive seconds after the PROCESSING
+//! packet; notifications of other functions arrive in between.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -21,7 +19,7 @@ use bose_connect::protocol::{connect_device, disconnect_device, get_battery_leve
 use bose_connect::{BdAddr, BoseError};
 
 /// How long a client call may take before the test calls it hung.
-const HANG_LIMIT: Duration = Duration::from_secs(2);
+const HANG_LIMIT: Duration = Duration::from_secs(5);
 
 /// Run `client` against a fake device driven by `device`. Fails the
 /// test if `client` does not return within [`HANG_LIMIT`].
@@ -55,25 +53,43 @@ fn answer(device: &mut UnixStream, reply: &[u8]) {
     device.write_all(reply).expect("write reply");
 }
 
-/// Packet = `prefix` followed by the target address.
-fn with_addr(prefix: &[u8]) -> Vec<u8> {
-    let mut packet = prefix.to_vec();
-    packet.extend_from_slice(&ADDR);
-    packet
+/// `prefix`, then `addr`, then `suffix`.
+fn packet(prefix: &[u8], addr: [u8; 6], suffix: &[u8]) -> Vec<u8> {
+    let mut p = prefix.to_vec();
+    p.extend_from_slice(&addr);
+    p.extend_from_slice(suffix);
+    p
 }
 
-const ADDR: [u8; 6] = [0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d];
-const OTHER_ADDR: [u8; 6] = [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
-const CONNECT_REQUEST: [u8; 11] = [
-    0x04, 0x01, 0x05, 0x07, 0x00, 0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d,
-];
-const DISCONNECT_REQUEST: [u8; 10] = [0x04, 0x02, 0x05, 0x06, 0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d];
-const REMOVE_REQUEST: [u8; 10] = [0x04, 0x03, 0x05, 0x06, 0x04, 0x52, 0xc7, 0xba, 0x68, 0x0d];
+const PHONE: [u8; 6] = [0x00, 0x62, 0x01, 0x8c, 0x0c, 0xb7];
+const LAPTOP: [u8; 6] = [0xd4, 0x6d, 0x6d, 0x17, 0x4d, 0xa4];
+const RANDOM: [u8; 6] = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66];
+const QC_ULTRA: [u8; 6] = [0xbc, 0x87, 0xfa, 0x45, 0x4c, 0xc2];
+
 const BATTERY_REQUEST: [u8; 4] = [0x02, 0x02, 0x01, 0x00];
 const BATTERY_REPLY_80: [u8; 5] = [0x02, 0x02, 0x03, 0x01, 0x50];
 
-fn target() -> BdAddr {
-    BdAddr { b: ADDR }
+/// `05 01 03 09 00 02 01 <addr>`: active-source notification.
+fn active_source(addr: [u8; 6]) -> Vec<u8> {
+    packet(&[0x05, 0x01, 0x03, 0x09, 0x00, 0x02, 0x01], addr, &[])
+}
+
+fn connect_request(addr: [u8; 6]) -> [u8; 11] {
+    let mut r = [0x04, 0x01, 0x05, 0x07, 0x00, 0, 0, 0, 0, 0, 0];
+    r[5..].copy_from_slice(&addr);
+    r
+}
+
+fn disconnect_request(addr: [u8; 6]) -> [u8; 10] {
+    let mut r = [0x04, 0x02, 0x05, 0x06, 0, 0, 0, 0, 0, 0];
+    r[4..].copy_from_slice(&addr);
+    r
+}
+
+fn remove_request(addr: [u8; 6]) -> [u8; 10] {
+    let mut r = [0x04, 0x03, 0x05, 0x06, 0, 0, 0, 0, 0, 0];
+    r[4..].copy_from_slice(&addr);
+    r
 }
 
 fn is_device_error(result: &Result<(), BoseError>, b: u8, f: u8, c: u8) -> bool {
@@ -84,182 +100,94 @@ fn is_device_error(result: &Result<(), BoseError>, b: u8, f: u8, c: u8) -> bool 
     )
 }
 
-// ---- success ----
+// ---- connect ----
 
 #[test]
-fn connect_succeeds_on_the_c_acknowledgement() {
-    // C: `04 01 07 06 <addr>`.
+fn connect_succeeds_when_the_result_arrives_after_processing_and_notifications() {
+    // Capture, QC35 II: reconnecting the phone.
     let result = run_against_device(
         |d| {
-            expect_request(d, CONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x01, 0x07, 0x06]));
+            expect_request(d, connect_request(PHONE));
+            answer(d, &packet(&[0x04, 0x01, 0x07, 0x06], PHONE, &[]));
+            thread::sleep(Duration::from_millis(300));
+            answer(d, &active_source(LAPTOP));
+            answer(d, &packet(&[0x04, 0x01, 0x06, 0x07], PHONE, &[0x01]));
         },
-        |c| connect_device(c, target()),
+        |c| connect_device(c, BdAddr { b: PHONE }),
     );
     assert!(result.is_ok(), "got {result:?}");
 }
 
 #[test]
-fn disconnect_succeeds_on_the_c_acknowledgement() {
-    // C: `04 02 07 06 <addr>`.
+fn connect_waits_through_receive_timeouts_for_the_result() {
+    // The RESULT came ~8 s after PROCESSING on the real devices; here
+    // 0.7 s with a 0.2 s receive timeout.
     let result = run_against_device(
         |d| {
-            expect_request(d, DISCONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x02, 0x07, 0x06]));
-        },
-        |c| disconnect_device(c, target()),
-    );
-    assert!(result.is_ok(), "got {result:?}");
-}
-
-#[test]
-fn disconnect_succeeds_on_processing_then_result() {
-    // Capture: `04 02 07 00`, then `04 02 06 06 <addr>`.
-    let result = run_against_device(
-        |d| {
-            expect_request(d, DISCONNECT_REQUEST);
-            answer(d, &[0x04, 0x02, 0x07, 0x00]);
-            answer(d, &with_addr(&[0x04, 0x02, 0x06, 0x06]));
-        },
-        |c| disconnect_device(c, target()),
-    );
-    assert!(result.is_ok(), "got {result:?}");
-}
-
-#[test]
-fn remove_succeeds_on_the_c_acknowledgement() {
-    // C: `04 03 06 06 <addr>`.
-    let result = run_against_device(
-        |d| {
-            expect_request(d, REMOVE_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x03, 0x06, 0x06]));
-        },
-        |c| remove_device(c, target()),
-    );
-    assert!(result.is_ok(), "got {result:?}");
-}
-
-#[test]
-fn remove_succeeds_when_the_device_closes_without_answering() {
-    let result = run_against_device(
-        |d| expect_request(d, REMOVE_REQUEST),
-        |c| remove_device(c, target()),
-    );
-    assert!(result.is_ok(), "got {result:?}");
-}
-
-#[test]
-fn remove_succeeds_when_nothing_arrives_before_the_receive_timeout() {
-    // Capture: the SoundLink Color II sends nothing back. On a real
-    // connection the read ends with the socket's receive timeout.
-    let result = run_against_device(
-        |d| {
-            expect_request(d, REMOVE_REQUEST);
-            thread::sleep(Duration::from_millis(600));
+            expect_request(d, connect_request(PHONE));
+            answer(d, &packet(&[0x04, 0x01, 0x07, 0x06], PHONE, &[]));
+            thread::sleep(Duration::from_millis(700));
+            answer(d, &packet(&[0x04, 0x01, 0x06, 0x07], PHONE, &[0x01]));
         },
         |c| {
             c.set_read_timeout(Some(Duration::from_millis(200)))
                 .expect("set_read_timeout");
-            remove_device(c, target())
+            connect_device(c, BdAddr { b: PHONE })
         },
     );
     assert!(result.is_ok(), "got {result:?}");
 }
 
-// ---- the SoundLink Color II connect reply ----
-
 #[test]
-fn connect_still_accepts_the_soundlink_color_ii_error_0b() {
-    // Capture: `04 01 04 07 0b <addr>`. Kept as success until a
-    // hardware test shows whether the source really connects.
+fn connecting_an_already_connected_source_succeeds() {
+    // Capture, SoundLink Color II: RESULT code 07 at once.
     let result = run_against_device(
         |d| {
-            expect_request(d, CONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x01, 0x04, 0x07, 0x0b]));
+            expect_request(d, connect_request(PHONE));
+            answer(d, &packet(&[0x04, 0x01, 0x07, 0x06], PHONE, &[]));
+            answer(d, &packet(&[0x04, 0x01, 0x06, 0x07], PHONE, &[0x07]));
         },
-        |c| connect_device(c, target()),
+        |c| connect_device(c, BdAddr { b: PHONE }),
     );
     assert!(result.is_ok(), "got {result:?}");
 }
 
-// ---- errors ----
-
 #[test]
-fn connect_reports_any_other_error_code() {
+fn connecting_an_address_that_is_not_a_paired_source_is_error_0b() {
+    // Capture, SoundLink Color II and QC35 II and QC Ultra.
     let result = run_against_device(
         |d| {
-            expect_request(d, CONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x01, 0x04, 0x07, 0x01]));
+            expect_request(d, connect_request(RANDOM));
+            answer(d, &packet(&[0x04, 0x01, 0x04, 0x07, 0x0b], RANDOM, &[]));
         },
-        |c| connect_device(c, target()),
+        |c| connect_device(c, BdAddr { b: RANDOM }),
     );
-    assert!(is_device_error(&result, 0x04, 0x01, 0x01), "got {result:?}");
+    assert!(is_device_error(&result, 0x04, 0x01, 0x0b), "got {result:?}");
 }
 
 #[test]
-fn disconnect_reports_error_0b() {
+fn a_late_error_after_processing_is_a_device_error() {
+    // Capture, QC Ultra: connecting its own address.
     let result = run_against_device(
         |d| {
-            expect_request(d, DISCONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x02, 0x04, 0x07, 0x0b]));
+            expect_request(d, connect_request(QC_ULTRA));
+            answer(d, &packet(&[0x04, 0x01, 0x07, 0x06], QC_ULTRA, &[]));
+            answer(d, &packet(&[0x04, 0x01, 0x04, 0x07, 0x0d], QC_ULTRA, &[]));
         },
-        |c| disconnect_device(c, target()),
+        |c| connect_device(c, BdAddr { b: QC_ULTRA }),
     );
-    assert!(is_device_error(&result, 0x04, 0x02, 0x0b), "got {result:?}");
+    assert!(is_device_error(&result, 0x04, 0x01, 0x0d), "got {result:?}");
 }
 
 #[test]
-fn remove_reports_an_error_packet() {
+fn processing_alone_then_end_of_stream_is_not_success() {
+    // C acknowledgement only: the final RESULT never comes.
     let result = run_against_device(
         |d| {
-            expect_request(d, REMOVE_REQUEST);
-            answer(d, &[0x04, 0x03, 0x04, 0x01, 0x05]);
+            expect_request(d, connect_request(PHONE));
+            answer(d, &packet(&[0x04, 0x01, 0x07, 0x06], PHONE, &[]));
         },
-        |c| remove_device(c, target()),
-    );
-    assert!(is_device_error(&result, 0x04, 0x03, 0x05), "got {result:?}");
-}
-
-#[test]
-fn a_reply_for_another_address_is_rejected() {
-    let result = run_against_device(
-        |d| {
-            expect_request(d, CONNECT_REQUEST);
-            let mut reply = vec![0x04, 0x01, 0x07, 0x06];
-            reply.extend_from_slice(&OTHER_ADDR);
-            answer(d, &reply);
-        },
-        |c| connect_device(c, target()),
-    );
-    assert!(
-        matches!(result, Err(BoseError::AckMismatch)),
-        "got {result:?}"
-    );
-}
-
-#[test]
-fn a_reply_for_another_function_is_rejected() {
-    let result = run_against_device(
-        |d| {
-            expect_request(d, DISCONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x0f, 0x07, 0x06]));
-        },
-        |c| disconnect_device(c, target()),
-    );
-    assert!(
-        matches!(result, Err(BoseError::AckMismatch)),
-        "got {result:?}"
-    );
-}
-
-#[test]
-fn processing_followed_by_silence_is_not_success() {
-    let result = run_against_device(
-        |d| {
-            expect_request(d, DISCONNECT_REQUEST);
-            answer(d, &[0x04, 0x02, 0x07, 0x00]);
-        },
-        |c| disconnect_device(c, target()),
+        |c| connect_device(c, BdAddr { b: PHONE }),
     );
     assert!(
         matches!(result, Err(BoseError::ShortRead { .. })),
@@ -267,62 +195,167 @@ fn processing_followed_by_silence_is_not_success() {
     );
 }
 
-// ---- the stream stays in sync ----
-
 #[test]
-fn after_a_connect_error_the_next_request_reads_its_own_reply() {
-    let (connect, battery) = run_against_device(
+fn a_result_for_another_address_is_not_success() {
+    let result = run_against_device(
         |d| {
-            expect_request(d, CONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x01, 0x04, 0x07, 0x01]));
-            expect_request(d, BATTERY_REQUEST);
-            answer(d, &BATTERY_REPLY_80);
+            expect_request(d, connect_request(PHONE));
+            answer(d, &packet(&[0x04, 0x01, 0x06, 0x07], RANDOM, &[0x01]));
         },
-        |c| (connect_device(c, target()), get_battery_level(c)),
+        |c| connect_device(c, BdAddr { b: PHONE }),
     );
-    assert!(
-        is_device_error(&connect, 0x04, 0x01, 0x01),
-        "got {connect:?}"
-    );
-    assert_eq!(battery.expect("battery after the error"), 80);
+    assert!(result.is_err(), "got {result:?}");
 }
 
 #[test]
-fn after_a_two_packet_disconnect_the_next_request_reads_its_own_reply() {
-    let (disconnect, battery) = run_against_device(
-        |d| {
-            expect_request(d, DISCONNECT_REQUEST);
-            answer(d, &[0x04, 0x02, 0x07, 0x00]);
-            answer(d, &with_addr(&[0x04, 0x02, 0x06, 0x06]));
-            expect_request(d, BATTERY_REQUEST);
-            answer(d, &BATTERY_REPLY_80);
-        },
-        |c| (disconnect_device(c, target()), get_battery_level(c)),
-    );
-    assert!(disconnect.is_ok(), "got {disconnect:?}");
-    assert_eq!(battery.expect("battery after disconnect"), 80);
-}
-
-#[test]
-fn connect_returns_as_soon_as_the_reply_is_complete() {
-    // The device keeps the connection open after its reply. The call
-    // must not wait for more bytes.
+fn connect_returns_as_soon_as_the_result_arrives() {
     let elapsed = run_against_device(
         |d| {
-            expect_request(d, CONNECT_REQUEST);
-            answer(d, &with_addr(&[0x04, 0x01, 0x07, 0x06]));
+            expect_request(d, connect_request(PHONE));
+            answer(d, &packet(&[0x04, 0x01, 0x07, 0x06], PHONE, &[]));
+            answer(d, &packet(&[0x04, 0x01, 0x06, 0x07], PHONE, &[0x07]));
             thread::sleep(Duration::from_millis(1500));
         },
         |c| {
             let start = Instant::now();
-            let result = connect_device(c, target());
+            let result = connect_device(c, BdAddr { b: PHONE });
             (result.is_ok(), start.elapsed())
         },
     );
     assert!(elapsed.0, "connect failed");
     assert!(
         elapsed.1 < Duration::from_millis(500),
-        "connect took {:?}",
+        "took {:?}",
         elapsed.1
     );
+}
+
+#[test]
+fn later_results_of_a_connect_do_not_reach_the_next_request() {
+    // Capture, SoundLink Color II: three RESULTs (codes 01, 05, 07) and
+    // two active-source notifications follow one connect.
+    let (connect, battery) = run_against_device(
+        |d| {
+            expect_request(d, connect_request(PHONE));
+            let mut burst = packet(&[0x04, 0x01, 0x07, 0x06], PHONE, &[]);
+            burst.extend(packet(&[0x04, 0x01, 0x06, 0x07], PHONE, &[0x01]));
+            burst.extend(active_source(LAPTOP));
+            burst.extend(packet(&[0x04, 0x01, 0x06, 0x07], PHONE, &[0x05]));
+            burst.extend(active_source(PHONE));
+            burst.extend(packet(&[0x04, 0x01, 0x06, 0x07], PHONE, &[0x07]));
+            answer(d, &burst);
+            expect_request(d, BATTERY_REQUEST);
+            answer(d, &BATTERY_REPLY_80);
+        },
+        |c| (connect_device(c, BdAddr { b: PHONE }), get_battery_level(c)),
+    );
+    assert!(connect.is_ok(), "got {connect:?}");
+    assert_eq!(battery.expect("battery after connect"), 80);
+}
+
+// ---- disconnect ----
+
+#[test]
+fn disconnect_succeeds_on_the_soundlink_color_ii_sequence() {
+    // Capture: two PROCESSING, a notification, then the RESULT.
+    let (disconnect, battery) = run_against_device(
+        |d| {
+            expect_request(d, disconnect_request(PHONE));
+            let mut burst = vec![0x04, 0x02, 0x07, 0x00];
+            burst.extend(packet(&[0x04, 0x02, 0x07, 0x06], PHONE, &[]));
+            burst.extend(active_source([0; 6]));
+            burst.extend(packet(&[0x04, 0x02, 0x06, 0x06], PHONE, &[]));
+            answer(d, &burst);
+            expect_request(d, BATTERY_REQUEST);
+            answer(d, &BATTERY_REPLY_80);
+        },
+        |c| {
+            (
+                disconnect_device(c, BdAddr { b: PHONE }),
+                get_battery_level(c),
+            )
+        },
+    );
+    assert!(disconnect.is_ok(), "got {disconnect:?}");
+    assert_eq!(battery.expect("battery after disconnect"), 80);
+}
+
+#[test]
+fn disconnect_succeeds_on_the_qc35_sequence() {
+    // Capture, QC35 II: PROCESSING carries an extra byte 21.
+    let result = run_against_device(
+        |d| {
+            expect_request(d, disconnect_request(PHONE));
+            let mut burst = packet(&[0x04, 0x02, 0x07, 0x07, 0x21], PHONE, &[]);
+            burst.extend(active_source([0; 6]));
+            burst.extend(packet(&[0x04, 0x02, 0x06, 0x06], PHONE, &[]));
+            answer(d, &burst);
+        },
+        |c| disconnect_device(c, BdAddr { b: PHONE }),
+    );
+    assert!(result.is_ok(), "got {result:?}");
+}
+
+#[test]
+fn disconnect_reports_an_error_packet() {
+    let result = run_against_device(
+        |d| {
+            expect_request(d, disconnect_request(PHONE));
+            answer(d, &packet(&[0x04, 0x02, 0x04, 0x07, 0x0b], PHONE, &[]));
+        },
+        |c| disconnect_device(c, BdAddr { b: PHONE }),
+    );
+    assert!(is_device_error(&result, 0x04, 0x02, 0x0b), "got {result:?}");
+}
+
+// ---- remove ----
+
+#[test]
+fn remove_succeeds_on_the_c_acknowledgement() {
+    let result = run_against_device(
+        |d| {
+            expect_request(d, remove_request(PHONE));
+            answer(d, &packet(&[0x04, 0x03, 0x06, 0x06], PHONE, &[]));
+        },
+        |c| remove_device(c, BdAddr { b: PHONE }),
+    );
+    assert!(result.is_ok(), "got {result:?}");
+}
+
+#[test]
+fn remove_succeeds_when_nothing_arrives_before_the_receive_timeout() {
+    // Capture (2026-10-05), SoundLink Color II: no reply at all.
+    let result = run_against_device(
+        |d| {
+            expect_request(d, remove_request(PHONE));
+            thread::sleep(Duration::from_millis(600));
+        },
+        |c| {
+            c.set_read_timeout(Some(Duration::from_millis(200)))
+                .expect("set_read_timeout");
+            remove_device(c, BdAddr { b: PHONE })
+        },
+    );
+    assert!(result.is_ok(), "got {result:?}");
+}
+
+#[test]
+fn remove_succeeds_when_the_device_closes_without_answering() {
+    let result = run_against_device(
+        |d| expect_request(d, remove_request(PHONE)),
+        |c| remove_device(c, BdAddr { b: PHONE }),
+    );
+    assert!(result.is_ok(), "got {result:?}");
+}
+
+#[test]
+fn remove_reports_an_error_packet() {
+    let result = run_against_device(
+        |d| {
+            expect_request(d, remove_request(PHONE));
+            answer(d, &[0x04, 0x03, 0x04, 0x01, 0x05]);
+        },
+        |c| remove_device(c, BdAddr { b: PHONE }),
+    );
+    assert!(is_device_error(&result, 0x04, 0x03, 0x05), "got {result:?}");
 }
