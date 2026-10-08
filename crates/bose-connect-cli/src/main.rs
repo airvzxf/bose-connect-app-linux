@@ -15,10 +15,10 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use bose_connect::protocol::language_from_arg;
 use bose_connect::{
-    BdAddr, BoseDevice, DeviceStatus, DevicesConnected, NoiseCancelling, PromptLanguage, SelfVoice,
-    VP_ENABLE_BIT, VP_MASK,
+    BdAddr, BoseDevice, BoseError, DeviceStatus, DevicesConnected, EqBand, ImmersiveAudio,
+    MediaKey, NoiseCancelling, PromptLanguage, SelfVoice, ShortcutAction, VP_ENABLE_BIT, VP_MASK,
 };
-use clap::{Parser, ValueHint};
+use clap::{ArgGroup, Parser, ValueHint};
 
 /// Bose Connect for Linux — control Bose headphones over RFCOMM.
 ///
@@ -34,6 +34,17 @@ use clap::{Parser, ValueHint};
     disable_help_flag = false,
     arg_required_else_help = false,
 )]
+#[command(group(
+    ArgGroup::new("qc_ultra_setting")
+        .multiple(false)
+        .conflicts_with_all([
+            "info", "device_status", "firmware_version", "serial_number", "battery_level",
+            "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
+            "prompt_language", "voice_prompts", "pairing", "self_voice",
+            "connect_device", "disconnect_device", "remove_device", "send_packet",
+            "audio_mode", "set_volume", "send_media_key", "active_device", "device_bd_addr",
+        ])
+))]
 struct Cli {
     /// Bluetooth address of the Bose device ("AA:BB:CC:DD:EE:FF").
     #[arg(value_hint = ValueHint::Other, required = true)]
@@ -111,7 +122,7 @@ struct Cli {
     ])]
     name: Option<String>,
 
-    /// Change the auto-off time. minutes: never, 5, 20, 40, 60, 180.
+    /// Change the auto-off time. minutes: never, 5, 20, 40, 60, 180, 1440 (QC Ultra only).
     #[arg(short = 'o', long = "auto-off", value_name = "MINUTES", conflicts_with_all = &[
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "noise_cancelling",
@@ -257,6 +268,55 @@ struct Cli {
         "set_volume", "send_media_key", "active_device", "audio_mode",
     ])]
     device_bd_addr: bool,
+
+    /// Set equalizer bands (QC Ultra), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10.
+    #[arg(long = "equalizer", value_name = "BANDS", group = "qc_ultra_setting")]
+    equalizer: Option<String>,
+
+    /// Immersive audio (QC Ultra). setting: off, still, motion.
+    #[arg(
+        long = "immersive-audio",
+        value_name = "SETTING",
+        group = "qc_ultra_setting"
+    )]
+    immersive_audio: Option<String>,
+
+    /// Announce the battery level at power-on (QC Ultra). switch: on, off.
+    #[arg(
+        long = "battery-prompt",
+        value_name = "SWITCH",
+        group = "qc_ultra_setting"
+    )]
+    battery_prompt: Option<String>,
+
+    /// Pause when the headphones come off and resume when they go on (QC Ultra). switch: on, off.
+    #[arg(
+        long = "auto-play-pause",
+        value_name = "SWITCH",
+        group = "qc_ultra_setting"
+    )]
+    auto_play_pause: Option<String>,
+
+    /// Answer calls by putting the headphones on (QC Ultra). switch: on, off.
+    #[arg(
+        long = "auto-answer",
+        value_name = "SWITCH",
+        group = "qc_ultra_setting"
+    )]
+    auto_answer: Option<String>,
+
+    /// Start in the last audio mode used (QC Ultra). switch: on, off.
+    #[arg(
+        long = "remember-mode",
+        value_name = "SWITCH",
+        group = "qc_ultra_setting"
+    )]
+    remember_mode: Option<String>,
+
+    /// Touch-and-hold shortcut of the right earcup (QC Ultra). action: battery, immersive,
+    /// assistant, spotify, off.
+    #[arg(long = "shortcut", value_name = "ACTION", group = "qc_ultra_setting")]
+    shortcut: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -304,7 +364,6 @@ fn dispatch(cli: Cli) -> Result<()> {
             .with_context(|| format!("setting name to {name:?}"))?;
     } else if let Some(minutes) = cli.auto_off.as_deref() {
         let parsed = parse_auto_off(minutes)?;
-        require_legacy_settings(&mut device, "auto-off")?;
         device.set_auto_off(parsed)?;
     } else if let Some(level) = cli.noise_cancelling.as_deref() {
         let parsed = parse_noise_cancelling(level)?;
@@ -327,7 +386,6 @@ fn dispatch(cli: Cli) -> Result<()> {
         device.set_language_keep_voice_prompts(parsed)?;
     } else if let Some(switch) = cli.voice_prompts.as_deref() {
         let on = parse_voice_prompts(switch)?;
-        require_legacy_settings(&mut device, "voice-prompts")?;
         device.set_voice_prompts(on)?;
     } else if let Some(status) = cli.pairing.as_deref() {
         let on = parse_pairing(status)?;
@@ -376,6 +434,15 @@ fn dispatch(cli: Cli) -> Result<()> {
         println!("Volume: {} (device scale max {})", level, max);
     } else if let Some(key) = cli.send_media_key.as_deref() {
         let parsed = parse_media_key(key)?;
+        if parsed == MediaKey::Pause {
+            let (device_id, _) = device.device_id()?;
+            if bose_connect::has_audio_modes(device_id) {
+                bail!(
+                    "pause is refused on this device: on a QC Ultra it never completes and \
+                     locks media control, the phone's included, until the phone reconnects"
+                );
+            }
+        }
         device.send_media_key(parsed)?;
         println!("Sent media key: {:?}", parsed);
     } else if cli.active_device {
@@ -384,6 +451,24 @@ fn dispatch(cli: Cli) -> Result<()> {
     } else if cli.device_bd_addr {
         let addr = device.device_bd_addr()?;
         println!("Device BD addr: {}", format_address(&addr));
+    } else if let Some(bands) = cli.equalizer.as_deref() {
+        for (band, value) in parse_equalizer(bands)? {
+            device
+                .set_equalizer_band(band, value)
+                .with_context(|| format!("setting {band:?} to {value}"))?;
+        }
+    } else if let Some(setting) = cli.immersive_audio.as_deref() {
+        device.set_immersive_audio(parse_immersive_audio(setting)?)?;
+    } else if let Some(switch) = cli.battery_prompt.as_deref() {
+        device.set_battery_prompt(parse_switch("battery-prompt", switch)?)?;
+    } else if let Some(switch) = cli.auto_play_pause.as_deref() {
+        device.set_auto_play_pause(parse_switch("auto-play-pause", switch)?)?;
+    } else if let Some(switch) = cli.auto_answer.as_deref() {
+        device.set_auto_answer_calls(parse_switch("auto-answer", switch)?)?;
+    } else if let Some(switch) = cli.remember_mode.as_deref() {
+        device.set_remember_audio_mode(parse_switch("remember-mode", switch)?)?;
+    } else if let Some(action) = cli.shortcut.as_deref() {
+        device.set_shortcut(parse_shortcut(action)?)?;
     } else {
         // No command flag. The C code prints the usage on bare
         // invocation; mirror that.
@@ -507,8 +592,50 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
         println!("\tAudio Mode: {}", name);
         let names: Vec<&str> = modes.iter().map(|(_, name)| name.as_str()).collect();
         println!("\tAudio Modes Available: {}", names.join(", "));
+        print_qc_ultra_settings(device)?;
     }
     Ok(())
+}
+
+/// The settings decoded on the QC Ultra (firmware 1.6.7).
+fn print_qc_ultra_settings(device: &mut BoseDevice) -> Result<()> {
+    let on_off = |on: bool| if on { "on" } else { "off" };
+    let bands: Vec<String> = device
+        .equalizer()?
+        .iter()
+        .map(|b| format!("{}={}", eq_band_name(b.band), b.value))
+        .collect();
+    println!("\tEqualizer: {}", bands.join(", "));
+    let immersive = match device.immersive_audio()? {
+        ImmersiveAudio::Off => "off",
+        ImmersiveAudio::Still => "still",
+        ImmersiveAudio::Motion => "motion",
+    };
+    println!("\tImmersive Audio: {immersive}");
+    println!("\tBattery Prompt: {}", on_off(device.battery_prompt()?));
+    println!("\tAuto Play/Pause: {}", on_off(device.auto_play_pause()?));
+    println!(
+        "\tAuto Answer Calls: {}",
+        on_off(device.auto_answer_calls()?)
+    );
+    println!("\tRemember Mode: {}", on_off(device.remember_audio_mode()?));
+    let shortcut = match device.shortcut()? {
+        ShortcutAction::BatteryLevel => "battery",
+        ShortcutAction::ImmersiveAudio => "immersive",
+        ShortcutAction::VoiceAssistant => "assistant",
+        ShortcutAction::Spotify => "spotify",
+        ShortcutAction::Off => "off",
+    };
+    println!("\tShortcut: {shortcut}");
+    Ok(())
+}
+
+fn eq_band_name(band: EqBand) -> &'static str {
+    match band {
+        EqBand::Bass => "bass",
+        EqBand::Mid => "mid",
+        EqBand::Treble => "treble",
+    }
 }
 
 /// Low 5 bits of the prompt-language byte: the language code.
@@ -676,7 +803,9 @@ where
                 eprintln!("[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: protocol OK");
             }
             Err(e) => {
-                if attempt < MAX_ATTEMPTS {
+                // An ERROR packet is the device's answer; asking again
+                // gets the same one.
+                if attempt < MAX_ATTEMPTS && !matches!(e, BoseError::DeviceError { .. }) {
                     eprintln!(
                         "[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: protocol error: {e}; retrying in {RETRY_BACKOFF:?}"
                     );
@@ -802,6 +931,58 @@ fn parse_voice_prompts(s: &str) -> Result<bool> {
         "on" => true,
         "off" => false,
         _ => bail!("invalid voice prompt argument: {s}"),
+    })
+}
+
+fn parse_switch(flag: &str, s: &str) -> Result<bool> {
+    Ok(match s {
+        "on" => true,
+        "off" => false,
+        _ => bail!("invalid {flag} argument: {s} (expected on or off)"),
+    })
+}
+
+/// `bass=4,mid=0,treble=-3` (any subset, any order).
+fn parse_equalizer(s: &str) -> Result<Vec<(EqBand, i8)>> {
+    s.split(',')
+        .map(|pair| {
+            let (band, value) = pair.split_once('=').ok_or_else(|| {
+                anyhow::anyhow!("invalid equalizer band {pair:?}: use band=value")
+            })?;
+            let band = match band.trim() {
+                "bass" => EqBand::Bass,
+                "mid" => EqBand::Mid,
+                "treble" => EqBand::Treble,
+                other => bail!("invalid equalizer band {other:?}: use bass, mid or treble"),
+            };
+            let value: i8 = value
+                .trim()
+                .parse()
+                .with_context(|| format!("invalid equalizer value {value:?}"))?;
+            Ok((band, value))
+        })
+        .collect()
+}
+
+fn parse_immersive_audio(s: &str) -> Result<ImmersiveAudio> {
+    Ok(match s {
+        "off" => ImmersiveAudio::Off,
+        "still" => ImmersiveAudio::Still,
+        "motion" => ImmersiveAudio::Motion,
+        _ => bail!("invalid immersive-audio argument: {s} (expected off, still or motion)"),
+    })
+}
+
+fn parse_shortcut(s: &str) -> Result<ShortcutAction> {
+    Ok(match s {
+        "battery" => ShortcutAction::BatteryLevel,
+        "immersive" => ShortcutAction::ImmersiveAudio,
+        "assistant" => ShortcutAction::VoiceAssistant,
+        "spotify" => ShortcutAction::Spotify,
+        "off" => ShortcutAction::Off,
+        _ => bail!(
+            "invalid shortcut argument: {s} (expected battery, immersive, assistant, spotify or off)"
+        ),
     })
 }
 
