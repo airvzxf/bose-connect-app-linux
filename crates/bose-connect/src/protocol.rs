@@ -800,83 +800,94 @@ pub fn remove_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<()> {
 // counterpart.
 // ---------------------------------------------------------------------------
 
-/// Send a paired-device packet and validate the response with a
-/// permissive matcher. This replaces the C `write_check` for the
-/// `connect_device` / `disconnect_device` / `remove_device` flows
-/// because the SLC II 4.0.1 firmware does not return the canonical
-/// 10-byte ACK that the original C code expects.
+/// Error code of the SoundLink Color II (firmware 4.0.1) reply
+/// `04 01 04 07 0b <addr>` to `connect_device`. The operator byte says
+/// ERROR, but whether the speaker really rejects the request is not
+/// verified on hardware yet (see `TODO.md`), so [`write_paired`] keeps
+/// accepting this one code, for `connect_device` only, as the previous
+/// matcher did.
+const SLC2_CONNECT_DEVICE_ERROR_ACCEPTED: u8 = 0x0b;
+
+/// Read the first byte of a reply, or `None` if the device sent
+/// nothing: end of stream, or the receive timeout expired
+/// (`WouldBlock` / `TimedOut`) before any byte arrived.
+fn read_first_byte<I: BoseIo>(io: &mut I) -> BoseResult<Option<u8>> {
+    let mut byte = [0u8; 1];
+    loop {
+        return match std::io::Read::read(io, &mut byte) {
+            Ok(0) => Ok(None),
+            Ok(_) => Ok(Some(byte[0])),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(e.into()),
+        };
+    }
+}
+
+/// Send a paired-device packet (`connect_device`, `disconnect_device`,
+/// `remove_device`) and read its reply packet by packet from the
+/// `block, function, operator, length` header, through [`check_reply`].
 ///
-/// Observed SLC II responses (from `--send-packet` capture):
+/// Observed replies:
 ///
-/// | Command          | Bytes sent                          | Bytes received                                          |
-/// |------------------|-------------------------------------|---------------------------------------------------------|
-/// | `CONNECT_DEVICE` | `04 01 05 07 00 + addr` (11)         | `04 01 04 07 0b + addr` (11) — opcode differs, length 7 |
-/// | `DISCONNECT_DEVICE` | `04 02 05 06 + addr` (10)         | `04 02 07 00 04 02 06 06 + addr` (14) — 2 packets     |
-/// | `REMOVE_DEVICE`  | `04 03 05 06 + addr` (10)            | empty — no response at all                               |
+/// | Command             | Device       | Reply                                    |
+/// | ------------------- | ------------ | ---------------------------------------- |
+/// | `CONNECT_DEVICE`    | C code, QC35 | `04 01 07 06 <addr>`                     |
+/// | `CONNECT_DEVICE`    | SLC II 4.0.1 | `04 01 04 07 0b <addr>` (ERROR `0b`)     |
+/// | `DISCONNECT_DEVICE` | C code, QC35 | `04 02 07 06 <addr>`                     |
+/// | `DISCONNECT_DEVICE` | SLC II 4.0.1 | `04 02 07 00`, then `04 02 06 06 <addr>` |
+/// | `REMOVE_DEVICE`     | C code, QC35 | `04 03 06 06 <addr>`                     |
+/// | `REMOVE_DEVICE`     | SLC II 4.0.1 | nothing at all                           |
 ///
-/// Acceptance rule (any of these = success):
+/// Rules, in order:
 ///
-/// 1. The response is **empty** — the device silently accepted the
-///    command (REMOVE_DEVICE on SLC II).
-/// 2. The first two bytes match the first two bytes of the sent
-///    packet (the Bose subsystem prefix, e.g. `04 02` for
-///    DISCONNECT_DEVICE), **and** the address bytes appear
-///    anywhere in the response. This catches both the
-///    canonical `prefix + addr` ACK and the SLC II's variant
-///    (`prefix + status + addr`) responses.
+/// 1. No byte arrives before end of stream or the receive timeout:
+///    the device silently accepted the request (SLC II
+///    `REMOVE_DEVICE`).
+/// 2. A PROCESSING or RESULT packet whose payload is exactly
+///    `address`: success.
+/// 3. A PROCESSING packet with an empty payload: read the next packet.
+/// 4. An ERROR packet: [`BoseError::DeviceError`], except code
+///    [`SLC2_CONNECT_DEVICE_ERROR_ACCEPTED`] in reply to
+///    `connect_device`, which is success.
+/// 5. Anything else: [`BoseError::AckMismatch`].
 ///
-/// Anything else returns [`BoseError::AckMismatch`].
+/// Exactly the bytes of the reply are consumed, so the next request on
+/// the same connection reads its own reply.
 pub(crate) fn write_paired<I: BoseIo>(
     io: &mut I,
     send: &[u8],
     address: &[u8; 6],
 ) -> BoseResult<()> {
     io.bose_write_all(send)?;
+    let (block, function) = (send[0], send[1]);
 
-    // Read up to 64 bytes or until timeout. The SLC II has been
-    // observed to send between 0 and 14 bytes depending on the
-    // command; the Bose QC35 sends the canonical 10-byte ACK. 64
-    // bytes is plenty of headroom for both.
-    //
-    // We read incrementally (not with `bose_read_exact`) so an
-    // empty / partial response surfaces as the actual byte count,
-    // not as an error. `bose_read_exact` would treat anything
-    // shorter than the requested size as `ShortRead`, which would
-    // mask the SLC II's silent-accept behaviour for REMOVE_DEVICE.
-    let mut buf = vec![0u8; 64];
-    let mut total = 0usize;
-    while total < buf.len() {
-        match std::io::Read::read(io, &mut buf[total..]) {
-            Ok(0) => break,
-            Ok(n) => {
-                total += n;
-                if total == buf.len() {
-                    break;
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
-            Err(e) => return Err(e.into()),
+    let Some(first) = read_first_byte(io)? else {
+        return Ok(());
+    };
+    let mut packet = read_packet_from(io, first)?;
+    loop {
+        let (operator, payload) = match check_reply(block, function, packet.0, packet.1) {
+            Err(BoseError::DeviceError {
+                block: 0x04,
+                function: 0x01,
+                code: SLC2_CONNECT_DEVICE_ERROR_ACCEPTED,
+            }) => return Ok(()),
+            reply => reply?,
+        };
+        match operator {
+            OP_PROCESSING | OP_RESULT if payload == address => return Ok(()),
+            OP_PROCESSING if payload.is_empty() => packet = read_packet(io)?,
+            _ => return Err(BoseError::AckMismatch),
         }
     }
-    buf.truncate(total);
-
-    // Rule 1: silent acceptance.
-    if buf.is_empty() {
-        return Ok(());
-    }
-
-    // Rule 2: prefix + address-anywhere.
-    if buf.len() >= 2
-        && send.len() >= 2
-        && buf[0] == send[0]
-        && buf[1] == send[1]
-        && buf.windows(6).any(|w| w == address)
-    {
-        return Ok(());
-    }
-
-    Err(BoseError::AckMismatch)
 }
 
 /// `static int masked_memory_cmp(const uint8_t *ptr1, uint8_t *ptr2,
