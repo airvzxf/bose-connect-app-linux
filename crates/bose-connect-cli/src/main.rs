@@ -205,7 +205,7 @@ struct Cli {
     audio_mode: Option<String>,
 
     /// RFCOMM channel to use instead of the automatic choice
-    /// (8, then 2).
+    /// (8, then 2, then 1).
     #[arg(long = "channel", value_name = "CHANNEL")]
     channel: Option<u8>,
 

@@ -404,8 +404,10 @@ pub const BOSE_CHANNEL: u8 = 8;
 
 /// Channels tried, in order, when the connection on
 /// [`BOSE_CHANNEL`] is refused. The QC Ultra Headphones expose the
-/// same protocol on the serial-port channel 2.
-pub const BOSE_FALLBACK_CHANNELS: [u8; 1] = [2];
+/// same protocol on the serial-port channels 2 and 1, one client each;
+/// the phone's Bose app holds one of them, whichever it got first
+/// (observed on firmware 1.6.7, 2026-10-07).
+pub const BOSE_FALLBACK_CHANNELS: [u8; 2] = [2, 1];
 
 /// Number of audio-mode slots on devices with audio modes. The QC
 /// Ultra answers slots 0..=9 and returns an error for slot 10.

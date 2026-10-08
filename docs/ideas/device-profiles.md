@@ -127,7 +127,7 @@ implementation.
 * How fine-grained are firmware ranges in practice? Do we need them
   now, or only product-level profiles?
 * Can identification happen before the first real command on every
-  device? (The QC Ultra only listens on channel 2, so "connect" may
+  device? (The QC Ultra only listens on channels 2 and 1, so "connect" may
   itself need a guess.)
 * How do connection quirks (the 9-connection limit) shape the CLI,
   which today opens one connection per invocation?

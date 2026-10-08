@@ -61,7 +61,7 @@ fixed-size acknowledgement (ACK), because the QuietComfort (QC)
 Ultra Headphones (device id `0x4066`) send longer payloads for the
 same functions. The
 audio-mode functions (block `0x1f`), the RFCOMM channel fallback
-(8, then 2) and the connection retry have no C counterpart; their
+(8, then 2, then 1) and the connection retry have no C counterpart; their
 byte sequences were captured from a real QC Ultra Headphones on
 firmware 1.6.7 and are recorded in `docs/protocol.md` and in the
 `qc_ultra_*` tests of `tests/protocol_roundtrip.rs`.

@@ -129,7 +129,7 @@ Usage: bose-connect-app-linux [options] <address>
     Change the audio mode (QC Ultra).
     mode: quiet, aware, immersion, or a slot index
   --channel=<channel>
-    Use this RFCOMM channel instead of the automatic choice (8, then 2).
+    Use this RFCOMM channel instead of the automatic choice (8, then 2, then 1).
 ```
 
 ### C / FFI
@@ -218,8 +218,9 @@ shows the source-of-truth protocol implementation side-by-side.
 ## QuietComfort Ultra Headphones
 
 The QC Ultra Headphones (device id `0x4066`) speak the same
-protocol on RFCOMM channel 2 instead of 8; the connection falls
-back to it automatically (`--channel` forces one). Their audio
+protocol on RFCOMM channels 2 and 1 instead of 8, one client per
+channel; the phone's Bose app holds one of them. The connection falls
+back to 2, then 1, automatically (`--channel` forces one). Their audio
 modes replace the noise-cancelling levels:
 
 ```bash
