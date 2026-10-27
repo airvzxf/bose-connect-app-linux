@@ -28,8 +28,12 @@ fn main() {
     // Emit a gresource.xml listing every file under `resources/`.
     let manifest = resources_dir.join("gresource.xml");
     let xml = build_gresource_manifest(resources_dir);
-    let mut f = fs::File::create(&manifest).expect("create gresource.xml");
-    f.write_all(xml.as_bytes()).expect("write gresource.xml");
+    // Only rewrite it when the listing changed, so a build leaves the
+    // checked-in file (and its mtime) alone.
+    if fs::read_to_string(&manifest).ok().as_deref() != Some(xml.as_str()) {
+        let mut f = fs::File::create(&manifest).expect("create gresource.xml");
+        f.write_all(xml.as_bytes()).expect("write gresource.xml");
+    }
     println!("cargo:rerun-if-changed={}", manifest.display());
 
     // glib-compile-resources needs to write the .gresource file to
@@ -61,7 +65,7 @@ fn build_gresource_manifest(resources_dir: &Path) -> String {
     out.push_str("<gresources>\n");
     out.push_str("  <gresource prefix=\"/com/airvzxf/bose-connect-gui\">\n");
 
-    fn walk(dir: &Path, base: &Path, out: &mut String) {
+    fn walk(dir: &Path, base: &Path, files: &mut Vec<String>) {
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
             Err(_) => return,
@@ -69,7 +73,7 @@ fn build_gresource_manifest(resources_dir: &Path) -> String {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                walk(&path, base, out);
+                walk(&path, base, files);
             } else if path
                 .extension()
                 .is_some_and(|e| e == "svg" || e == "css" || e == "ui" || e == "png" || e == "xml")
@@ -80,12 +84,19 @@ fn build_gresource_manifest(resources_dir: &Path) -> String {
                     .unwrap()
                     .to_string_lossy()
                     .replace('\\', "/");
-                out.push_str(&format!("    <file>{rel}</file>\n"));
+                files.push(rel);
             }
         }
     }
 
-    walk(resources_dir, resources_dir, &mut out);
+    // `read_dir` order depends on the filesystem, so sort the paths to
+    // get the same manifest on every machine.
+    let mut files = Vec::new();
+    walk(resources_dir, resources_dir, &mut files);
+    files.sort();
+    for rel in files {
+        out.push_str(&format!("    <file>{rel}</file>\n"));
+    }
     out.push_str("  </gresource>\n");
     out.push_str("</gresources>\n");
     out
