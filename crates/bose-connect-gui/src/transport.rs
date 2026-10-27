@@ -15,7 +15,6 @@ use bose_connect::{
     PromptLanguage, SelfVoice, MAX_NAME_LEN, VP_ENABLE_BIT,
 };
 use parking_lot::RwLock;
-use rand::Rng;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
@@ -200,7 +199,7 @@ pub fn spawn(seed: Option<MockSeed>, tick_every: Option<Duration>) -> (MockHandl
                 }
                 new_battery
             };
-            let _ = rand::thread_rng().gen_ratio(1, 50);
+            let _ = rand::random_ratio(1, 50);
             let _ = event_tx.send(MockEvent::BatteryChanged(battery_now));
         }
     });
