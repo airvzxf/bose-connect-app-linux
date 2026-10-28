@@ -426,11 +426,21 @@ pub fn send_media_key<I: BoseIo>(io: &mut I, key: MediaKey) -> BoseResult<()> {
     ];
     io.bose_send(&send)?;
 
-    read_response(
-        io,
-        SEND_MEDIA_KEY_SEND_PREFIX[0],
-        SEND_MEDIA_KEY_SEND_PREFIX[1],
-    )?;
+    // The QC Ultra sends the RESULT 1-3 s after PROCESSING (captured
+    // 2026-10-07 and 2026-10-27), past the 1 s receive timeout.
+    let deadline = Instant::now() + MEDIA_KEY_RESULT_TIMEOUT;
+    loop {
+        let (header, payload) = read_packet_before(io, deadline)?;
+        match check_reply(
+            SEND_MEDIA_KEY_SEND_PREFIX[0],
+            SEND_MEDIA_KEY_SEND_PREFIX[1],
+            header,
+            payload,
+        )? {
+            Some((OP_STATUS | OP_RESULT, _)) => break,
+            _ => continue,
+        }
+    }
     Ok(())
 }
 
@@ -501,8 +511,13 @@ pub fn get_device_status<I: BoseIo>(io: &mut I) -> BoseResult<DeviceStatusReport
                 level,
             });
         }
-        // Packets of other blocks are unsolicited notifications.
-        if header[0] != 0x01 {
+        // Packets of other blocks are unsolicited notifications. Inside
+        // the dump a setting can come as an ERROR packet: the QC Ultra
+        // sends `01 05 04 01 08` while its audio mode is modified
+        // (captured 2026-10-27). Only the settings of the report count.
+        if header[0] != 0x01
+            || (header[2] == OP_ERROR && !matches!(header[1], 0x02 | 0x03 | 0x04 | 0x06))
+        {
             continue;
         }
         let Some((operator, payload)) = check_reply(0x01, header[1], header, payload)? else {
@@ -1049,6 +1064,9 @@ fn set_byte<I: BoseIo>(io: &mut I, (block, function): (u8, u8), value: u8) -> Bo
 // `write_paired` and the reply readers (`read_first_byte` and below),
 // which have no C counterpart.
 // ---------------------------------------------------------------------------
+
+/// How long [`send_media_key`] waits for its RESULT.
+const MEDIA_KEY_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long [`write_paired`] waits for the final RESULT of a
 /// paired-device command. Reconnecting a phone to a SoundLink Color II

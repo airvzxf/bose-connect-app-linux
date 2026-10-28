@@ -585,10 +585,16 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
     if bose_connect::has_audio_modes(status.device_id) {
         let modes = device.audio_modes()?;
         let current = device.audio_mode()?;
-        let name = modes
-            .iter()
-            .find(|(index, _)| *index == current)
-            .map_or("unknown", |(_, name)| name.as_str());
+        let name = modes.iter().find(|(index, _)| *index == current).map_or(
+            // `ff`: the current mode was changed away from its slot,
+            // e.g. its immersive-audio setting.
+            if current == 0xff {
+                "modified"
+            } else {
+                "unknown"
+            },
+            |(_, name)| name.as_str(),
+        );
         println!("\tAudio Mode: {}", name);
         let names: Vec<&str> = modes.iter().map(|(_, name)| name.as_str()).collect();
         println!("\tAudio Modes Available: {}", names.join(", "));

@@ -185,3 +185,47 @@ fn a_notification_inside_the_status_dump_is_skipped() {
     assert_eq!(status.language, 0xa6);
     assert_eq!(status.minutes, Some(20));
 }
+
+#[test]
+fn an_error_for_a_setting_outside_the_report_does_not_fail_the_status_dump() {
+    // Captured on a QC Ultra (1.6.7) with immersive audio changed away
+    // from the audio mode's own setting: `01 05` comes as ERROR `08`.
+    let status = run_against_device(
+        |d| {
+            expect_request(d, [0x00, 0x03, 0x01, 0x00]);
+            answer(d, &bytes("00 03 03 03 40 66 03"));
+            expect_request(d, [0x01, 0x01, 0x05, 0x00]);
+            let mut burst = bytes("01 01 07 00");
+            burst.extend(bytes("01 02 03 04 00 51 43 55"));
+            burst.extend(bytes("01 03 03 07 a6 00 01 81 5e 01 00"));
+            burst.extend(bytes("01 04 03 03 14 00 00"));
+            burst.extend(bytes("01 05 04 01 08"));
+            burst.extend(bytes("01 01 06 00"));
+            answer(d, &burst);
+        },
+        get_device_status::<UnixStream>,
+    )
+    .expect("get_device_status");
+    assert_eq!(status.device_id, 0x4066);
+    assert_eq!(status.minutes, Some(20));
+}
+
+#[test]
+fn a_media_key_waits_through_receive_timeouts_for_its_result() {
+    // QC Ultra (1.6.7): PROCESSING `05 03 07 01 03` at once, RESULT
+    // `05 03 06 01 03` ~1-3 s later. Here 0.7 s with a 0.2 s timeout.
+    let result = run_against_device(
+        |d| {
+            expect_request(d, [0x05, 0x03, 0x05, 0x01, 0x03]);
+            answer(d, &bytes("05 03 07 01 03"));
+            thread::sleep(Duration::from_millis(700));
+            answer(d, &bytes("05 03 06 01 03"));
+        },
+        |c| {
+            c.set_read_timeout(Some(Duration::from_millis(200)))
+                .expect("set_read_timeout");
+            send_media_key(c, MediaKey::Next)
+        },
+    );
+    assert!(result.is_ok(), "got {result:?}");
+}
