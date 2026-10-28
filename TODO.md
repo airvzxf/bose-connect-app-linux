@@ -23,6 +23,8 @@ cover the Rust migration + CI/CD.
     - [x] `release.yml` — crates.io publish + GitHub Release with
           binary + C-FFI artefacts.
     - [x] `dependabot.yml` — Cargo + GitHub Actions.
+    - [x] `.remarkrc` — Codacy's Remark-lint no longer reports
+          task-list checkboxes as undefined references (#80).
 
 - [ ] **Portability.**
     - [ ] Docker image for the Rust build (the original C Docker

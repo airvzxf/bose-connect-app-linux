@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    "remark-preset-lint-recommended",
+    ["remark-footnotes", { "inlineNotes": true }],
+    ["remark-lint-list-item-indent", false],
+    ["remark-lint-ordered-list-marker-value", "ordered"],
+    ["remark-lint-no-undefined-references", { "allow": [" ", "x", "X"] }]
+  ]
+}
