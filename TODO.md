@@ -86,10 +86,6 @@ cover the Rust migration + CI/CD.
           `libbose_connect.so`.
 
 - [ ] **QA.**
-    - [ ] `crates/bose-connect-gui/build.rs` rewrites the tracked
-          `resources/gresource.xml` in `read_dir` order, so building
-          the GUI in a new checkout can leave the tree dirty. Sort the
-          entries (or stop tracking the generated file).
     - [ ] Cargo-fuzz harnesses for `parse_hex_packet` and
           `parse_bdaddr` (the public-input parsers).
     - [ ] Coverage reporting (cargo-llvm-cov) on the protocol
