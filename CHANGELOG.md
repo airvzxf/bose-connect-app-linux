@@ -6,6 +6,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+## [0.3.0][] - 2026-10-27
+
 Based on hardware sessions with a SoundLink Color II (firmware 4.0.1),
 a QC35 II (4.8.1) and a QC Ultra (1.6.7) on 2026-10-07/08; the
 captures are in `docs/protocol.md` and replayed by the tests.
@@ -122,6 +124,7 @@ First Rust release: a port of the original C implementation, with the
 `bose-connect` library, the `bose-connect-app-linux` CLI and a C FFI
 (`bose_connect.h`).
 
-[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/airvzxf/bose-connect-app-linux/releases/tag/v0.1.0
