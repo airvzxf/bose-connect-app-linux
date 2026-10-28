@@ -174,11 +174,13 @@ fn set_self_voice_round_trip() {
     let result = with_mock_device(
         |client| set_self_voice(client, SelfVoice::High),
         |server| {
-            let mut buf = [0u8; 7];
+            // The C packet's stray trailing `38` is dropped (see
+            // `set_self_voice`).
+            let mut buf = [0u8; 6];
             server.read_exact(&mut buf).unwrap();
             assert_eq!(
                 buf,
-                [0x01, 0x0b, 0x02, 0x02, 0x01, 0x01, 0x38],
+                [0x01, 0x0b, 0x02, 0x02, 0x01, 0x01],
                 "self-voice high packet"
             );
             server
@@ -194,6 +196,12 @@ fn set_auto_off_round_trip() {
     let result = with_mock_device(
         |client| set_auto_off(client, AutoOff::Min20),
         |server| {
+            // The layout is read first: a 1-byte payload is the QC35
+            // layout, so the C packet follows.
+            let mut get = [0u8; 4];
+            server.read_exact(&mut get).unwrap();
+            assert_eq!(get, [0x01, 0x04, 0x01, 0x00], "auto-off GET");
+            server.write_all(&[0x01, 0x04, 0x03, 0x01, 0x05]).unwrap();
             // send: 01 04 02 01 14
             // device returns the masked-ACK then a 5-byte response
             // (01 04 03 01 14).
@@ -455,7 +463,8 @@ fn qc_ultra_device_status() {
     assert_eq!(status.device_id, 0x4066);
     assert_eq!(status.name, "Bose QC Ultra Headphones");
     assert_eq!(status.language, 0xe1);
-    assert_eq!(status.minutes, None);
+    // `a0 00 05`: 1440 minutes (24 hours), set in the app at the time.
+    assert_eq!(status.minutes, Some(1440));
     assert_eq!(status.level, NoiseCancelling::Dne);
 }
 

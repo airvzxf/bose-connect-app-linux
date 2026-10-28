@@ -61,9 +61,9 @@ fixed-size acknowledgement (ACK), because the QuietComfort (QC)
 Ultra Headphones (device id `0x4066`) send longer payloads for the
 same functions. The
 audio-mode functions (block `0x1f`), the RFCOMM channel fallback
-(8, then 2) and the connection retry have no C counterpart; their
+(8, then 2, then 1) and the connection retry have no C counterpart; their
 byte sequences were captured from a real QC Ultra Headphones on
-firmware 1.6.7 and are recorded in `DEVELOPMENT.md` and in the
+firmware 1.6.7 and are recorded in `docs/protocol.md` and in the
 `qc_ultra_*` tests of `tests/protocol_roundtrip.rs`.
 
 `git show <commit>:src/library/based.c` (the last commit that
@@ -87,9 +87,9 @@ as SoundLink Color II from here on. Their sources are:
 
 | Command              | Request          | Source                    |
 | -------------------- | ---------------- | ------------------------- |
-| `set_volume`         | `05 05 02 01 xx` | `DEVELOPMENT.md`, capture |
-| `send_media_key`     | `05 03 05 01 xx` | `DEVELOPMENT.md`, capture |
-| `get_active_device`  | `05 01 01 00`    | `DEVELOPMENT.md`, capture |
+| `set_volume`         | `05 05 02 01 xx` | `docs/protocol.md`, capture |
+| `send_media_key`     | `05 03 05 01 xx` | `docs/protocol.md`, capture |
+| `get_active_device`  | `05 01 01 00`    | `docs/protocol.md`, capture |
 | `get_device_bd_addr` | `00 06 01 00`    | capture only              |
 
 For these, a real-hardware capture is the source of truth. Note in
@@ -98,7 +98,7 @@ observed on; do not describe them as translated from C.
 
 When testing against a SoundLink Color II, remember it switches
 itself off after its 9th RFCOMM connection since power-on (see
-"SoundLink Color II findings" in `DEVELOPMENT.md`). Batch requests
+"SoundLink Color II" in `docs/protocol.md`). Batch requests
 in one connection and count connections, or an unrelated packet
 will look like the one that crashed it.
 

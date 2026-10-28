@@ -226,6 +226,28 @@ impl Connection {
     }
 }
 
+impl Connection {
+    /// One `recv(MSG_DONTWAIT)`: like [`Read::read`], but returns
+    /// `WouldBlock` at once instead of waiting for the receive timeout
+    /// when nothing is waiting.
+    pub(crate) fn recv_nonblocking(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let fd = self.fd.as_raw_fd();
+        let n = unsafe {
+            libc::recv(
+                fd,
+                buf.as_mut_ptr() as *mut _,
+                buf.len(),
+                libc::MSG_DONTWAIT,
+            )
+        };
+        if n < 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(n as usize)
+        }
+    }
+}
+
 impl Read for Connection {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let fd = self.fd.as_raw_fd();

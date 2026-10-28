@@ -28,20 +28,58 @@ cover the Rust migration + CI/CD.
     - [ ] Docker image for the Rust build (the original C Docker
           setup used `archlinux` + `cmake`; the Rust equivalent is
           a `rust:1.83-bookworm` image with `libbluetooth-dev`).
-    - [ ] Ubuntu / Debian package recipe (was on the C-roadmap).
-    - [ ] AUR recipe (was on the C-roadmap).
+    - [ ] Debian and AUR recipes exist in `packaging/` but have not
+          been built: both install `.desktop`, metainfo and
+          bash-completion files from paths that do not exist (the
+          files live under `packaging/linux/desktop/`,
+          `packaging/linux/metainfo/` and
+          `packaging/linux/bash-completion/`). Fix the paths and
+          build each package once.
 
-- [ ] **Protocol follow-ups (found in hardware tests, 2026-10-05).**
-    - [ ] `write_paired` accepts the SoundLink Color II reply
-          `04 01 04 07 0b <addr>` to connect-device as success. Its
-          operator byte `04` is ERROR (code `0b`), so the speaker may
-          be rejecting the request. Needs a hardware test (does the
-          source actually connect?) before changing the matcher.
-    - [ ] Fold `read_reply_header` (set_volume, send_media_key) into
-          `read_response` (#60): two readers now handle ERROR replies
-          for different commands.
-    - [ ] Media keys on the QC Ultra: find what the Bose app sends
-          (every `05 03 05 01 xx` gets ERROR `0c`).
+- [ ] **Protocol follow-ups (hardware tests 2026-10-05 and 2026-10-07).**
+          Captures: `docs/protocol.md`.
+    - [x] SoundLink Color II connect reply `04 01 04 07 0b`: ERROR
+          `0b` means "not a paired source" (seen for the device's own
+          and an unknown address on all three devices). It is a
+          `DeviceError` now.
+    - [x] Fold `read_reply_header` into `read_response` (#60). Every
+          reply, the C ones included, is read by header; notifications
+          of other functions are skipped and stale input is dropped
+          before each request.
+    - [x] The CLI no longer retries a paired-device operation after a
+          `DeviceError`.
+    - [ ] `write_paired` treats "no reply before the receive timeout"
+          as success (SoundLink Color II remove-device). Check whether
+          a late reply follows. Only test with a source you can pair
+          again.
+    - [x] `set_self_voice` drops the stray `38` of the C packet
+          `01 0b 02 02 01 xx 38`, which spilled into the next request;
+          verified on a QC Ultra and a QC35 II (2026-10-27).
+    - [ ] A SoundLink Color II switched off after only two CLI
+          connections on 2026-10-27, after the user had disconnected
+          and reconnected it by hand. Find out whether BlueZ's own
+          RFCOMM connections (hands-free profile) count towards its
+          9-connection limit.
+    - [ ] On this CachyOS laptop, Bose headphones that reconnect often
+          play nothing until disconnected and connected by hand (not on
+          a Windows laptop). Check the BlueZ/PipeWire logs at reconnect;
+          related to the QC Ultra media-control lock above?
+    - [ ] QC Ultra media keys: after play/pause (`01`), which never
+          completes, every key and the phone's own controls lock until
+          the phone reconnects. The user also saw the lock after only
+          connecting the laptop. Test: unlock with the laptop
+          disconnected, check the phone's controls, connect the laptop
+          without sending anything, check again.
+    - [ ] QC Ultra language: changing it from the laptop is untested
+          (the setters clear bit `0x80`, which the device sets).
+    - [ ] QC Ultra: decode `1f 08`, `1f 02`, the audio-mode settings
+          bytes, and how the app creates custom modes (`1f 06` SET);
+          "Source / multipoint" settings; noise-cancelling level.
+    - [ ] `get_device_info` shows the SoundLink Color II Black's name
+          with a leading `01`: the garbage after the status byte is
+          probably 3 bytes there, not 2. Capture the raw reply.
+    - [ ] The QC Ultra sends no notifications to a second client. Find
+          out whether it needs a subscription request.
 
 - [ ] **Architecture idea: device profiles** (not a decision).
     - [ ] Spike [`docs/ideas/device-profiles.md`](docs/ideas/device-profiles.md)
@@ -49,7 +87,7 @@ cover the Rust migration + CI/CD.
           compare alternatives.
 
 - [ ] **Documentation.**
-    - [ ] Move DEVELOPMENT.md's protocol-analysis content into a
+    - [x] Move DEVELOPMENT.md's protocol-analysis content into a
           `docs/protocol.md` and add Rust snippets.
     - [ ] Add an example under `crates/bose-connect/examples/`
           that drives a real device end-to-end.

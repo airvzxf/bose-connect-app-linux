@@ -67,7 +67,7 @@ implementation.
    common behaviour with every feature *unknown*, not an error.
 6. **Evidence over assumption.** A profile entry is only "supported" or
    "unsupported" with a hardware capture behind it (device, firmware,
-   date), in the spirit of `DEVELOPMENT.md`. Firmware matters: a
+   date), in the spirit of `docs/protocol.md`. Firmware matters: a
    profile can narrow an entry to a firmware range when behaviour
    changes between versions.
 7. **Device errors are information.** When a device answers with an
@@ -127,7 +127,7 @@ implementation.
 * How fine-grained are firmware ranges in practice? Do we need them
   now, or only product-level profiles?
 * Can identification happen before the first real command on every
-  device? (The QC Ultra only listens on channel 2, so "connect" may
+  device? (The QC Ultra only listens on channels 2 and 1, so "connect" may
   itself need a guess.)
 * How do connection quirks (the 9-connection limit) shape the CLI,
   which today opens one connection per invocation?
@@ -145,5 +145,5 @@ implementation.
   capability checks, scattered: a natural seed for a capability table.
 * #60's header-based reply reader turns ERROR packets into
   `BoseError::DeviceError`, which is what rule 7 needs.
-* `DEVELOPMENT.md` already records captures per device and firmware:
+* `docs/protocol.md` already records captures per device and firmware:
   the evidence rule 6 asks for.

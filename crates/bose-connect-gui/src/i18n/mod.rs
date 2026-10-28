@@ -36,6 +36,7 @@ pub fn auto_off_label(min: AutoOffWire) -> &'static str {
         AutoOffWire::Min40 => "40 minutes",
         AutoOffWire::Min60 => "1 hour",
         AutoOffWire::Min180 => "3 hours",
+        AutoOffWire::Min1440 => "24 hours",
     }
 }
 

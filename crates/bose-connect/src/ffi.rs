@@ -379,7 +379,8 @@ pub extern "C" fn bose_connect_set_voice_prompts(
 }
 
 /// Change the auto-off timer. `minutes` must be one of
-/// {0, 5, 20, 40, 60, 180}.
+/// {0, 5, 20, 40, 60, 180, 1440}; 1440 only on devices with the 3-byte
+/// auto-off layout (QC Ultra).
 #[no_mangle]
 pub extern "C" fn bose_connect_set_auto_off(
     handle: *mut BoseConnectHandle,
@@ -393,9 +394,10 @@ pub extern "C" fn bose_connect_set_auto_off(
             40 => AutoOff::Min40,
             60 => AutoOff::Min60,
             180 => AutoOff::Min180,
+            1440 => AutoOff::Min1440,
             _ => {
                 return Err(BoseError::InvalidArgument(format!(
-                    "auto-off minutes {minutes} not in [0, 5, 20, 40, 60, 180]"
+                    "auto-off minutes {minutes} not in [0, 5, 20, 40, 60, 180, 1440]"
                 )))
             }
         };

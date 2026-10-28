@@ -26,13 +26,15 @@
 //! (see [`crate::types::BdAddr`]) and the protocol packet layouts
 //! below assume that. No byte swapping happens here.
 
+use std::time::{Duration, Instant};
+
 use crate::error::{unconfirmed, BoseError, BoseResult};
 use crate::io::BoseIo;
 use crate::types::{
-    AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, MediaKey, NoiseCancelling, Pairing,
-    PromptLanguage, SelfVoice, MAX_AUDIO_MODES, MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES,
-    NOISE_CANCELLING_0C, NOISE_CANCELLING_14, NOISE_CANCELLING_20, QC_ULTRA_HEADPHONES,
-    VP_ENABLE_BIT, VP_MASK,
+    AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, EqBand, EqualizerBand, ImmersiveAudio,
+    MediaKey, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, ShortcutAction, MAX_AUDIO_MODES,
+    MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NOISE_CANCELLING_0C, NOISE_CANCELLING_14,
+    NOISE_CANCELLING_20, QC_ULTRA_HEADPHONES, VP_ENABLE_BIT, VP_MASK,
 };
 
 // Re-export the helper that wraps CN_BASE_PACK_LEN + MAX_NAME_LEN - 1
@@ -55,36 +57,58 @@ const BYTES_POSITION_10: usize = 10;
 const BYTES_POSITION_11: usize = 11;
 
 const GET_DEVICE_ID_SEND: [u8; 4] = [0x00, 0x03, 0x01, 0x00];
-const GET_DEVICE_ID_ACK: [u8; 4] = [0x00, 0x03, 0x03, 0x03];
 
 const SET_NAME_SEND_PREFIX: [u8; 4] = [0x01, 0x02, 0x02, 0x00];
 
 const SET_PROMPT_LANGUAGE_SEND: [u8; 5] = [0x01, 0x03, 0x02, 0x01, 0x00];
 
 const SET_AUTO_OFF_SEND: [u8; 5] = [0x01, 0x04, 0x02, 0x01, 0x00];
+const GET_AUTO_OFF_SEND: [u8; 4] = [0x01, 0x04, 0x01, 0x00];
+/// `01 04 02 03 lo 00 hi`: auto-off in the QC Ultra's 3-byte layout.
+const SET_AUTO_OFF_WIDE_SEND_PREFIX: [u8; 4] = [0x01, 0x04, 0x02, 0x03];
+
+const GET_PROMPT_LANGUAGE_SEND: [u8; 4] = [0x01, 0x03, 0x01, 0x00];
+/// `01 03 02 02 <language byte> <battery prompt>`, QC Ultra.
+const SET_BATTERY_PROMPT_SEND_PREFIX: [u8; 4] = [0x01, 0x03, 0x02, 0x02];
+/// Length of the QC Ultra prompt-language payload; its last byte is
+/// the "battery level at power-on" prompt.
+const PROMPT_LANGUAGE_WIDE_LEN: usize = 7;
+
+const GET_EQUALIZER_SEND: [u8; 4] = [0x01, 0x07, 0x01, 0x00];
+/// `01 07 02 02 <value> <band>`, QC Ultra.
+const SET_EQUALIZER_SEND_PREFIX: [u8; 4] = [0x01, 0x07, 0x02, 0x02];
+
+const GET_SHORTCUT_SEND: [u8; 4] = [0x01, 0x09, 0x01, 0x00];
+/// `01 09 02 03 80 09 <action>`, QC Ultra.
+const SET_SHORTCUT_SEND_PREFIX: [u8; 4] = [0x01, 0x09, 0x02, 0x03];
+/// Button id and event of the shortcut: the right earcup's volume
+/// strip, touch and hold.
+const SHORTCUT_BUTTON_EVENT: [u8; 2] = [0x80, 0x09];
+
+const IMMERSIVE_AUDIO: (u8, u8) = (0x05, 0x0f);
+const AUTO_PLAY_PAUSE: (u8, u8) = (0x01, 0x18);
+const AUTO_ANSWER_CALLS: (u8, u8) = (0x01, 0x1b);
+const REMEMBER_AUDIO_MODE: (u8, u8) = (0x1f, 0x05);
 
 const SET_NOISE_CANCELLING_SEND: [u8; 5] = [0x01, 0x06, 0x02, 0x01, 0x00];
 
 const GET_DEVICE_STATUS_SEND: [u8; 4] = [0x01, 0x01, 0x05, 0x00];
-const GET_DEVICE_STATUS_ACK: [u8; 4] = [0x01, 0x01, 0x07, 0x00];
 
 const GET_DEVICE_STATUS_FINAL_ACK: [u8; 4] = [0x01, 0x01, 0x06, 0x00];
 
 const GET_FIRMWARE_VERSION_SEND: [u8; 4] = [0x00, 0x05, 0x01, 0x00];
 
 const GET_SERIAL_NUMBER_SEND: [u8; 4] = [0x00, 0x07, 0x01, 0x00];
-const GET_SERIAL_NUMBER_ACK: [u8; 3] = [0x00, 0x07, 0x03];
 
 const GET_BATTERY_LEVEL_SEND: [u8; 4] = [0x02, 0x02, 0x01, 0x00];
 
 const GET_PAIRED_DEVICES_SEND: [u8; 4] = [0x04, 0x04, 0x01, 0x00];
-const GET_PAIRED_DEVICES_ACK: [u8; 3] = [0x04, 0x04, 0x03];
 
 const SET_PAIRING_SEND: [u8; 5] = [0x04, 0x08, 0x05, 0x01, 0x00];
-const SET_PAIRING_ACK: [u8; 5] = [0x04, 0x08, 0x06, 0x01, 0x00];
 
-const SET_SELF_VOICE_SEND: [u8; 7] = [0x01, 0x0b, 0x02, 0x02, 0x01, 0x00, 0x38];
-const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
+/// The C packet ended with a third payload byte `38` that its length
+/// byte (`02`) does not cover; it is dropped (see [`set_self_voice`]).
+const SET_SELF_VOICE_SEND: [u8; 6] = [0x01, 0x0b, 0x02, 0x02, 0x01, 0x00];
 
 // ---------------------------------------------------------------------------
 // Media / volume / audio-routing commands. These are NOT in the
@@ -102,65 +126,46 @@ const SET_SELF_VOICE_ACK: [u8; 7] = [0x01, 0x0b, 0x03, 0x03, 0x01, 0x00, 0x0f];
 //
 // A rejected request is answered with an ERROR packet
 // `[block, function, 0x04, len, code…]` instead of the usual STATUS
-// (0x03) / RESULT (0x06) reply; see `read_reply_header`.
+// (0x03) / RESULT (0x06) reply; see `check_reply`.
 // ---------------------------------------------------------------------------
 
 /// `set_volume` request — subsystem 0x05, opcode 0x05, command
-/// 0x02 (SET), length 0x01, payload = volume level. The valid range
-/// is device-specific; see [`SET_VOLUME_ACK_PREFIX`].
+/// 0x02 (SET), length 0x01, payload = volume level. The reply is
+/// `[0x05, 0x05, 0x03, 0x02, max, volume_echo]`; the valid range is
+/// device-specific, see [`set_volume`] for what `max` means on each
+/// device.
 const SET_VOLUME_SEND_PREFIX: [u8; 4] = [0x05, 0x05, 0x02, 0x01];
-
-/// Response header for `set_volume`. The full response is 6 bytes:
-/// `[0x05, 0x05, 0x03, 0x02, max, volume_echo]`; see [`set_volume`]
-/// for what `max` means on each device.
-const SET_VOLUME_ACK_PREFIX: [u8; 4] = [0x05, 0x05, 0x03, 0x02];
 
 /// Media-key request — subsystem 0x05, opcode 0x03, operator 0x05,
 /// length 0x01, payload = media key code. Keys:
 /// 0x01 play/pause toggle, 0x03 next, 0x04 previous. The play/pause
 /// toggle is exposed as `MediaKey::Pause` — see
-/// [`crate::types::MediaKey`] for why.
+/// [`crate::types::MediaKey`] for why. The reply is two packets
+/// (verified on a SoundLink Color II): `[0x05, 0x03, 0x07, 0x00]`
+/// (PROCESSING) followed by `[0x05, 0x03, 0x06, 0x00]` (RESULT).
 const SEND_MEDIA_KEY_SEND_PREFIX: [u8; 4] = [0x05, 0x03, 0x05, 0x01];
-
-/// First reply packet of `send_media_key`. The full response is 8
-/// bytes (two concatenated packets, verified on a SoundLink Color II):
-/// `[0x05, 0x03, 0x07, 0x00]` (PROCESSING) followed by
-/// `[0x05, 0x03, 0x06, 0x00]` (RESULT).
-const SEND_MEDIA_KEY_ACK_PREFIX: [u8; 4] = [0x05, 0x03, 0x07, 0x00];
-
-/// Second reply packet of `send_media_key` (RESULT). Concatenated
-/// immediately after the PROCESSING packet on the wire.
-const SEND_MEDIA_KEY_FINAL_ACK: [u8; 4] = [0x05, 0x03, 0x06, 0x00];
 
 /// `get_active_device` request — returns the BT address of the
 /// source currently feeding the A2DP sink. Subsystem 0x05, opcode
-/// 0x01, command 0x01 (GET), length 0x00. Response is 13 bytes;
-/// the last 6 bytes are the MSB-first BT address of the source.
+/// 0x01, command 0x01 (GET), length 0x00. The reply is
+/// `[0x05, 0x01, 0x03, 0x09]` and a 9-byte payload,
+/// `[0x00, 0x02, 0x01, addr_0..addr_5]` on the live capture: an
+/// unknown status triple, then the MSB-first BT address of the source.
 const GET_ACTIVE_DEVICE_SEND: [u8; 4] = [0x05, 0x01, 0x01, 0x00];
 
-/// Header of the `get_active_device` response. 9-byte payload
-/// follows (length byte = 0x09). The payload structure observed on
-/// the live capture is `[0x00, 0x02, 0x01, addr_0..addr_5]`; the
-/// first three bytes are an unknown status triple, the last six
-/// are the BT address.
-const GET_ACTIVE_DEVICE_ACK_PREFIX: [u8; 4] = [0x05, 0x01, 0x03, 0x09];
+/// Payload length of the `get_active_device` reply.
+const ACTIVE_DEVICE_PAYLOAD_LEN: usize = 9;
 
 /// `get_device_bd_addr` — returns the speaker's *own* Bluetooth
 /// address. Subsystem 0x00, opcode 0x06, command 0x01 (GET),
-/// length 0x00. Response is 10 bytes; the last 6 bytes are the
-/// MSB-first BT address of the speaker itself (not the source).
+/// length 0x00. The reply is `[0x00, 0x06, 0x03, 0x06]` and the
+/// 6-byte MSB-first BT address of the speaker itself (not the source).
 /// Useful for distinguishing which physical speaker a given socket
 /// is bound to when the same laptop has two paired speakers (e.g.
 /// the test rig with the White + Black Foremans).
 const GET_DEVICE_BD_ADDR_SEND: [u8; 4] = [0x00, 0x06, 0x01, 0x00];
 
-/// Header of the `get_device_bd_addr` response. 6-byte payload
-/// follows (length byte = 0x06). Payload is the speaker's own BT
-/// address in MSB-first order.
-const GET_DEVICE_BD_ADDR_ACK_PREFIX: [u8; 4] = [0x00, 0x06, 0x03, 0x06];
-
 const GET_DEVICE_INFO_SEND_PREFIX: [u8; 4] = [0x04, 0x05, 0x01, 6];
-const GET_DEVICE_INFO_ACK: [u8; 3] = [0x04, 0x05, 0x03];
 
 const CONNECT_DEVICE_SEND_PREFIX: [u8; 5] = [0x04, 0x01, 0x05, 6 + 1, 0x00];
 #[allow(dead_code)]
@@ -241,10 +246,11 @@ pub fn has_audio_modes(device_id: u16) -> bool {
 }
 
 /// `has_legacy_settings` is false for devices whose prompt-language
-/// and auto-off payloads do not use the 1-byte QC35 layout. On those
-/// devices the `set_prompt_language` / `set_voice_prompts` /
-/// `set_auto_off` packets are not known to be correct, so the CLI
-/// refuses them instead of writing a guessed value.
+/// payload is not the 1-byte QC35 layout. Changing the *language* there
+/// has not been tested (the QC Ultra's byte carries an extra bit `0x80`
+/// that the language setters would clear), so the CLI refuses
+/// `--prompt-language` on them. Auto-off and voice prompts follow the
+/// layout the device reports and work on both.
 pub fn has_legacy_settings(device_id: u16) -> bool {
     !matches!(device_id, QC_ULTRA_HEADPHONES)
 }
@@ -281,7 +287,7 @@ pub fn has_pairing_toggle(device_id: u16) -> bool {
 /// (see `tests/send_packet_timeout.rs`). Reverted to a single
 /// `read()` to match `based.c` byte-for-byte.
 pub fn send_packet<I: BoseIo>(io: &mut I, send: &[u8]) -> BoseResult<Vec<u8>> {
-    io.bose_write_all(send)?;
+    io.bose_send(send)?;
     let mut buf = vec![0u8; MAX_BT_PACK_LEN_T];
     let n = io.read(&mut buf)?;
     buf.truncate(n);
@@ -291,15 +297,14 @@ pub fn send_packet<I: BoseIo>(io: &mut I, send: &[u8]) -> BoseResult<Vec<u8>> {
 /// `int get_device_id(int sock, unsigned int *device_id, unsigned int *index)`
 /// in `based.c`.
 pub fn get_device_id<I: BoseIo>(io: &mut I) -> BoseResult<(u16, u8)> {
-    io.bose_write_check(&GET_DEVICE_ID_SEND, &GET_DEVICE_ID_ACK)?;
-    let mut did_buf = [0u8; 2];
-    io.bose_read_exact(&mut did_buf)?;
-    // The device emits the device-id as big-endian over the wire;
-    // bswap_16 in the original code converts it to host order.
-    let device_id = u16::from_be_bytes(did_buf);
-    let mut index = [0u8; 1];
-    io.bose_read_exact(&mut index)?;
-    Ok((device_id, index[0]))
+    io.bose_send(&GET_DEVICE_ID_SEND)?;
+    // Reply `00 03 03 03 pp pp ii`: the product id big-endian (bswap_16
+    // in the C code), then the index.
+    let payload = read_response(io, 0x00, 0x03)?;
+    let [hi, lo, index, ..] = payload[..] else {
+        return Err(BoseError::AckMismatch);
+    };
+    Ok((u16::from_be_bytes([hi, lo]), index))
 }
 
 /// `int set_name(int sock, const char *name)` in `based.c`. Returns
@@ -326,7 +331,7 @@ pub fn set_name<I: BoseIo>(io: &mut I, name: &str) -> BoseResult<()> {
     packet[CN_BASE_PACK_LEN..CN_BASE_PACK_LEN + name_bytes.len()].copy_from_slice(name_bytes);
 
     let send_size = CN_BASE_PACK_LEN + name_bytes.len();
-    io.bose_write_all(&packet[..send_size])?;
+    io.bose_send(&packet[..send_size])?;
 
     let got = get_name(io)?;
     if got != name {
@@ -340,7 +345,7 @@ pub fn set_name<I: BoseIo>(io: &mut I, name: &str) -> BoseResult<()> {
 /// newer devices return a longer one (`"1.6.7+g6ebabd2"` on the QC
 /// Ultra), so the length is taken from the reply header.
 pub fn get_firmware_version<I: BoseIo>(io: &mut I) -> BoseResult<String> {
-    io.bose_write_all(&GET_FIRMWARE_VERSION_SEND)?;
+    io.bose_send(&GET_FIRMWARE_VERSION_SEND)?;
     let version = read_response(io, 0x00, 0x05)?;
     Ok(String::from_utf8_lossy(&version).into_owned())
 }
@@ -348,12 +353,8 @@ pub fn get_firmware_version<I: BoseIo>(io: &mut I) -> BoseResult<String> {
 /// `int get_serial_number(int sock, char serial[MAX_SERIAL_SIZE])`
 /// in `based.c`. Returns the serial as a UTF-8 / ASCII string.
 pub fn get_serial_number<I: BoseIo>(io: &mut I) -> BoseResult<String> {
-    io.bose_write_check(&GET_SERIAL_NUMBER_SEND, &GET_SERIAL_NUMBER_ACK)?;
-    let mut len_byte = [0u8; 1];
-    io.bose_read_exact(&mut len_byte)?;
-    let len = len_byte[0] as usize;
-    let mut serial = vec![0u8; len];
-    io.bose_read_exact(&mut serial)?;
+    io.bose_send(&GET_SERIAL_NUMBER_SEND)?;
+    let serial = read_response(io, 0x00, 0x07)?;
     Ok(String::from_utf8_lossy(&serial).into_owned())
 }
 
@@ -363,7 +364,7 @@ pub fn get_serial_number<I: BoseIo>(io: &mut I) -> BoseResult<String> {
 /// The QC35 replies with a 1-byte payload; the QC Ultra appends
 /// three more bytes (`64 ff ff 00`) that are ignored here.
 pub fn get_battery_level<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
-    io.bose_write_all(&GET_BATTERY_LEVEL_SEND)?;
+    io.bose_send(&GET_BATTERY_LEVEL_SEND)?;
     let payload = read_response(io, 0x02, 0x02)?;
     payload.first().copied().ok_or(BoseError::AckMismatch)
 }
@@ -396,21 +397,18 @@ pub fn set_volume<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<u8> {
         SET_VOLUME_SEND_PREFIX[3],
         level,
     ];
-    io.bose_write_all(&send)?;
+    io.bose_send(&send)?;
 
-    let header = read_reply_header(io, &SET_VOLUME_SEND_PREFIX)?;
-    if header != SET_VOLUME_ACK_PREFIX {
-        return Err(BoseError::AckMismatch);
-    }
-
-    let mut payload = [0u8; 2];
-    io.bose_read_exact(&mut payload)?;
     // payload[0] = top of the volume scale. payload[1] = the volume
     // level the device now has, which should equal `level` on success.
-    if payload[1] != level {
-        return Err(unconfirmed(level, payload[1]));
+    let payload = read_response(io, SET_VOLUME_SEND_PREFIX[0], SET_VOLUME_SEND_PREFIX[1])?;
+    let [max, echo] = payload[..] else {
+        return Err(BoseError::AckMismatch);
+    };
+    if echo != level {
+        return Err(unconfirmed(level, echo));
     }
-    Ok(payload[0])
+    Ok(max)
 }
 
 /// No C counterpart (see the packet-constant comment above). Sends a media transport key
@@ -428,17 +426,22 @@ pub fn send_media_key<I: BoseIo>(io: &mut I, key: MediaKey) -> BoseResult<()> {
         SEND_MEDIA_KEY_SEND_PREFIX[3],
         key as u8,
     ];
-    io.bose_write_all(&send)?;
+    io.bose_send(&send)?;
 
-    let data = read_reply_header(io, &SEND_MEDIA_KEY_SEND_PREFIX)?;
-    if data != SEND_MEDIA_KEY_ACK_PREFIX {
-        return Err(BoseError::AckMismatch);
-    }
-
-    let mut final_ack = [0u8; 4];
-    io.bose_read_exact(&mut final_ack)?;
-    if final_ack != SEND_MEDIA_KEY_FINAL_ACK {
-        return Err(BoseError::AckMismatch);
+    // The QC Ultra sends the RESULT 1-3 s after PROCESSING (captured
+    // 2026-10-07 and 2026-10-27), past the 1 s receive timeout.
+    let deadline = Instant::now() + MEDIA_KEY_RESULT_TIMEOUT;
+    loop {
+        let (header, payload) = read_packet_before(io, deadline)?;
+        match check_reply(
+            SEND_MEDIA_KEY_SEND_PREFIX[0],
+            SEND_MEDIA_KEY_SEND_PREFIX[1],
+            header,
+            payload,
+        )? {
+            Some((OP_STATUS | OP_RESULT, _)) => break,
+            _ => continue,
+        }
     }
     Ok(())
 }
@@ -451,23 +454,16 @@ pub fn send_media_key<I: BoseIo>(io: &mut I, key: MediaKey) -> BoseResult<()> {
 /// The first three payload bytes are an unknown status triple;
 /// the last six are the MSB-first BT address.
 pub fn get_active_device<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
-    io.bose_write_all(&GET_ACTIVE_DEVICE_SEND)?;
-
-    let mut header = [0u8; 4];
-    io.bose_read_exact(&mut header)?;
-    if header != GET_ACTIVE_DEVICE_ACK_PREFIX {
-        return Err(BoseError::AckMismatch);
-    }
+    io.bose_send(&GET_ACTIVE_DEVICE_SEND)?;
 
     // Skip the 3-byte status triple. The Bose firmware emits these
     // unconditionally; their meaning is unknown but they are stable
     // across the observed SLC II captures (`0x00, 0x02, 0x01`).
-    let mut status = [0u8; 3];
-    io.bose_read_exact(&mut status)?;
-
-    let mut addr = BdAddr { b: [0; 6] };
-    io.bose_read_exact(&mut addr.b)?;
-    Ok(addr)
+    let payload = read_response(io, GET_ACTIVE_DEVICE_SEND[0], GET_ACTIVE_DEVICE_SEND[1])?;
+    if payload.len() != ACTIVE_DEVICE_PAYLOAD_LEN {
+        return Err(BoseError::AckMismatch);
+    }
+    bd_addr(&payload[ACTIVE_DEVICE_PAYLOAD_LEN - BT_ADDR_LEN..])
 }
 
 /// No C counterpart (see the packet-constant comment above). Returns the speaker's
@@ -478,17 +474,12 @@ pub fn get_active_device<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
 /// addr_1, addr_2, addr_3, addr_4, addr_5]`. The payload is just
 /// the 6-byte MSB-first BT address.
 pub fn get_device_bd_addr<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
-    io.bose_write_all(&GET_DEVICE_BD_ADDR_SEND)?;
-
-    let mut header = [0u8; 4];
-    io.bose_read_exact(&mut header)?;
-    if header != GET_DEVICE_BD_ADDR_ACK_PREFIX {
-        return Err(BoseError::AckMismatch);
-    }
-
-    let mut addr = BdAddr { b: [0; 6] };
-    io.bose_read_exact(&mut addr.b)?;
-    Ok(addr)
+    io.bose_send(&GET_DEVICE_BD_ADDR_SEND)?;
+    bd_addr(&read_response(
+        io,
+        GET_DEVICE_BD_ADDR_SEND[0],
+        GET_DEVICE_BD_ADDR_SEND[1],
+    )?)
 }
 
 /// `int get_device_status(int sock, char name[MAX_NAME_LEN], enum
@@ -505,23 +496,40 @@ pub fn get_device_status<I: BoseIo>(io: &mut I) -> BoseResult<DeviceStatusReport
     // not want the caller to do it twice, so we factor that out.
     let (device_id, _index) = get_device_id(io)?;
 
-    io.bose_write_all(&GET_DEVICE_STATUS_SEND)?;
-    let mut ack = [0u8; 4];
-    io.bose_read_exact(&mut ack)?;
-    if ack != GET_DEVICE_STATUS_ACK {
-        return Err(BoseError::AckMismatch);
-    }
+    io.bose_send(&GET_DEVICE_STATUS_SEND)?;
 
     let mut name = None;
     let mut language = None;
     let mut minutes = None;
     let mut level = NoiseCancelling::Dne;
-    loop {
+    for _ in 0..MAX_STATUS_DUMP_PACKETS {
         let (header, payload) = read_packet(io)?;
         if header == GET_DEVICE_STATUS_FINAL_ACK {
-            break;
+            return Ok(DeviceStatusReport {
+                device_id,
+                name: name.ok_or(BoseError::AckMismatch)?,
+                language: language.ok_or(BoseError::AckMismatch)?,
+                minutes,
+                level,
+            });
         }
-        if header[0] != 0x01 || header[2] != OP_STATUS {
+        // Packets of other blocks are unsolicited notifications. Inside
+        // the dump a setting can come as an ERROR packet: the QC Ultra
+        // sends `01 05 04 01 08` while its audio mode is modified
+        // (captured 2026-10-27). Only the settings of the report count.
+        if header[0] != 0x01
+            || (header[2] == OP_ERROR && !matches!(header[1], 0x02 | 0x03 | 0x04 | 0x06))
+        {
+            continue;
+        }
+        let Some((operator, payload)) = check_reply(0x01, header[1], header, payload)? else {
+            continue;
+        };
+        if operator != OP_STATUS {
+            // `01 01 07 00` opens the dump; nothing else is expected.
+            if header[1] == 0x01 && operator == OP_PROCESSING {
+                continue;
+            }
             return Err(BoseError::AckMismatch);
         }
         match header[1] {
@@ -533,14 +541,7 @@ pub fn get_device_status<I: BoseIo>(io: &mut I) -> BoseResult<DeviceStatusReport
             _ => {}
         }
     }
-
-    Ok(DeviceStatusReport {
-        device_id,
-        name: name.ok_or(BoseError::AckMismatch)?,
-        language: language.ok_or(BoseError::AckMismatch)?,
-        minutes,
-        level,
-    })
+    Err(BoseError::AckMismatch)
 }
 
 /// Aggregate return type for [`get_device_status`].
@@ -568,18 +569,32 @@ pub struct DeviceStatusReport {
 pub fn set_pairing<I: BoseIo>(io: &mut I, pairing: Pairing) -> BoseResult<()> {
     let mut send = SET_PAIRING_SEND;
     send[BYTES_POSITION_4] = pairing as u8;
-    let mut ack = SET_PAIRING_ACK;
-    ack[BYTES_POSITION_4] = pairing as u8;
-    io.bose_write_check(&send, &ack)
+    io.bose_send(&send)?;
+    // Reply `04 08 06 01 xx` (the C acknowledgement).
+    match read_response(io, 0x04, 0x08)?[..] {
+        [echo] if echo == pairing as u8 => Ok(()),
+        _ => Err(BoseError::AckMismatch),
+    }
 }
 
 /// `int set_self_voice(int sock, enum SelfVoice selfVoice)` in `based.c`.
+///
+/// **Deviates from the C bytes on purpose.** The C packet
+/// `01 0b 02 02 01 xx 38` declares a 2-byte payload but carries 3, so
+/// the device read the trailing `38` as the first byte of the *next*
+/// request on the same connection: on a QC Ultra (firmware 1.6.7) the
+/// request after it was answered with `38 01 04 01 03` (ERROR for
+/// block 38). `01 0b 02 02 01 xx` was verified on the QC Ultra
+/// (2026-10-07) and on a QC35 II, firmware 4.8.1 (2026-10-27).
 pub fn set_self_voice<I: BoseIo>(io: &mut I, level: SelfVoice) -> BoseResult<()> {
     let mut send = SET_SELF_VOICE_SEND;
     send[BYTES_POSITION_5] = level as u8;
-    let mut ack = SET_SELF_VOICE_ACK;
-    ack[BYTES_POSITION_5] = level as u8;
-    io.bose_write_check(&send, &ack)
+    io.bose_send(&send)?;
+    // Reply `01 0b 03 03 01 xx 0f` (the C acknowledgement).
+    match read_response(io, 0x01, 0x0b)?[..] {
+        [0x01, echo, ..] if echo == level as u8 => Ok(()),
+        _ => Err(BoseError::AckMismatch),
+    }
 }
 
 /// `int set_noise_cancelling(int sock, enum NoiseCancelling level)` in
@@ -590,7 +605,7 @@ pub fn set_self_voice<I: BoseIo>(io: &mut I, level: SelfVoice) -> BoseResult<()>
 pub fn set_noise_cancelling<I: BoseIo>(io: &mut I, level: NoiseCancelling) -> BoseResult<()> {
     let mut send = SET_NOISE_CANCELLING_SEND;
     send[BYTES_POSITION_4] = level as u8;
-    io.bose_write_all(&send)?;
+    io.bose_send(&send)?;
 
     let got = get_noise_cancelling(io)?;
     if got as u8 != level as u8 {
@@ -600,15 +615,42 @@ pub fn set_noise_cancelling<I: BoseIo>(io: &mut I, level: NoiseCancelling) -> Bo
 }
 
 /// `int set_auto_off(int sock, enum AutoOff minutes)` in `based.c`.
+///
+/// The payload layout follows what the device reports for `01 04`
+/// first: the QC35 sends 1 byte of minutes (the C packet
+/// `01 04 02 01 mm`), the QC Ultra 3 bytes `lo 00 hi` (minutes,
+/// little-endian, split around a zero byte: `05 00 00` is 5 minutes,
+/// `a0 00 05` is 1440). Both were set from a laptop on hardware.
+/// [`AutoOff::Min1440`] is refused on the 1-byte layout.
 pub fn set_auto_off<I: BoseIo>(io: &mut I, minutes: AutoOff) -> BoseResult<()> {
-    let mut send = SET_AUTO_OFF_SEND;
-    send[BYTES_POSITION_4] = minutes as u8;
-    io.bose_write_all(&send)?;
+    let value = minutes as u16;
+    let [lo, hi] = value.to_le_bytes();
+
+    io.bose_send(&GET_AUTO_OFF_SEND)?;
+    match read_response(io, 0x01, 0x04)?.len() {
+        1 if hi == 0 => {
+            let mut send = SET_AUTO_OFF_SEND;
+            send[BYTES_POSITION_4] = lo;
+            io.bose_send(&send)?;
+        }
+        1 => {
+            return Err(BoseError::InvalidArgument(format!(
+                "this device cannot set auto-off to {value} minutes"
+            )))
+        }
+        3 => {
+            let mut send = [0u8; 7];
+            send[..4].copy_from_slice(&SET_AUTO_OFF_WIDE_SEND_PREFIX);
+            send[4..].copy_from_slice(&[lo, 0x00, hi]);
+            io.bose_send(&send)?;
+        }
+        _ => return Err(BoseError::AckMismatch),
+    }
 
     let got = get_auto_off(io)?;
-    if got != Some(minutes as u16) {
+    if got != Some(value) {
         return Err(unconfirmed(
-            minutes as u16,
+            value,
             got.map_or_else(|| "undecodable".to_string(), |m| m.to_string()),
         ));
     }
@@ -622,7 +664,7 @@ pub fn set_auto_off<I: BoseIo>(io: &mut I, minutes: AutoOff) -> BoseResult<()> {
 pub fn set_prompt_language<I: BoseIo>(io: &mut I, language_byte: u8) -> BoseResult<()> {
     let mut send = SET_PROMPT_LANGUAGE_SEND;
     send[BYTES_POSITION_4] = language_byte;
-    io.bose_write_all(&send)?;
+    io.bose_send(&send)?;
 
     let got = get_prompt_language(io)?;
     let sent_clean = language_byte & VP_MASK;
@@ -655,22 +697,22 @@ pub fn set_voice_prompts<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
 /// `int get_paired_devices(int sock, bdaddr_t addresses[MAX_NUM_DEVICES],
 /// size_t *num_devices, enum DevicesConnected *connected)` in `based.c`.
 pub fn get_paired_devices<I: BoseIo>(io: &mut I) -> BoseResult<PairedDevices> {
-    io.bose_write_check(&GET_PAIRED_DEVICES_SEND, &GET_PAIRED_DEVICES_ACK)?;
+    io.bose_send(&GET_PAIRED_DEVICES_SEND)?;
 
-    let mut num_devices_byte = [0u8; 1];
-    io.bose_read_exact(&mut num_devices_byte)?;
-    let num_devices = num_devices_byte[0] as usize / BT_ADDR_LEN;
-
-    let mut num_connected_byte = [0u8; 1];
-    io.bose_read_exact(&mut num_connected_byte)?;
-    let connected =
-        DevicesConnected::from_u8(num_connected_byte[0]).ok_or(BoseError::AckMismatch)?;
+    // Reply `04 04 03 ll cc <one 6-byte address per device>`.
+    let payload = read_response(io, 0x04, 0x04)?;
+    let Some((&connected, list)) = payload.split_first() else {
+        return Err(BoseError::AckMismatch);
+    };
+    let connected = DevicesConnected::from_u8(connected).ok_or(BoseError::AckMismatch)?;
+    if list.len() % BT_ADDR_LEN != 0 || list.len() / BT_ADDR_LEN > MAX_NUM_DEVICES {
+        return Err(BoseError::AckMismatch);
+    }
+    let num_devices = list.len() / BT_ADDR_LEN;
 
     let mut addresses = [BdAddr { b: [0; 6] }; MAX_NUM_DEVICES];
-    for slot in addresses.iter_mut().take(num_devices) {
-        let mut buf = [0u8; BT_ADDR_LEN];
-        io.bose_read_exact(&mut buf)?;
-        slot.b = buf;
+    for (slot, chunk) in addresses.iter_mut().zip(list.chunks_exact(BT_ADDR_LEN)) {
+        *slot = bd_addr(chunk)?;
     }
 
     Ok(PairedDevices {
@@ -700,61 +742,48 @@ pub fn get_device_info<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<Dev
     send[..4].copy_from_slice(&GET_DEVICE_INFO_SEND_PREFIX);
     send[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
 
-    io.bose_write_check(&send, &GET_DEVICE_INFO_ACK)?;
+    io.bose_send(&send)?;
 
-    let mut len_byte = [0u8; 1];
-    io.bose_read_exact(&mut len_byte)?;
-    let mut length = len_byte[0] as usize;
-
-    let mut device = Device {
-        address: BdAddr { b: [0; 6] },
-        status: DeviceStatus::Disconnected,
-        name: [0u8; MAX_NAME_LEN_T],
-        name_len: 0,
-    };
-
-    io.bose_read_exact(&mut device.address.b)?;
-    length -= BT_ADDR_LEN;
-
-    if device.address.b != address.b {
+    // Reply `04 05 03 ll <addr> ss gg gg <name>`.
+    let payload = read_response(io, 0x04, 0x05)?;
+    if payload.len() < BT_ADDR_LEN + 1 + BYTES_POSITION_2 {
+        return Err(BoseError::AckMismatch);
+    }
+    let (addr, rest) = payload.split_at(BT_ADDR_LEN);
+    if addr != address.b {
         return Err(unconfirmed(
             format!("{:02X?}", address.b),
-            format!("{:02X?}", device.address.b),
+            format!("{:02X?}", addr),
         ));
     }
-
-    let mut status_byte = [0u8; 1];
-    io.bose_read_exact(&mut status_byte)?;
-    length -= 1;
-    device.status = DeviceStatus::from_u8(status_byte[0]).unwrap_or(DeviceStatus::Disconnected);
-
-    // First 2 bytes of garbage. The C code's comment
-    // "TODO(wolf): figure out what the first byte of garbage is for"
-    // is preserved here as a literal 2-byte skip — we don't pretend
-    // to know what they mean.
-    let mut garbage = [0u8; BYTES_POSITION_2];
-    io.bose_read_exact(&mut garbage)?;
-    length -= BYTES_POSITION_2;
-
-    if length > MAX_NAME_LEN_T {
+    // After the status byte come 2 bytes of garbage. The C code's
+    // comment "TODO(wolf): figure out what the first byte of garbage
+    // is for" is preserved here as a literal 2-byte skip — we don't
+    // pretend to know what they mean.
+    let status = DeviceStatus::from_u8(rest[0]).unwrap_or(DeviceStatus::Disconnected);
+    let name = &rest[1 + BYTES_POSITION_2..];
+    if name.len() > MAX_NAME_LEN_T {
         return Err(BoseError::InvalidArgument(format!(
             "device name length {} exceeds MAX_NAME_LEN={}",
-            length, MAX_NAME_LEN_T
+            name.len(),
+            MAX_NAME_LEN_T
         )));
     }
-    io.bose_read_exact(&mut device.name[..length])?;
-    device.name_len = length;
-    // NUL-terminate defensively in case the device sent a name
-    // shorter than the declared length.
-    device.name[length] = 0;
 
+    let mut device = Device {
+        address,
+        status,
+        name: [0u8; MAX_NAME_LEN_T],
+        name_len: name.len(),
+    };
+    device.name[..name.len()].copy_from_slice(name);
     Ok(device)
 }
 
 /// Current audio mode index (QC Ultra). Resolve it to a name with
 /// [`get_audio_mode_name`].
 pub fn get_audio_mode<I: BoseIo>(io: &mut I) -> BoseResult<u8> {
-    io.bose_write_all(&GET_AUDIO_MODE_SEND)?;
+    io.bose_send(&GET_AUDIO_MODE_SEND)?;
     let payload = read_response(io, 0x1f, 0x03)?;
     first_byte(&payload)
 }
@@ -765,7 +794,7 @@ pub fn get_audio_mode_name<I: BoseIo>(io: &mut I, index: u8) -> BoseResult<Optio
     let mut send = [0u8; 5];
     send[..4].copy_from_slice(&GET_AUDIO_MODE_CONFIG_SEND_PREFIX);
     send[BYTES_POSITION_4] = index;
-    io.bose_write_all(&send)?;
+    io.bose_send(&send)?;
 
     let payload = read_response(io, 0x1f, 0x06)?;
     if payload.len() < AUDIO_MODE_NAME_OFFSET + AUDIO_MODE_NAME_LEN || payload[0] != index {
@@ -799,7 +828,7 @@ pub fn set_audio_mode<I: BoseIo>(io: &mut I, index: u8) -> BoseResult<()> {
     send[..4].copy_from_slice(&SET_AUDIO_MODE_SEND_PREFIX);
     send[BYTES_POSITION_4] = index;
     // Byte 5 = 0: switch silently, without the voice-prompt announce.
-    io.bose_write_all(&send)?;
+    io.bose_send(&send)?;
 
     let got = first_byte(&read_response(io, 0x1f, 0x03)?)?;
     if got != index {
@@ -832,110 +861,270 @@ pub fn remove_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<()> {
     write_paired(io, &send, &address.b)
 }
 
-// ---------------------------------------------------------------------------
-// Private helpers. Mirror the static C functions in `based.c`, except
-// `read_reply_header`, which has no C counterpart.
-// ---------------------------------------------------------------------------
-
-/// Read a 4-byte reply header for the request `request` (only its
-/// block and function bytes are used). If the device answered with an
-/// ERROR packet for that function, its payload is consumed — so the
-/// stream stays in sync for the next request on the same connection —
-/// and [`BoseError::DeviceError`] is returned with the first payload
-/// byte as the code. Any other header is returned for the caller to
-/// check.
-fn read_reply_header<I: BoseIo>(io: &mut I, request: &[u8; 4]) -> BoseResult<[u8; 4]> {
-    let mut header = [0u8; 4];
-    io.bose_read_exact(&mut header)?;
-    if header[0] == request[0] && header[1] == request[1] && header[2] == OP_ERROR {
-        let mut payload = vec![0u8; usize::from(header[3])];
-        io.bose_read_exact(&mut payload)?;
-        return Err(BoseError::DeviceError {
-            block: header[0],
-            function: header[1],
-            code: payload.first().copied().unwrap_or(0),
-        });
-    }
-    Ok(header)
+/// Whether the QC Ultra announces the battery level at power-on (the
+/// last byte of its 7-byte `01 03` prompt-language payload). Devices
+/// with the 1-byte layout have no such setting:
+/// [`BoseError::InvalidArgument`].
+pub fn get_battery_prompt<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    io.bose_send(&GET_PROMPT_LANGUAGE_SEND)?;
+    wide_prompt_payload(read_response(io, 0x01, 0x03)?)
+        .map(|p| p[PROMPT_LANGUAGE_WIDE_LEN - 1] != 0)
 }
 
-/// Send a paired-device packet and validate the response with a
-/// permissive matcher. This replaces the C `write_check` for the
-/// `connect_device` / `disconnect_device` / `remove_device` flows
-/// because the SLC II 4.0.1 firmware does not return the canonical
-/// 10-byte ACK that the original C code expects.
+/// Turn the QC Ultra's battery-level prompt at power-on on or off,
+/// keeping the language byte: `01 03 02 02 <language byte> <on>`
+/// (verified on hardware, firmware 1.6.7; the 7-byte write is ignored
+/// for this byte).
+pub fn set_battery_prompt<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    io.bose_send(&GET_PROMPT_LANGUAGE_SEND)?;
+    let language = wide_prompt_payload(read_response(io, 0x01, 0x03)?)?[0];
+
+    let mut send = [0u8; 6];
+    send[..4].copy_from_slice(&SET_BATTERY_PROMPT_SEND_PREFIX);
+    send[4] = language;
+    send[5] = u8::from(on);
+    io.bose_send(&send)?;
+
+    let got =
+        wide_prompt_payload(read_response(io, 0x01, 0x03)?)?[PROMPT_LANGUAGE_WIDE_LEN - 1] != 0;
+    if got != on {
+        return Err(unconfirmed(on, got));
+    }
+    Ok(())
+}
+
+/// The 7-byte QC Ultra prompt-language payload, or
+/// [`BoseError::InvalidArgument`] for the 1-byte layout.
+fn wide_prompt_payload(payload: Vec<u8>) -> BoseResult<Vec<u8>> {
+    match payload.len() {
+        PROMPT_LANGUAGE_WIDE_LEN => Ok(payload),
+        1 => Err(BoseError::InvalidArgument(
+            "this device has no battery-prompt setting".to_string(),
+        )),
+        _ => Err(BoseError::AckMismatch),
+    }
+}
+
+/// Equalizer bands (QC Ultra, `01 07`), as `min max value band` per
+/// band: `01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02` is bass, mid
+/// and treble at 0, each in `-10..=10`.
+pub fn get_equalizer<I: BoseIo>(io: &mut I) -> BoseResult<Vec<EqualizerBand>> {
+    io.bose_send(&GET_EQUALIZER_SEND)?;
+    parse_equalizer(&read_response(io, 0x01, 0x07)?)
+}
+
+/// Set one equalizer band (QC Ultra): `01 07 02 02 <value> <band>`.
 ///
-/// Observed SLC II responses (from `--send-packet` capture):
+/// The value is checked against the range the device reports first.
+/// On firmware 1.6.7 an out-of-range value is answered with ERROR `06`
+/// and then every equalizer request fails with ERROR `0c` until the
+/// headphones are switched off and on (captured 2026-10-07), so it is
+/// never sent.
+pub fn set_equalizer_band<I: BoseIo>(io: &mut I, band: EqBand, value: i8) -> BoseResult<()> {
+    let current = get_equalizer(io)?;
+    let range = current
+        .iter()
+        .find(|b| b.band == band)
+        .ok_or_else(|| BoseError::InvalidArgument(format!("this device has no {band:?} band")))?;
+    if !(range.min..=range.max).contains(&value) {
+        return Err(BoseError::InvalidArgument(format!(
+            "{band:?} must be in {}..={}, got {value}",
+            range.min, range.max
+        )));
+    }
+
+    let mut send = [0u8; 6];
+    send[..4].copy_from_slice(&SET_EQUALIZER_SEND_PREFIX);
+    send[4] = value as u8;
+    send[5] = band as u8;
+    io.bose_send(&send)?;
+
+    let after = parse_equalizer(&read_response(io, 0x01, 0x07)?)?;
+    match after.iter().find(|b| b.band == band) {
+        Some(b) if b.value == value => Ok(()),
+        Some(b) => Err(unconfirmed(value, b.value)),
+        None => Err(BoseError::AckMismatch),
+    }
+}
+
+fn parse_equalizer(payload: &[u8]) -> BoseResult<Vec<EqualizerBand>> {
+    if payload.is_empty() || payload.len() % 4 != 0 {
+        return Err(BoseError::AckMismatch);
+    }
+    payload
+        .chunks_exact(4)
+        .map(|c| {
+            Ok(EqualizerBand {
+                band: EqBand::from_u8(c[3]).ok_or(BoseError::AckMismatch)?,
+                min: c[0] as i8,
+                max: c[1] as i8,
+                value: c[2] as i8,
+            })
+        })
+        .collect()
+}
+
+/// Immersive audio (QC Ultra, `05 0f`): `00` off, `01` still, `02`
+/// motion.
+pub fn get_immersive_audio<I: BoseIo>(io: &mut I) -> BoseResult<ImmersiveAudio> {
+    ImmersiveAudio::from_u8(get_byte(io, IMMERSIVE_AUDIO)?).ok_or(BoseError::AckMismatch)
+}
+
+/// Set immersive audio (QC Ultra): `05 0f 02 01 xx`. Verified on
+/// hardware: the app follows and the sound changes. Any value other
+/// than the audio mode's own makes the current mode read `ff`.
+pub fn set_immersive_audio<I: BoseIo>(io: &mut I, setting: ImmersiveAudio) -> BoseResult<()> {
+    set_byte(io, IMMERSIVE_AUDIO, setting as u8)
+}
+
+/// Whether playback pauses when the headphones are taken off and resumes
+/// when they are put on (QC Ultra, `01 18`).
+pub fn get_auto_play_pause<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, AUTO_PLAY_PAUSE)? != 0)
+}
+
+/// Turn automatic play/pause on or off (QC Ultra): `01 18 02 01 xx`.
+pub fn set_auto_play_pause<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    set_byte(io, AUTO_PLAY_PAUSE, u8::from(on))
+}
+
+/// Whether a call is answered when the headphones are put on (QC
+/// Ultra, `01 1b`).
+pub fn get_auto_answer_calls<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, AUTO_ANSWER_CALLS)? != 0)
+}
+
+/// Turn automatic call answering on or off (QC Ultra): `01 1b 02 01 xx`.
+pub fn set_auto_answer_calls<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    set_byte(io, AUTO_ANSWER_CALLS, u8::from(on))
+}
+
+/// Whether the headphones start in the last audio mode used (QC Ultra,
+/// `1f 05`, "Remember my mode").
+pub fn get_remember_audio_mode<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, REMEMBER_AUDIO_MODE)? != 0)
+}
+
+/// Turn "remember my mode" on or off (QC Ultra): `1f 05 02 01 xx`.
+pub fn set_remember_audio_mode<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    set_byte(io, REMEMBER_AUDIO_MODE, u8::from(on))
+}
+
+/// Shortcut action (QC Ultra, `01 09`): reply
+/// `01 09 03 07 80 09 <action> 00 09 40 0a`; the last 4 bytes are
+/// unknown and constant.
+pub fn get_shortcut<I: BoseIo>(io: &mut I) -> BoseResult<ShortcutAction> {
+    io.bose_send(&GET_SHORTCUT_SEND)?;
+    parse_shortcut(&read_response(io, 0x01, 0x09)?)
+}
+
+/// Set the shortcut action (QC Ultra): `01 09 02 03 80 09 <action>`.
+/// Verified on hardware for [`ShortcutAction::ImmersiveAudio`]: the
+/// app follows and the button does it. Writing
+/// [`ShortcutAction::Off`] has not been tried from a laptop yet.
+pub fn set_shortcut<I: BoseIo>(io: &mut I, action: ShortcutAction) -> BoseResult<()> {
+    let mut send = [0u8; 7];
+    send[..4].copy_from_slice(&SET_SHORTCUT_SEND_PREFIX);
+    send[4..6].copy_from_slice(&SHORTCUT_BUTTON_EVENT);
+    send[6] = action as u8;
+    io.bose_send(&send)?;
+    let got = parse_shortcut(&read_response(io, 0x01, 0x09)?)?;
+    if got != action {
+        return Err(unconfirmed(format!("{action:?}"), format!("{got:?}")));
+    }
+    Ok(())
+}
+
+fn parse_shortcut(payload: &[u8]) -> BoseResult<ShortcutAction> {
+    match *payload {
+        [0x80, 0x09, action, ..] => ShortcutAction::from_u8(action).ok_or(BoseError::AckMismatch),
+        _ => Err(BoseError::AckMismatch),
+    }
+}
+
+/// GET a 1-byte setting: `block function 01 00`.
+fn get_byte<I: BoseIo>(io: &mut I, (block, function): (u8, u8)) -> BoseResult<u8> {
+    io.bose_send(&[block, function, 0x01, 0x00])?;
+    first_byte(&read_response(io, block, function)?)
+}
+
+/// SET a 1-byte setting, `block function 02 01 value`, and check the
+/// echo.
+fn set_byte<I: BoseIo>(io: &mut I, (block, function): (u8, u8), value: u8) -> BoseResult<()> {
+    io.bose_send(&[block, function, 0x02, 0x01, value])?;
+    let got = first_byte(&read_response(io, block, function)?)?;
+    if got != value {
+        return Err(unconfirmed(value, got));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers. Mirror the static C functions in `based.c`, except
+// `write_paired` and the reply readers (`read_first_byte` and below),
+// which have no C counterpart.
+// ---------------------------------------------------------------------------
+
+/// How long [`send_media_key`] waits for its RESULT.
+const MEDIA_KEY_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long [`write_paired`] waits for the final RESULT of a
+/// paired-device command. Reconnecting a phone to a SoundLink Color II
+/// or a QC35 II took up to ~8 s between the PROCESSING packet and the
+/// RESULT (captured 2026-10-07).
+const PAIRED_RESULT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Send a paired-device packet (`connect_device`, `disconnect_device`,
+/// `remove_device`) and wait for its final RESULT.
 ///
-/// | Command          | Bytes sent                          | Bytes received                                          |
-/// |------------------|-------------------------------------|---------------------------------------------------------|
-/// | `CONNECT_DEVICE` | `04 01 05 07 00 + addr` (11)         | `04 01 04 07 0b + addr` (11) — opcode differs, length 7 |
-/// | `DISCONNECT_DEVICE` | `04 02 05 06 + addr` (10)         | `04 02 07 00 04 02 06 06 + addr` (14) — 2 packets     |
-/// | `REMOVE_DEVICE`  | `04 03 05 06 + addr` (10)            | empty — no response at all                               |
+/// Observed replies (`<addr>` is the requested address):
 ///
-/// Acceptance rule (any of these = success):
+/// | Command    | Device                | Reply                                                                  |
+/// | ---------- | --------------------- | ---------------------------------------------------------------------- |
+/// | connect    | SLC II 4.0.1, QC35 II | `04 01 07 06 <addr>`, then after up to ~8 s one or more `04 01 06 07 <addr> cc` (`cc` = `01`, `05`, `07`) |
+/// | connect    | already connected     | `04 01 07 06 <addr>`, `04 01 06 07 <addr> 07` at once                  |
+/// | connect    | not a paired source   | `04 01 04 07 0b <addr>` (ERROR `0b`)                                   |
+/// | connect    | QC Ultra, own address | `04 01 07 06 <addr>`, later `04 01 04 07 0d <addr>` (ERROR `0d`)       |
+/// | disconnect | SLC II 4.0.1          | `04 02 07 00`, `04 02 07 06 <addr>`, then `04 02 06 06 <addr>`         |
+/// | disconnect | QC35 II 4.8.1         | `04 02 07 07 21 <addr>`, then `04 02 06 06 <addr>`                     |
+/// | remove     | C code                | `04 03 06 06 <addr>`                                                   |
+/// | remove     | SLC II 4.0.1          | nothing at all                                                         |
 ///
-/// 1. The response is **empty** — the device silently accepted the
-///    command (REMOVE_DEVICE on SLC II).
-/// 2. The first two bytes match the first two bytes of the sent
-///    packet (the Bose subsystem prefix, e.g. `04 02` for
-///    DISCONNECT_DEVICE), **and** the address bytes appear
-///    anywhere in the response. This catches both the
-///    canonical `prefix + addr` ACK and the SLC II's variant
-///    (`prefix + status + addr`) responses.
+/// Notifications of other functions (`05 01` active source, …) arrive
+/// in between and are skipped.
 ///
-/// Anything else returns [`BoseError::AckMismatch`].
+/// Rules:
+///
+/// 1. No byte at all before the receive timeout or end of stream:
+///    success (SLC II `remove_device`).
+/// 2. A RESULT for this function whose payload starts with `address`:
+///    success.
+/// 3. An ERROR for this function: [`BoseError::DeviceError`].
+/// 4. Anything else is read past until [`PAIRED_RESULT_TIMEOUT`]; then
+///    a timed-out [`BoseError::Io`]. End of stream after the first
+///    byte is [`BoseError::ShortRead`].
 pub(crate) fn write_paired<I: BoseIo>(
     io: &mut I,
     send: &[u8],
     address: &[u8; 6],
 ) -> BoseResult<()> {
-    io.bose_write_all(send)?;
+    io.bose_send(send)?;
+    let (block, function) = (send[0], send[1]);
 
-    // Read up to 64 bytes or until timeout. The SLC II has been
-    // observed to send between 0 and 14 bytes depending on the
-    // command; the Bose QC35 sends the canonical 10-byte ACK. 64
-    // bytes is plenty of headroom for both.
-    //
-    // We read incrementally (not with `bose_read_exact`) so an
-    // empty / partial response surfaces as the actual byte count,
-    // not as an error. `bose_read_exact` would treat anything
-    // shorter than the requested size as `ShortRead`, which would
-    // mask the SLC II's silent-accept behaviour for REMOVE_DEVICE.
-    let mut buf = vec![0u8; 64];
-    let mut total = 0usize;
-    while total < buf.len() {
-        match std::io::Read::read(io, &mut buf[total..]) {
-            Ok(0) => break,
-            Ok(n) => {
-                total += n;
-                if total == buf.len() {
-                    break;
-                }
+    let first = match read_first_byte(io)? {
+        FirstByte::Byte(byte) => byte,
+        FirstByte::Timeout | FirstByte::Closed => return Ok(()),
+    };
+    let deadline = Instant::now() + PAIRED_RESULT_TIMEOUT;
+    let (mut header, mut payload) = read_packet_from(io, first)?;
+    loop {
+        if let Some((OP_RESULT, result)) = check_reply(block, function, header, payload)? {
+            if result.starts_with(address) {
+                return Ok(());
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
-            Err(e) => return Err(e.into()),
         }
+        (header, payload) = read_packet_before(io, deadline)?;
     }
-    buf.truncate(total);
-
-    // Rule 1: silent acceptance.
-    if buf.is_empty() {
-        return Ok(());
-    }
-
-    // Rule 2: prefix + address-anywhere.
-    if buf.len() >= 2
-        && send.len() >= 2
-        && buf[0] == send[0]
-        && buf[1] == send[1]
-        && buf.windows(6).any(|w| w == address)
-    {
-        return Ok(());
-    }
-
-    Err(BoseError::AckMismatch)
 }
 
 /// `static int masked_memory_cmp(const uint8_t *ptr1, uint8_t *ptr2,
@@ -978,38 +1167,137 @@ fn read_check<I: BoseIo>(io: &mut I, ack: &[u8], mask: Option<&[u8]>) -> BoseRes
     }
 }
 
+/// Most packets [`read_response`] reads past (notifications of other
+/// functions, PROCESSING packets) before it gives up on a reply.
+const MAX_UNSOLICITED_PACKETS: usize = 64;
+
+/// Most packets [`get_device_status`] accepts in one status dump. The
+/// QC Ultra sends 14.
+const MAX_STATUS_DUMP_PACKETS: usize = 64;
+
+/// The first byte of a reply, or why there is none.
+enum FirstByte {
+    /// A byte arrived.
+    Byte(u8),
+    /// The receive timeout expired (`WouldBlock` / `TimedOut`).
+    Timeout,
+    /// End of stream.
+    Closed,
+}
+
+/// Read the first byte of a reply without turning a receive timeout
+/// into an error.
+fn read_first_byte<I: BoseIo>(io: &mut I) -> BoseResult<FirstByte> {
+    let mut byte = [0u8; 1];
+    loop {
+        return match std::io::Read::read(io, &mut byte) {
+            Ok(0) => Ok(FirstByte::Closed),
+            Ok(_) => Ok(FirstByte::Byte(byte[0])),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                Ok(FirstByte::Timeout)
+            }
+            Err(e) => Err(e.into()),
+        };
+    }
+}
+
 /// Read one packet: the 4-byte header (`block, function, operator,
 /// length`) followed by `length` payload bytes.
 fn read_packet<I: BoseIo>(io: &mut I) -> BoseResult<([u8; 4], Vec<u8>)> {
-    let mut header = [0u8; 4];
-    io.bose_read_exact(&mut header)?;
-    let mut payload = vec![0u8; header[BYTES_POSITION_3] as usize];
+    let mut first = [0u8; 1];
+    io.bose_read_exact(&mut first)?;
+    read_packet_from(io, first[0])
+}
+
+/// Same as [`read_packet`], when the first header byte (`first`) was
+/// already read.
+fn read_packet_from<I: BoseIo>(io: &mut I, first: u8) -> BoseResult<([u8; 4], Vec<u8>)> {
+    let mut header = [first, 0, 0, 0];
+    io.bose_read_exact(&mut header[1..])?;
+    let mut payload = vec![0u8; usize::from(header[BYTES_POSITION_3])];
     io.bose_read_exact(&mut payload)?;
     Ok((header, payload))
 }
 
-/// Read the device's reply to a `block.function` request and return
-/// its payload, whatever its length. PROCESSING packets are skipped;
-/// an ERROR packet becomes [`BoseError::DeviceError`].
-fn read_response<I: BoseIo>(io: &mut I, block: u8, function: u8) -> BoseResult<Vec<u8>> {
+/// Same as [`read_packet`], but waits through receive timeouts until
+/// `deadline` for the packet to start.
+fn read_packet_before<I: BoseIo>(io: &mut I, deadline: Instant) -> BoseResult<([u8; 4], Vec<u8>)> {
     loop {
-        let (header, payload) = read_packet(io)?;
-        if header[0] != block || header[1] != function {
-            return Err(BoseError::AckMismatch);
-        }
-        match header[BYTES_POSITION_2] {
-            OP_STATUS | OP_RESULT => return Ok(payload),
-            OP_PROCESSING => continue,
-            OP_ERROR => {
-                return Err(BoseError::DeviceError {
-                    block,
-                    function,
-                    code: payload.first().copied().unwrap_or(0),
+        match read_first_byte(io)? {
+            FirstByte::Byte(first) => return read_packet_from(io, first),
+            FirstByte::Closed => {
+                return Err(BoseError::ShortRead {
+                    expected: CN_BASE_PACK_LEN,
+                    actual: 0,
                 })
             }
-            _ => return Err(BoseError::AckMismatch),
+            FirstByte::Timeout if Instant::now() >= deadline => {
+                return Err(BoseError::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "the device sent no final result",
+                )))
+            }
+            FirstByte::Timeout => {}
         }
     }
+}
+
+/// Check one packet (`header`, `payload`) against the request's
+/// `block` and `function`.
+///
+/// * A packet for another `block.function`: `Ok(None)`. Devices send
+///   notifications nobody asked for (a second volume reply, the
+///   active source, track metadata); they are not the reply.
+/// * An ERROR packet: [`BoseError::DeviceError`], with the first payload
+///   byte as the code (`0` if the payload is empty).
+/// * Otherwise the operator and payload, for the caller to judge.
+fn check_reply(
+    block: u8,
+    function: u8,
+    header: [u8; 4],
+    payload: Vec<u8>,
+) -> BoseResult<Option<(u8, Vec<u8>)>> {
+    if header[0] != block || header[1] != function {
+        return Ok(None);
+    }
+    if header[BYTES_POSITION_2] == OP_ERROR {
+        return Err(BoseError::DeviceError {
+            block,
+            function,
+            code: payload.first().copied().unwrap_or(0),
+        });
+    }
+    Ok(Some((header[BYTES_POSITION_2], payload)))
+}
+
+/// Read the device's reply to a `block.function` request and return
+/// its payload, whatever its length. Notifications of other functions
+/// and PROCESSING packets are skipped, up to
+/// [`MAX_UNSOLICITED_PACKETS`]; an ERROR packet becomes
+/// [`BoseError::DeviceError`]. Every packet is consumed whole, so the
+/// stream stays in sync for the next request on the same connection.
+fn read_response<I: BoseIo>(io: &mut I, block: u8, function: u8) -> BoseResult<Vec<u8>> {
+    for _ in 0..MAX_UNSOLICITED_PACKETS {
+        let (header, payload) = read_packet(io)?;
+        match check_reply(block, function, header, payload)? {
+            Some((OP_STATUS | OP_RESULT, payload)) => return Ok(payload),
+            None | Some((OP_PROCESSING, _)) => continue,
+            Some(_) => return Err(BoseError::AckMismatch),
+        }
+    }
+    Err(BoseError::AckMismatch)
+}
+
+/// Parse a 6-byte MSB-first Bluetooth address.
+fn bd_addr(bytes: &[u8]) -> BoseResult<BdAddr> {
+    let b = bytes.try_into().map_err(|_| BoseError::AckMismatch)?;
+    Ok(BdAddr { b })
 }
 
 fn first_byte(payload: &[u8]) -> BoseResult<u8> {
@@ -1024,12 +1312,12 @@ fn parse_name(payload: &[u8]) -> BoseResult<String> {
     }
 }
 
-/// Auto-off payload. Only the 1-byte QC35 layout (minutes) is
-/// understood; the QC Ultra sends 3 bytes (`a0 00 05`) whose meaning
-/// is unknown.
+/// Auto-off payload in minutes: 1 byte on the QC35, `lo 00 hi` on the
+/// QC Ultra. `None` for any other layout.
 fn parse_auto_off(payload: &[u8]) -> Option<u16> {
-    match payload {
-        [minutes] => Some(*minutes as u16),
+    match *payload {
+        [minutes] => Some(u16::from(minutes)),
+        [lo, 0x00, hi] => Some(u16::from_le_bytes([lo, hi])),
         _ => None,
     }
 }
@@ -1112,166 +1400,6 @@ mod tests {
         assert!(has_noise_cancelling(0x400c));
         assert!(!has_noise_cancelling(0x1234));
         assert!(!has_noise_cancelling(0));
-    }
-
-    /// `write_paired` is the permissive ACK matcher used by
-    /// `connect_device`, `disconnect_device`, and `remove_device`.
-    /// It accepts three response shapes observed across Bose
-    /// firmwares: canonical QC35 ACK, SLC II variant with a
-    /// status byte, and the silent-accept (empty) response
-    /// observed on SLC II `REMOVE_DEVICE`. Each test below
-    /// drives `write_paired` over a `UnixStream` pair and asserts
-    /// the right `BoseResult`.
-    mod write_paired_tests {
-        use super::*;
-        use std::io::{Read, Write};
-        use std::os::unix::net::UnixStream;
-        use std::thread;
-
-        /// Build a pair, return (client, server) so the test can
-        /// drive the protocol side and the helper thread can
-        /// simulate the Bose device side.
-        fn pair() -> (UnixStream, UnixStream) {
-            UnixStream::pair().expect("UnixStream::pair")
-        }
-
-        /// Drain the `send` packet from the device side and
-        /// reply with `reply` (may be empty for silent-accept
-        /// tests).
-        fn reply_with(server: &mut UnixStream, reply: &[u8]) {
-            let mut len = [0u8; 1];
-            // The protocol layer reads up to 64 bytes; the test
-            // helper doesn't need to consume all of them, just
-            // enough to know what was sent.
-            let _ = server.read(&mut len);
-            let _ = server.read(&mut [0u8; 64]);
-            if !reply.is_empty() {
-                server.write_all(reply).unwrap();
-                server.flush().ok();
-            }
-        }
-
-        /// Run a closure on the client side while the server
-        /// side runs `device_side`.
-        fn with_pair<R, F, G>(device_side: G, client_op: F) -> R
-        where
-            F: FnOnce(&mut UnixStream) -> R + Send + 'static,
-            G: FnOnce(&mut UnixStream) + Send + 'static,
-            R: Send + 'static,
-        {
-            let (mut client, mut server) = pair();
-            let server_handle = thread::spawn(move || device_side(&mut server));
-            let result = client_op(&mut client);
-            server_handle.join().expect("server thread panicked");
-            result
-        }
-
-        #[test]
-        fn accepts_canonical_qc35_ack() {
-            // CONNECT_DEVICE canonical QC35 ACK: 10 bytes,
-            // opcode 0x07, length 6, then 6-byte address.
-            let addr = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
-            let send = [
-                0x04, 0x01, 0x05, 0x07, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
-            ];
-            let ack = [0x04, 0x01, 0x07, 0x06, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
-            let result = with_pair(
-                move |s| reply_with(s, &ack),
-                move |c| write_paired(c, &send, &addr),
-            );
-            assert!(result.is_ok(), "expected Ok, got {:?}", result);
-        }
-
-        #[test]
-        fn accepts_slc2_variant_with_status_byte() {
-            // Observed SLC II response: opcode differs (0x04 not
-            // 0x07), length differs (7 not 6), 1-byte status
-            // prefix (0x0b) before the address.
-            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let send = [
-                0x04, 0x01, 0x05, 0x07, 0x00, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
-            ];
-            let ack = [
-                0x04, 0x01, 0x04, 0x07, 0x0B, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
-            ];
-            let result = with_pair(
-                move |s| reply_with(s, &ack),
-                move |c| write_paired(c, &send, &addr),
-            );
-            assert!(result.is_ok(), "expected Ok, got {:?}", result);
-        }
-
-        #[test]
-        fn accepts_silent_empty_response() {
-            // Observed SLC II REMOVE_DEVICE: device sends no
-            // bytes back at all. The 1s SO_RCVTIMEO fires, the
-            // read loop breaks on timeout, and we treat silence
-            // as acceptance.
-            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let send = [0x04, 0x03, 0x05, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let result = with_pair(
-                move |s| {
-                    // Drain the sent packet but send nothing
-                    // back.
-                    let mut buf = [0u8; 64];
-                    let _ = std::io::Read::read(s, &mut buf);
-                },
-                move |c| write_paired(c, &send, &addr),
-            );
-            assert!(result.is_ok(), "expected Ok, got {:?}", result);
-        }
-
-        #[test]
-        fn accepts_disconnect_two_packet_response() {
-            // Observed SLC II DISCONNECT_DEVICE: device sends
-            // two concatenated responses. The prefix of the
-            // first matches the sent command's prefix, the
-            // address appears somewhere in the response, so the
-            // permissive matcher accepts.
-            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let send = [0x04, 0x02, 0x05, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let ack = [
-                0x04, 0x02, 0x07, 0x00, 0x04, 0x02, 0x06, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
-            ];
-            let result = with_pair(
-                move |s| reply_with(s, &ack),
-                move |c| write_paired(c, &send, &addr),
-            );
-            assert!(result.is_ok(), "expected Ok, got {:?}", result);
-        }
-
-        #[test]
-        fn rejects_response_with_wrong_prefix() {
-            // Response starts with `04 0f` (different subsystem)
-            // — must be rejected even though the address
-            // appears somewhere in the response.
-            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let send = [0x04, 0x02, 0x05, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let ack = [0x04, 0x0F, 0x07, 0x06, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let result = with_pair(
-                move |s| reply_with(s, &ack),
-                move |c| write_paired(c, &send, &addr),
-            );
-            assert!(result.is_err(), "expected Err, got {:?}", result);
-            assert!(matches!(result, Err(BoseError::AckMismatch)));
-        }
-
-        #[test]
-        fn rejects_response_missing_address() {
-            // Response prefix matches but the address bytes
-            // don't appear anywhere in the response.
-            let addr = [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D];
-            let send = [
-                0x04, 0x01, 0x05, 0x07, 0x00, 0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D,
-            ];
-            let ack = [0x04, 0x01, 0x07, 0x06, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF];
-            let result = with_pair(
-                move |s| reply_with(s, &ack),
-                move |c| write_paired(c, &send, &addr),
-            );
-            assert!(result.is_err(), "expected Err, got {:?}", result);
-            assert!(matches!(result, Err(BoseError::AckMismatch)));
-        }
     }
 
     // ========================================================================
@@ -1385,13 +1513,20 @@ mod tests {
         }
 
         #[test]
-        fn set_volume_rejects_wrong_header() {
-            // Reply starts with the wrong subsystem — must be rejected.
+        fn set_volume_skips_a_packet_of_another_function() {
+            // A notification of another function is not the reply.
             let result = drive(
-                move |s| reply(s, &[0x06, 0x05, 0x03, 0x02, 0x64, 0x0a]),
+                move |s| {
+                    reply(
+                        s,
+                        &[
+                            0x06, 0x05, 0x03, 0x02, 0x64, 0x0a, 0x05, 0x05, 0x03, 0x02, 0x64, 0x0a,
+                        ],
+                    )
+                },
                 move |c| set_volume(c, 0x0a),
             );
-            assert!(matches!(result, Err(BoseError::AckMismatch)));
+            assert_eq!(result.expect("set_volume"), 100);
         }
 
         #[test]
@@ -1468,22 +1603,28 @@ mod tests {
         }
 
         #[test]
-        fn send_media_key_rejects_wrong_first_packet() {
+        fn send_media_key_accepts_result_without_processing() {
+            // The PROCESSING packet is optional, as for every reply
+            // read from its header.
             let result = drive(
-                move |s| reply(s, &[0x05, 0x03, 0x06, 0x00, 0x05, 0x03, 0x06, 0x00]),
+                move |s| reply(s, &[0x05, 0x03, 0x06, 0x00]),
                 move |c| send_media_key(c, MediaKey::Pause),
             );
-            assert!(matches!(result, Err(BoseError::AckMismatch)));
+            assert!(result.is_ok(), "expected Ok, got {:?}", result);
         }
 
         #[test]
-        fn send_media_key_rejects_wrong_final_ack() {
-            // First packet is correct, second (final ACK) is wrong.
+        fn send_media_key_without_a_result_is_an_error() {
+            // PROCESSING, a notification of another function, then the
+            // stream ends: no RESULT, so no success.
             let result = drive(
-                move |s| reply(s, &[0x05, 0x03, 0x07, 0x00, 0x05, 0x03, 0x04, 0x00]),
+                move |s| reply(s, &[0x05, 0x03, 0x07, 0x00, 0x05, 0x04, 0x06, 0x00]),
                 move |c| send_media_key(c, MediaKey::Pause),
             );
-            assert!(matches!(result, Err(BoseError::AckMismatch)));
+            assert!(
+                matches!(result, Err(BoseError::ShortRead { .. })),
+                "got {result:?}"
+            );
         }
 
         // ---- get_active_device ----
@@ -1516,7 +1657,7 @@ mod tests {
         }
 
         #[test]
-        fn get_active_device_rejects_wrong_header() {
+        fn get_active_device_without_its_reply_is_an_error() {
             let result = drive(
                 move |s| {
                     reply(
@@ -1529,7 +1670,10 @@ mod tests {
                 },
                 move |c| get_active_device(c),
             );
-            assert!(matches!(result, Err(BoseError::AckMismatch)));
+            assert!(
+                matches!(result, Err(BoseError::ShortRead { .. })),
+                "got {result:?}"
+            );
         }
 
         // ---- get_device_bd_addr ----
@@ -1559,7 +1703,7 @@ mod tests {
         }
 
         #[test]
-        fn get_device_bd_addr_rejects_wrong_header() {
+        fn get_device_bd_addr_without_its_reply_is_an_error() {
             let result = drive(
                 move |s| {
                     reply(
@@ -1569,7 +1713,10 @@ mod tests {
                 },
                 move |c| get_device_bd_addr(c),
             );
-            assert!(matches!(result, Err(BoseError::AckMismatch)));
+            assert!(
+                matches!(result, Err(BoseError::ShortRead { .. })),
+                "got {result:?}"
+            );
         }
 
         /// Sanity-check: all four new command functions must return
