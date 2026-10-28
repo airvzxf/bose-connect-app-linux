@@ -52,6 +52,11 @@
     <binary>bose-connect-gui</binary>
   </provides>
   <releases>
+    <release version="0.3.0" date="2026-10-27" urgency="medium">
+      <description>
+        <p>The GUI is still a mockup on a simulated device. The protocol library reads every reply from its header, fixes the paired-device commands, adds RFCOMM channel 1 as a fallback and adds the QC Ultra Headphones settings (equalizer, immersive audio, auto-off and more).</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-10-05" urgency="medium">
       <description>
         <p>Redesigned single-page control panel (still a mockup: it runs on a simulated device and is not yet connected to the library), with volume and media-transport controls. The protocol library adds volume, media keys, active-source and own-address commands, and QC Ultra Headphones support.</p>

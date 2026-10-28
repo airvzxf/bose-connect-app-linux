@@ -36,10 +36,10 @@ pull them in via `apt`.
 The recipe lives in `packaging/aur/PKGBUILD`. To build:
 
 ```bash
-# 1. From a clean checkout at the v0.2.0 tag:
+# 1. From a clean checkout at the v0.3.0 tag:
 git clone https://github.com/airvzxf/bose-connect-app-linux.git
 cd bose-connect-app-linux
-git checkout v0.2.0
+git checkout v0.3.0
 
 # 2. Drop the PKGBUILD into the source tree at packaging/aur/
 #    and the .SRCINFO next to it. Then from the source root:
@@ -58,7 +58,7 @@ cp packaging/aur/PKGBUILD .
 cp packaging/aur/.SRCINFO .
 makepkg --printsrcinfo > .SRCINFO
 git add PKGBUILD .SRCINFO
-git commit -m "upgpkg 0.2.0"
+git commit -m "upgpkg 0.3.0"
 git push
 ```
 

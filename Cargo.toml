@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.85"
 license = "GPL-3.0-only"
@@ -29,7 +29,7 @@ clap = { version = "4", features = ["derive"] }
 cbindgen = "0.29"
 
 # Crate-specific paths
-bose-connect = { path = "crates/bose-connect", version = "0.2.0" }
+bose-connect = { path = "crates/bose-connect", version = "0.3.0" }
 
 [profile.release]
 opt-level = 3
