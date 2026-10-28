@@ -174,11 +174,13 @@ fn set_self_voice_round_trip() {
     let result = with_mock_device(
         |client| set_self_voice(client, SelfVoice::High),
         |server| {
-            let mut buf = [0u8; 7];
+            // The C packet's stray trailing `38` is dropped (see
+            // `set_self_voice`).
+            let mut buf = [0u8; 6];
             server.read_exact(&mut buf).unwrap();
             assert_eq!(
                 buf,
-                [0x01, 0x0b, 0x02, 0x02, 0x01, 0x01, 0x38],
+                [0x01, 0x0b, 0x02, 0x02, 0x01, 0x01],
                 "self-voice high packet"
             );
             server

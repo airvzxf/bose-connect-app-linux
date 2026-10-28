@@ -106,7 +106,9 @@ const GET_PAIRED_DEVICES_SEND: [u8; 4] = [0x04, 0x04, 0x01, 0x00];
 
 const SET_PAIRING_SEND: [u8; 5] = [0x04, 0x08, 0x05, 0x01, 0x00];
 
-const SET_SELF_VOICE_SEND: [u8; 7] = [0x01, 0x0b, 0x02, 0x02, 0x01, 0x00, 0x38];
+/// The C packet ended with a third payload byte `38` that its length
+/// byte (`02`) does not cover; it is dropped (see [`set_self_voice`]).
+const SET_SELF_VOICE_SEND: [u8; 6] = [0x01, 0x0b, 0x02, 0x02, 0x01, 0x00];
 
 // ---------------------------------------------------------------------------
 // Media / volume / audio-routing commands. These are NOT in the
@@ -577,15 +579,13 @@ pub fn set_pairing<I: BoseIo>(io: &mut I, pairing: Pairing) -> BoseResult<()> {
 
 /// `int set_self_voice(int sock, enum SelfVoice selfVoice)` in `based.c`.
 ///
-/// **Known issue.** The C packet `01 0b 02 02 01 xx 38` declares a
-/// 2-byte payload but carries 3, so the device reads the trailing
-/// `38` as the first byte of the *next* request on the same
-/// connection. Captured on a QC Ultra (firmware 1.6.7): the request
-/// after it was answered with `38 01 04 01 03` (ERROR for block 38).
-/// `01 0b 02 02 01 xx` without the extra byte works there. The bytes
-/// are kept as in the C code until the corrected packet is tested on
-/// a QC35 (see `TODO.md`); until then, do not send another request
-/// on the same connection after this one.
+/// **Deviates from the C bytes on purpose.** The C packet
+/// `01 0b 02 02 01 xx 38` declares a 2-byte payload but carries 3, so
+/// the device read the trailing `38` as the first byte of the *next*
+/// request on the same connection: on a QC Ultra (firmware 1.6.7) the
+/// request after it was answered with `38 01 04 01 03` (ERROR for
+/// block 38). `01 0b 02 02 01 xx` was verified on the QC Ultra
+/// (2026-10-07) and on a QC35 II, firmware 4.8.1 (2026-10-27).
 pub fn set_self_voice<I: BoseIo>(io: &mut I, level: SelfVoice) -> BoseResult<()> {
     let mut send = SET_SELF_VOICE_SEND;
     send[BYTES_POSITION_5] = level as u8;

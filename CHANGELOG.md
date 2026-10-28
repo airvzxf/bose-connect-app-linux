@@ -40,6 +40,12 @@ captures are in `docs/protocol.md` and replayed by the tests.
   `04 01 04 07 0b` is an error ("not a paired source").
 * The CLI no longer retries a paired-device operation after a
   `DeviceError`.
+* `set_self_voice` no longer sends the stray trailing `38` of the C
+  packet, which the device read as the start of the next request
+  (verified on a QC Ultra and a QC35 II).
+* `send_media_key` waits up to 5 s for the RESULT, which the QC Ultra
+  sends 1-3 s after PROCESSING; `get_device_status` no longer fails
+  when a setting outside the report comes as an ERROR packet.
 
 ### Changed
 

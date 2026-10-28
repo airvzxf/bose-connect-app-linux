@@ -52,9 +52,18 @@ cover the Rust migration + CI/CD.
           as success (SoundLink Color II remove-device). Check whether
           a late reply follows. Only test with a source you can pair
           again.
-    - [ ] `set_self_voice` sends the C packet `01 0b 02 02 01 xx 38`,
-          whose last byte spills into the next request. Try
-          `01 0b 02 02 01 xx` on a QC35 II, then drop the `38`.
+    - [x] `set_self_voice` drops the stray `38` of the C packet
+          `01 0b 02 02 01 xx 38`, which spilled into the next request;
+          verified on a QC Ultra and a QC35 II (2026-10-27).
+    - [ ] A SoundLink Color II switched off after only two CLI
+          connections on 2026-10-27, after the user had disconnected
+          and reconnected it by hand. Find out whether BlueZ's own
+          RFCOMM connections (hands-free profile) count towards its
+          9-connection limit.
+    - [ ] On this CachyOS laptop, Bose headphones that reconnect often
+          play nothing until disconnected and connected by hand (not on
+          a Windows laptop). Check the BlueZ/PipeWire logs at reconnect;
+          related to the QC Ultra media-control lock above?
     - [ ] QC Ultra media keys: after play/pause (`01`), which never
           completes, every key and the phone's own controls lock until
           the phone reconnects. The user also saw the lock after only
