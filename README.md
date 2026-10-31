@@ -107,7 +107,7 @@ Usage: bose-connect-app-linux [options] <address>
   -n <name>, --name=<name>
     Change the name of the device.
   -o <minutes>, --auto-off=<minutes>
-    Change the auto-off time.  minutes: never, 5, 20, 40, 60, 180, 1440 (QC Ultra)
+    Change the auto-off time.  minutes: never, 5, 20, 40, 60, 180, or 1440 (24 hours, QC Ultra only)
   -c <level>, --noise-cancelling=<level>
     Change the noise cancelling level.  level: high, low, off
   -l <language>, --prompt-language=<language>
