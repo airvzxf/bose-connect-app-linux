@@ -122,7 +122,8 @@ struct Cli {
     ])]
     name: Option<String>,
 
-    /// Change the auto-off time. minutes: never, 5, 20, 40, 60, 180, 1440 (QC Ultra only).
+    /// Change the auto-off time. minutes: never, 5, 20, 40, 60, 180, or 1440
+    /// (24 hours, QC Ultra only).
     #[arg(short = 'o', long = "auto-off", value_name = "MINUTES", conflicts_with_all = &[
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "noise_cancelling",
