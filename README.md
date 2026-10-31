@@ -126,8 +126,8 @@ Usage: bose-connect-app-linux [options] <address>
   --remove-device=<address>
     Remove the device at address from the pairing list.
   -m <mode>, --audio-mode=<mode>
-    Change the audio mode (QC Ultra).
-    mode: quiet, aware, immersion, or a slot index
+    Change the audio mode (QC Ultra, QC45).
+    mode: quiet, aware, immersion, commute, or a slot index
   --channel=<channel>
     Use this RFCOMM channel instead of the automatic choice (8, then 2, then 1).
 ```
@@ -254,7 +254,9 @@ locks media control until the phone reconnects). See
 
 This has only been tested on Bose `QuietComfort 35's` with
 firmware 1.3.2, 1.2.9, 1.06, `SoundLink II's` with firmware
-2.1.1 and `QuietComfort Ultra Headphones` with firmware 1.6.7.
+2.1.1, `QuietComfort Ultra Headphones` with firmware 1.6.7 and
+`QuietComfort 45` with firmware 4.0.4 (audio modes, equalizer and
+shortcut).
 I cannot ensure that this program works on any other devices.
 
 [denton-l]: https://github.com/Denton-L/based-connect

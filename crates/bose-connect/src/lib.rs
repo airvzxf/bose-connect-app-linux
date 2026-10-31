@@ -33,8 +33,8 @@
 //! Replies are the exception: they are parsed from their own
 //! length header instead of fixed-size ACKs, so the variable-length
 //! payloads of the QC Ultra Headphones are accepted. The audio-mode
-//! functions have no C counterpart; see the "QuietComfort Ultra
-//! Headphones" section of `docs/protocol.md`.
+//! functions have no C counterpart; see the "Block 1f: audio modes"
+//! section of `docs/protocol.md`.
 //!
 //! ## Quick start
 //!
@@ -69,11 +69,12 @@ pub use crate::protocol::{
     get_auto_play_pause, get_battery_level, get_battery_prompt, get_device_bd_addr, get_device_id,
     get_device_info, get_device_status, get_equalizer, get_firmware_version, get_immersive_audio,
     get_paired_devices, get_remember_audio_mode, get_serial_number, get_shortcut, has_audio_modes,
-    has_legacy_settings, has_noise_cancelling, has_pairing_toggle, has_self_voice, send_media_key,
-    set_audio_mode, set_auto_answer_calls, set_auto_off, set_auto_play_pause, set_battery_prompt,
-    set_equalizer_band, set_immersive_audio, set_name, set_noise_cancelling, set_pairing,
-    set_prompt_language, set_remember_audio_mode, set_self_voice, set_shortcut, set_voice_prompts,
-    set_volume, DeviceStatusReport, PairedDevices,
+    has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer, has_immersive_audio,
+    has_legacy_settings, has_noise_cancelling, has_pairing_toggle, has_self_voice, has_shortcut,
+    send_media_key, set_audio_mode, set_auto_answer_calls, set_auto_off, set_auto_play_pause,
+    set_battery_prompt, set_equalizer_band, set_immersive_audio, set_name, set_noise_cancelling,
+    set_pairing, set_prompt_language, set_remember_audio_mode, set_self_voice, set_shortcut,
+    set_voice_prompts, set_volume, DeviceStatusReport, PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, EqBand, EqualizerBand,
@@ -206,7 +207,7 @@ impl BoseDevice {
         set_pairing(&mut self.conn, if on { Pairing::On } else { Pairing::Off })
     }
 
-    /// Fetch the current audio-mode index (QC Ultra).
+    /// Fetch the current audio-mode index (QC Ultra, QC45).
     pub fn audio_mode(&mut self) -> BoseResult<u8> {
         get_audio_mode(&mut self.conn)
     }
@@ -280,12 +281,12 @@ impl BoseDevice {
         set_battery_prompt(&mut self.conn, on)
     }
 
-    /// Equalizer bands with their ranges (QC Ultra).
+    /// Equalizer bands with their ranges (QC Ultra, QC45).
     pub fn equalizer(&mut self) -> BoseResult<Vec<EqualizerBand>> {
         get_equalizer(&mut self.conn)
     }
 
-    /// Set one equalizer band (QC Ultra). Values outside the range the
+    /// Set one equalizer band (QC Ultra, QC45). Values outside the range the
     /// device reports are refused before anything is sent.
     pub fn set_equalizer_band(&mut self, band: EqBand, value: i8) -> BoseResult<()> {
         set_equalizer_band(&mut self.conn, band, value)
@@ -324,22 +325,22 @@ impl BoseDevice {
     }
 
     /// Whether the headphones start in the last audio mode used (QC
-    /// Ultra).
+    /// Ultra, QC45).
     pub fn remember_audio_mode(&mut self) -> BoseResult<bool> {
         get_remember_audio_mode(&mut self.conn)
     }
 
-    /// Turn "remember my mode" on or off (QC Ultra).
+    /// Turn "remember my mode" on or off (QC Ultra, QC45).
     pub fn set_remember_audio_mode(&mut self, on: bool) -> BoseResult<()> {
         set_remember_audio_mode(&mut self.conn, on)
     }
 
-    /// Shortcut action of the right earcup (QC Ultra).
+    /// Shortcut action of the right earcup (QC Ultra, QC45).
     pub fn shortcut(&mut self) -> BoseResult<ShortcutAction> {
         get_shortcut(&mut self.conn)
     }
 
-    /// Change the shortcut action (QC Ultra).
+    /// Change the shortcut action (QC Ultra, QC45).
     pub fn set_shortcut(&mut self, action: ShortcutAction) -> BoseResult<()> {
         set_shortcut(&mut self.conn, action)
     }

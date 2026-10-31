@@ -21,12 +21,13 @@ use std::os::unix::net::UnixStream;
 use std::thread;
 
 use bose_connect::protocol::{
-    get_audio_mode, get_audio_mode_name, get_battery_level, get_device_id, get_device_status,
-    get_firmware_version, get_serial_number, set_audio_mode, set_auto_off, set_name, set_pairing,
-    set_prompt_language, set_self_voice, set_voice_prompts,
+    get_audio_mode, get_audio_mode_name, get_audio_modes, get_battery_level, get_device_id,
+    get_device_status, get_firmware_version, get_serial_number, get_shortcut, set_audio_mode,
+    set_auto_off, set_name, set_pairing, set_prompt_language, set_self_voice, set_voice_prompts,
 };
 use bose_connect::{
-    AutoOff, BdAddr, BoseError, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, VP_ENABLE_BIT,
+    AutoOff, BdAddr, BoseError, NoiseCancelling, Pairing, PromptLanguage, SelfVoice,
+    ShortcutAction, VP_ENABLE_BIT,
 };
 
 /// Helper: create a `UnixStream` pair and hand back (client, server)
@@ -540,4 +541,147 @@ fn device_error_packet_surfaces_as_error() {
             code: 0x08
         })
     ));
+}
+
+#[test]
+fn qc_ultra_audio_modes_reads_ten_slots() {
+    let modes = with_mock_device(get_audio_modes, |server| {
+        for (index, name) in ["Quiet", "Aware", "Immersion"].into_iter().enumerate() {
+            expect_request(server, [0x1f, 0x06, 0x01, 0x01, index as u8]);
+            server
+                .write_all(&audio_mode_config(index as u8, name))
+                .unwrap();
+        }
+        for index in 3..10 {
+            expect_request(server, [0x1f, 0x06, 0x01, 0x01, index]);
+            server.write_all(&audio_mode_config(index, "None")).unwrap();
+        }
+    });
+    assert_eq!(
+        modes.unwrap(),
+        vec![
+            (0, "Quiet".to_string()),
+            (1, "Aware".to_string()),
+            (2, "Immersion".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn audio_modes_error_on_slot_0_is_returned() {
+    let result = with_mock_device(get_audio_modes, |server| {
+        expect_request(server, [0x1f, 0x06, 0x01, 0x01, 0x00]);
+        server.write_all(&[0x1f, 0x06, 0x04, 0x01, 0x06]).unwrap();
+    });
+    assert!(matches!(
+        result,
+        Err(BoseError::DeviceError {
+            block: 0x1f,
+            function: 0x06,
+            code: 0x06
+        })
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// QC45 (device id 0x4039, firmware 4.0.4-4360+de6a887). The replies
+// below are byte-for-byte captures from a real device.
+// ---------------------------------------------------------------------------
+
+/// Parse space-separated hex bytes.
+fn hex(s: &str) -> Vec<u8> {
+    s.split_whitespace()
+        .map(|b| u8::from_str_radix(b, 16).unwrap())
+        .collect()
+}
+
+/// `1f 06` reply for QC45 slot `index`: its settings bytes, the name
+/// NUL-padded to 32 bytes, and the trailing settings bytes.
+fn qc45_audio_mode_config(head: &str, name: &str, tail: &str) -> Vec<u8> {
+    let mut payload = hex(head);
+    let mut field = [0u8; 32];
+    field[..name.len()].copy_from_slice(name.as_bytes());
+    payload.extend_from_slice(&field);
+    payload.extend_from_slice(&hex(tail));
+    let mut reply = vec![0x1f, 0x06, 0x03, payload.len() as u8];
+    reply.extend_from_slice(&payload);
+    reply
+}
+
+#[test]
+fn qc45_audio_modes_stop_at_slot_4() {
+    let modes = with_mock_device(get_audio_modes, |server| {
+        let slots = [
+            ("00 00 01 00 00 01", "Quiet", "00 00 00 01 00 00 00 00 00"),
+            ("01 00 02 00 00 01", "Aware", "00 00 00 01 0a 00 00 00 00"),
+            ("02 00 07 01 01 01", "Commute", "00 00 00 09 00 00 00 00 01"),
+            ("03 00 00 01 01 00", "", "00 00 00 09 05 00 00 00 00"),
+        ];
+        for (index, (head, name, tail)) in slots.into_iter().enumerate() {
+            expect_request(server, [0x1f, 0x06, 0x01, 0x01, index as u8]);
+            server
+                .write_all(&qc45_audio_mode_config(head, name, tail))
+                .unwrap();
+        }
+        expect_request(server, [0x1f, 0x06, 0x01, 0x01, 0x04]);
+        server.write_all(&hex("1f 06 04 01 06")).unwrap();
+    });
+    assert_eq!(
+        modes.unwrap(),
+        vec![
+            (0, "Quiet".to_string()),
+            (1, "Aware".to_string()),
+            (2, "Commute".to_string()),
+        ]
+    );
+}
+
+/// The QC45 answers a switch with PROCESSING only; the new mode is
+/// read back with a GET.
+#[test]
+fn qc45_set_audio_mode_confirms_with_get() {
+    let result = with_mock_device(
+        |client| set_audio_mode(client, 1),
+        |server| {
+            expect_request(server, [0x1f, 0x03, 0x05, 0x02, 0x01, 0x00]);
+            server.write_all(&hex("1f 03 07 00")).unwrap();
+            expect_request(server, [0x1f, 0x03, 0x01, 0x00]);
+            server.write_all(&hex("1f 03 03 01 01")).unwrap();
+        },
+    );
+    assert!(result.is_ok(), "expected Ok, got {:?}", result);
+}
+
+#[test]
+fn qc45_set_audio_mode_unconfirmed() {
+    let result = with_mock_device(
+        |client| set_audio_mode(client, 1),
+        |server| {
+            expect_request(server, [0x1f, 0x03, 0x05, 0x02, 0x01, 0x00]);
+            server.write_all(&hex("1f 03 07 00")).unwrap();
+            expect_request(server, [0x1f, 0x03, 0x01, 0x00]);
+            server.write_all(&hex("1f 03 03 01 00")).unwrap();
+        },
+    );
+    assert!(
+        matches!(result, Err(BoseError::UnconfirmedValue { .. })),
+        "expected UnconfirmedValue, got {:?}",
+        result
+    );
+}
+
+/// The QC45's `01 09` payload is 11 bytes, the QC Ultra's 7; the
+/// action byte is at the same place.
+#[test]
+fn qc45_shortcut_reads_spotify() {
+    let action = with_mock_device(
+        |client| get_shortcut(client).unwrap(),
+        |server| {
+            expect_request(server, [0x01, 0x09, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 09 03 0b 80 09 10 00 01 40 08 00 00 00 80"))
+                .unwrap();
+        },
+    );
+    assert_eq!(action, ShortcutAction::Spotify);
 }
