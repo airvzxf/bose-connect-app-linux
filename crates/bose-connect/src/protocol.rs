@@ -822,7 +822,8 @@ pub fn get_audio_mode_name<I: BoseIo>(io: &mut I, index: u8) -> BoseResult<Optio
 ///
 /// Reads up to [`MAX_AUDIO_MODES`] slots and stops at the first slot
 /// the device answers with ERROR `06` (QC45, from slot 4 on) or `08`
-/// (QC Ultra, from slot 10 on). That error on slot 0 is returned.
+/// (QC Ultra, from slot 10 on). An error on slot 0 is returned as an
+/// error: the device probably has no audio modes.
 pub fn get_audio_modes<I: BoseIo>(io: &mut I) -> BoseResult<Vec<(u8, String)>> {
     let mut modes = Vec::new();
     for index in 0..MAX_AUDIO_MODES {
