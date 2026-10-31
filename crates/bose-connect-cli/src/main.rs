@@ -18,7 +18,19 @@ use bose_connect::{
     BdAddr, BoseDevice, BoseError, DeviceStatus, DevicesConnected, EqBand, ImmersiveAudio,
     MediaKey, NoiseCancelling, PromptLanguage, SelfVoice, ShortcutAction, VP_ENABLE_BIT, VP_MASK,
 };
+use clap::builder::styling::{AnsiColor, Styles};
 use clap::{ArgGroup, Parser, ValueHint};
+
+/// Colours of the help and error output, the same as Cargo's. Clap
+/// drops them when the output is not a terminal or `NO_COLOR` is set.
+const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Green.on_default().bold())
+    .usage(AnsiColor::Green.on_default().bold())
+    .literal(AnsiColor::Cyan.on_default().bold())
+    .placeholder(AnsiColor::Cyan.on_default())
+    .error(AnsiColor::Red.on_default().bold())
+    .valid(AnsiColor::Green.on_default().bold())
+    .invalid(AnsiColor::Yellow.on_default().bold());
 
 /// Bose Connect for Linux — control Bose headphones over RFCOMM.
 ///
@@ -33,6 +45,7 @@ use clap::{ArgGroup, Parser, ValueHint};
     long_about = None,
     disable_help_flag = false,
     arg_required_else_help = false,
+    styles = STYLES,
 )]
 #[command(group(
     // At most one command per run; `--channel` combines with any of them.
