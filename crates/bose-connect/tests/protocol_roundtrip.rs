@@ -171,6 +171,7 @@ fn set_pairing_round_trip() {
     result.unwrap();
 }
 
+/// The QC Ultra and the QC45 (firmware 4.0.4) send the same reply.
 #[test]
 fn set_self_voice_round_trip() {
     let result = with_mock_device(

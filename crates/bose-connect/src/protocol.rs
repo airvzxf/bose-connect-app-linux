@@ -225,15 +225,16 @@ pub fn has_noise_cancelling(device_id: u16) -> bool {
 /// device will never answer).
 ///
 /// Conservative allow-list: the QC35 series (device IDs `0x4014`
-/// and `0x4020`) and the QC Ultra Headphones (`0x4066`, same
-/// packet format, verified on hardware) expose self-voice. The
+/// and `0x4020`), the QC Ultra Headphones (`0x4066`) and the QC45
+/// (`0x4039`, firmware 4.0.4), the last two with the same packet
+/// format, verified on hardware, expose self-voice. The
 /// SoundLink II (`0x400d`) does not. If a new device is found
 /// to support self-voice, add its device ID here and the CLI's
 /// pre-flight check will start allowing the command.
 pub fn has_self_voice(device_id: u16) -> bool {
     matches!(
         device_id,
-        NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | QC_ULTRA_HEADPHONES
+        NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | QC_ULTRA_HEADPHONES | QC45_HEADPHONES
     )
 }
 
@@ -1546,6 +1547,7 @@ mod tests {
             assert!(!has(0x4039));
             assert!(!has(0x4014));
         }
+        assert!(has_self_voice(0x4039));
         assert!(!has_legacy_settings(0x4066));
         assert!(has_legacy_settings(0x4039));
         assert!(has_legacy_settings(0x4020));

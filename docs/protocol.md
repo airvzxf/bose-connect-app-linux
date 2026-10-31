@@ -381,17 +381,26 @@ Read `07` and `01`; meaning unknown.
 ### `01 0b` self voice (C) — `set_self_voice(level)`
 
 ```text
-> 01 0b 02 02 01 xx 38
+> 01 0b 02 02 01 xx
 < 01 0b 03 03 01 xx 0f
 # xx: 00 off, 01 high, 02 medium, 03 low
 ```
 
-The C request declares 2 payload bytes but carries 3: the device
-reads the trailing `38` as the start of the next request. On a QC
-Ultra the following read was answered with `38 01 04 01 03` (ERROR,
-block `38` does not exist). `01 0b 02 02 01 xx` without it works there
-("automatic voice" in the app). The C bytes stay until the fix is
-tried on a QC35.
+The C request was `01 0b 02 02 01 xx 38`: it declares 2 payload bytes
+but carries 3, and the device reads the trailing `38` as the start of
+the next request (on a QC Ultra the following read was answered with
+`38 01 04 01 03`, ERROR, block `38` does not exist). The library sends
+the request without it, verified on a QC Ultra ("automatic voice" in
+the app), a QC35 II and a QC45.
+
+QC45 (4.0.4), low before; the app showed high afterwards. Self-voice
+only acts during calls: in a phone call, off, low, medium and high set
+from a laptop were heard as such.
+
+```text
+> 01 0b 02 02 01 01
+< 01 0b 03 03 01 01 0f
+```
 
 ### `01 18`, `01 1b` on-head detection (QC Ultra)
 
@@ -736,8 +745,8 @@ Product `4039`, firmware 4.0.4-4360+de6a887. Channel 8. No `01 06`:
 `01 06 01 00` answers ERROR `04`, so no noise cancelling, audio modes
 instead (four slots, see block 1f). The 7-byte `01 03` payload of the
 QC Ultra, without its battery prompt; voice prompts and language
-verified (see `01 03`). Equalizer and shortcut as on the QC Ultra (see
-`01 07`, `01 09`). Play/pause never completes (see block
+verified (see `01 03`). Equalizer, shortcut and self-voice as on the
+QC Ultra (see `01 07`, `01 09`, `01 0b`). Play/pause never completes (see block
 05). Immersive audio, auto play/pause and auto answer are not tested.
 
 ### SoundLink Color II

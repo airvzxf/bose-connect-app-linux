@@ -25,6 +25,8 @@ tests.
 * Voice prompts and prompt language on the QC45: `--voice-prompts`
   and `--prompt-language` work there (`has_legacy_settings` is true
   for it).
+* Self-voice on the QC45: `has_self_voice` is true for it, so
+  `--self-voice` works there.
 
 ### Fixed
 
