@@ -132,7 +132,7 @@ struct Cli {
     auto_off: Option<String>,
 
     /// Change the noise-cancelling level. level: high, low, off. On
-    /// the QC Ultra, use --audio-mode instead.
+    /// the QC Ultra and QC45, use --audio-mode instead.
     #[arg(short = 'c', long = "noise-cancelling", value_name = "LEVEL", conflicts_with_all = &[
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off",
@@ -204,8 +204,8 @@ struct Cli {
     ])]
     remove_device: Option<String>,
 
-    /// Switch the audio mode (QC Ultra). mode: its name (quiet, aware,
-    /// immersion, …) or its slot index.
+    /// Switch the audio mode (QC Ultra, QC45). mode: its name (quiet,
+    /// aware, immersion, …) or its slot index.
     #[arg(short = 'm', long = "audio-mode", value_name = "MODE", conflicts_with_all = &[
         "info", "device_status", "firmware_version", "serial_number", "battery_level",
         "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
@@ -305,7 +305,7 @@ struct Cli {
     )]
     auto_answer: Option<String>,
 
-    /// Start in the last audio mode used (QC Ultra). switch: on, off.
+    /// Start in the last audio mode used (QC Ultra, QC45). switch: on, off.
     #[arg(
         long = "remember-mode",
         value_name = "SWITCH",
@@ -438,8 +438,9 @@ fn dispatch(cli: Cli) -> Result<()> {
             let (device_id, _) = device.device_id()?;
             if bose_connect::has_audio_modes(device_id) {
                 bail!(
-                    "pause is refused on this device: on a QC Ultra it never completes and \
-                     locks media control, the phone's included, until the phone reconnects"
+                    "pause is refused on this device: it never completes on a QC Ultra or a \
+                     QC45; on a QC Ultra it locks media control, the phone's included, until \
+                     the phone reconnects, and on a QC45 it reaches some sources and not others"
                 );
             }
         }
@@ -598,6 +599,16 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
         println!("\tAudio Mode: {}", name);
         let names: Vec<&str> = modes.iter().map(|(_, name)| name.as_str()).collect();
         println!("\tAudio Modes Available: {}", names.join(", "));
+        println!(
+            "\tRemember Mode: {}",
+            if device.remember_audio_mode()? {
+                "on"
+            } else {
+                "off"
+            }
+        );
+    }
+    if bose_connect::has_qc_ultra_settings(status.device_id) {
         print_qc_ultra_settings(device)?;
     }
     Ok(())
@@ -624,7 +635,6 @@ fn print_qc_ultra_settings(device: &mut BoseDevice) -> Result<()> {
         "\tAuto Answer Calls: {}",
         on_off(device.auto_answer_calls()?)
     );
-    println!("\tRemember Mode: {}", on_off(device.remember_audio_mode()?));
     let shortcut = match device.shortcut()? {
         ShortcutAction::BatteryLevel => "battery",
         ShortcutAction::ImmersiveAudio => "immersive",

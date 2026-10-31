@@ -6,6 +6,26 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+Based on a hardware session with a QC45 (firmware 4.0.4) on
+2026-10-31; the captures are in `docs/protocol.md` and replayed by the
+tests.
+
+### Added
+
+* Audio modes and "remember my mode" on the QC45 (device id
+  `0x4039`): `has_audio_modes` is true for it, so `--audio-mode`,
+  `--remember-mode` and the audio mode in `--device-status` work there.
+* `has_qc_ultra_settings`: the equalizer, immersive audio, battery
+  prompt, auto play/pause, auto answer and shortcut, which only the
+  QC Ultra is known to have. `--device-status` prints them only there.
+
+### Fixed
+
+* `set_audio_mode` accepts a PROCESSING reply without a RESULT (QC45)
+  and reads the new mode back with a GET.
+* `get_audio_modes` stops at the first slot that answers ERROR `06` or
+  `08` instead of failing; the QC45 has four slots, not ten.
+
 ## [0.3.0][] - 2026-10-27
 
 Based on hardware sessions with a SoundLink Color II (firmware 4.0.1),
