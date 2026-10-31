@@ -25,9 +25,20 @@ the project uses [Semantic Versioning](https://semver.org/).
   plays nothing. `--info` prints it too. Library: `AudioState`.
 * `--pairing` (and the GUI pairing switch) on the SoundLink Color II.
   Entering pairing mode disconnects every audio source.
+* Audio modes and "remember my mode" on the QC45 (device id
+  `0x4039`): `has_audio_modes` is true for it, so `--audio-mode`,
+  `--remember-mode` and the audio mode in `--device-status` work there.
+* Per-feature predicates `has_equalizer`, `has_battery_prompt`,
+  `has_immersive_audio`, `has_auto_play_pause`, `has_auto_answer` and
+  `has_shortcut`, true for the QC Ultra only so far. `--device-status`
+  prints each setting only on the devices that have it.
 
 ### Fixed
 
+* `set_audio_mode` accepts a PROCESSING reply without a RESULT (QC45)
+  and reads the new mode back with a GET.
+* `get_audio_modes` stops at the first slot that answers ERROR `06` or
+  `08` instead of failing; the QC45 has four slots, not ten.
 * GUI: the page flickered after every device answer, including the
   60 s refresh, because it was rebuilt each time. It is now rebuilt
   only when the device snapshot changed or a setter failed, and keeps
