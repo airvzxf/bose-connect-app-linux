@@ -19,6 +19,7 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::thread;
+use std::time::Duration;
 
 use bose_connect::protocol::{
     get_audio_mode, get_audio_mode_name, get_audio_modes, get_battery_level, get_device_id,
@@ -684,4 +685,53 @@ fn qc45_shortcut_reads_spotify() {
         },
     );
     assert_eq!(action, ShortcutAction::Spotify);
+}
+
+/// The QC45 does not answer the prompt-language write; the new value
+/// is read back with a GET.
+#[test]
+fn qc45_prompt_language_write_is_read_back() {
+    let result = with_mock_device(
+        |client| {
+            client
+                .set_read_timeout(Some(Duration::from_millis(200)))
+                .unwrap();
+            set_prompt_language(client, 0xa1)
+        },
+        |server| {
+            expect_request(server, [0x01, 0x03, 0x02, 0x01, 0xa1]);
+            // No answer: the client's read times out and it asks.
+            expect_request(server, [0x01, 0x03, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 03 03 07 a1 00 01 81 5e 00 00"))
+                .unwrap();
+        },
+    );
+    assert!(result.is_ok(), "expected Ok, got {:?}", result);
+}
+
+/// A GET 0.2 s after the QC45's prompt-language write can still show
+/// the old value; the next one shows the new value.
+#[test]
+fn qc45_prompt_language_write_waits_for_the_new_value() {
+    let result = with_mock_device(
+        |client| {
+            client
+                .set_read_timeout(Some(Duration::from_millis(200)))
+                .unwrap();
+            set_prompt_language(client, 0x84)
+        },
+        |server| {
+            expect_request(server, [0x01, 0x03, 0x02, 0x01, 0x84]);
+            expect_request(server, [0x01, 0x03, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 03 03 07 81 00 01 81 5e 00 00"))
+                .unwrap();
+            expect_request(server, [0x01, 0x03, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 03 03 07 84 00 01 81 5e 00 00"))
+                .unwrap();
+        },
+    );
+    assert!(result.is_ok(), "expected Ok, got {:?}", result);
 }

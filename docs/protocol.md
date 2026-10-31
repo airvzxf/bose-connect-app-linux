@@ -264,8 +264,28 @@ QC Ultra (1.6.7) sends 7 bytes:
 QC45 (4.0.4) sends the same 7 bytes, `81 00 01 81 5e 00 00` (English,
 prompts off), but has no battery prompt: `01 03 02 02 81 01` is
 answered with the unchanged payload, and its app offers the battery
-level only as the shortcut action (`01 09`). The library refuses
-`--prompt-language` there too (byte 1 carries `0x80`).
+level only as the shortcut action (`01 09`).
+
+Its byte 1 has the QC Ultra's layout: `0x80` always set (meaning
+unknown), `0x20` voice prompts, low 5 bits the language. Its app lists
+8 languages; English is `81` (`a1` with prompts on), German `a4`. The
+writes keep `0x80`:
+
+```text
+> 01 03 02 01 a1                  # voice prompts on: no reply at all
+> 01 03 01 00                     # GET 0.2 s later: still the old byte
+< 01 03 03 07 81 00 01 81 5e 00 00
+> 01 03 01 00                     # GET 0.4 s later: the new byte
+< 01 03 03 07 a1 00 01 81 5e 00 00
+> 01 03 02 01 a1                  # from German (a4) to English: answered
+< 01 03 03 07 a1 00 01 81 5e 00 00
+```
+
+A voice-prompt write is never answered, and a GET sent right after it
+may get no reply either; `set_prompt_language` then reads the byte back
+with a GET until it matches (2 s at most). The headphones announce each
+change. Right after a language change, a new connection was refused
+twice; a few seconds later it worked.
 
 Writes verified from a laptop: `01 03 02 01 86` (prompts off, the
 1-byte QC35 form) and `01 03 02 02 a6 00` / `a6 01` (battery prompt off
@@ -715,8 +735,9 @@ the previous one. Sends no notifications to a second client.
 Product `4039`, firmware 4.0.4-4360+de6a887. Channel 8. No `01 06`:
 `01 06 01 00` answers ERROR `04`, so no noise cancelling, audio modes
 instead (four slots, see block 1f). The 7-byte `01 03` payload of the
-QC Ultra, without its battery prompt. Equalizer and shortcut as on the
-QC Ultra (see `01 07`, `01 09`). Play/pause never completes (see block
+QC Ultra, without its battery prompt; voice prompts and language
+verified (see `01 03`). Equalizer and shortcut as on the QC Ultra (see
+`01 07`, `01 09`). Play/pause never completes (see block
 05). Immersive audio, auto play/pause and auto answer are not tested.
 
 ### SoundLink Color II

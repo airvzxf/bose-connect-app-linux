@@ -255,8 +255,8 @@ locks media control until the phone reconnects). See
 This has only been tested on Bose `QuietComfort 35's` with
 firmware 1.3.2, 1.2.9, 1.06, `SoundLink II's` with firmware
 2.1.1, `QuietComfort Ultra Headphones` with firmware 1.6.7 and
-`QuietComfort 45` with firmware 4.0.4 (audio modes, equalizer and
-shortcut).
+`QuietComfort 45` with firmware 4.0.4 (audio modes, equalizer,
+shortcut, voice prompts and prompt language).
 I cannot ensure that this program works on any other devices.
 
 [denton-l]: https://github.com/Denton-L/based-connect

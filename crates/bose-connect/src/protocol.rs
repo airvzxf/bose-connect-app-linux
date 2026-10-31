@@ -290,15 +290,15 @@ pub fn has_shortcut(device_id: u16) -> bool {
     matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
 }
 
-/// `has_legacy_settings` is false for devices whose prompt-language
-/// payload is not the 1-byte QC35 layout: the QC Ultra and the QC45,
-/// which both send 7 bytes. Changing the *language* there has not been
-/// tested (their language byte carries an extra bit `0x80` that the
-/// language setters would clear), so the CLI refuses
-/// `--prompt-language` on them. Auto-off and voice prompts follow the
-/// layout the device reports and work on both.
+/// `has_legacy_settings` is false for devices on which changing the
+/// prompt *language* has not been tested: the QC Ultra, whose
+/// 7-byte prompt-language payload differs from the QC35's 1 byte. The
+/// CLI refuses `--prompt-language` there. The QC45 sends the same 7
+/// bytes, and its language write was verified on hardware (firmware
+/// 4.0.4). Auto-off and voice prompts follow the layout the device
+/// reports and work on all of them.
 pub fn has_legacy_settings(device_id: u16) -> bool {
-    !matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
+    !matches!(device_id, QC_ULTRA_HEADPHONES)
 }
 
 /// `has_pairing_toggle` is a new predicate that does not exist
@@ -707,18 +707,39 @@ pub fn set_auto_off<I: BoseIo>(io: &mut I, minutes: AutoOff) -> BoseResult<()> {
 /// in `based.c`. `language` should already have the
 /// [`VP_ENABLE_BIT`] set or cleared as desired; use
 /// [`set_voice_prompts`] for the convenience wrapper.
+///
+/// The QC35 answers the write with the new byte. The QC45 (firmware
+/// 4.0.4) does not answer it and shows the new value about 0.4 s later,
+/// so when the reply does not come or does not match yet, the byte is
+/// read back with a GET for up to 2 s.
 pub fn set_prompt_language<I: BoseIo>(io: &mut I, language_byte: u8) -> BoseResult<()> {
     let mut send = SET_PROMPT_LANGUAGE_SEND;
     send[BYTES_POSITION_4] = language_byte;
     io.bose_send(&send)?;
 
-    let got = get_prompt_language(io)?;
     let sent_clean = language_byte & VP_MASK;
-    let got_clean = got & VP_MASK;
-    if sent_clean != got_clean {
-        return Err(unconfirmed(sent_clean, got_clean));
+    let deadline = Instant::now() + PROMPT_LANGUAGE_CONFIRM_TIMEOUT;
+    let mut got = get_prompt_language(io);
+    loop {
+        match got {
+            Ok(byte) if byte & VP_MASK == sent_clean => return Ok(()),
+            Ok(byte) if Instant::now() >= deadline => {
+                return Err(unconfirmed(sent_clean, byte & VP_MASK))
+            }
+            Err(e) if !is_receive_timeout(&e) || Instant::now() >= deadline => return Err(e),
+            _ => {}
+        }
+        std::thread::sleep(PROMPT_LANGUAGE_CONFIRM_INTERVAL);
+        io.bose_send(&GET_PROMPT_LANGUAGE_SEND)?;
+        got = get_prompt_language(io);
     }
-    Ok(())
+}
+
+/// The prompt-language byte for `language`, keeping every bit of
+/// `current` other than the language code: the voice-prompts bit and
+/// the unknown bits `0x80` and `0x40` of the QC Ultra and the QC45.
+pub(crate) fn language_byte(current: u8, language: PromptLanguage) -> u8 {
+    (current & !LANGUAGE_CODE_MASK) | (language as u8 & LANGUAGE_CODE_MASK)
 }
 
 /// `int set_voice_prompts(int sock, int on)` in `based.c`.
@@ -1146,6 +1167,27 @@ fn set_byte<I: BoseIo>(io: &mut I, (block, function): (u8, u8), value: u8) -> Bo
 /// How long [`send_media_key`] waits for its RESULT.
 const MEDIA_KEY_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long [`set_prompt_language`] keeps reading the byte back. The
+/// first read waits up to the 1 s receive timeout for the write's reply.
+const PROMPT_LANGUAGE_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// Pause between two reads of [`set_prompt_language`].
+const PROMPT_LANGUAGE_CONFIRM_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Low 5 bits of the prompt-language byte: the language code.
+const LANGUAGE_CODE_MASK: u8 = 0x1f;
+
+/// Whether `e` is an expired receive timeout.
+fn is_receive_timeout(e: &BoseError) -> bool {
+    matches!(
+        e,
+        BoseError::Io(io) if matches!(
+            io.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        )
+    )
+}
+
 /// How long [`write_paired`] waits for the final RESULT of a
 /// paired-device command. Reconnecting a phone to a SoundLink Color II
 /// or a QC35 II took up to ~8 s between the PROCESSING packet and the
@@ -1505,8 +1547,22 @@ mod tests {
             assert!(!has(0x4014));
         }
         assert!(!has_legacy_settings(0x4066));
-        assert!(!has_legacy_settings(0x4039));
+        assert!(has_legacy_settings(0x4039));
         assert!(has_legacy_settings(0x4020));
+    }
+
+    /// Changing the language keeps the voice-prompts bit and the
+    /// unknown high bits.
+    #[test]
+    fn language_byte_keeps_the_other_bits() {
+        // QC45: English, prompts off, bit 7 set.
+        assert_eq!(language_byte(0x81, PromptLanguage::De), 0x84);
+        // QC45: German, prompts on.
+        assert_eq!(language_byte(0xa4, PromptLanguage::En), 0xa1);
+        // QC Ultra capture `e1`: English, prompts on, bits 7 and 6.
+        assert_eq!(language_byte(0xe1, PromptLanguage::Fr), 0xe2);
+        // QC35: 1-byte layout, prompts off.
+        assert_eq!(language_byte(0x01, PromptLanguage::It), 0x03);
     }
 
     // ========================================================================

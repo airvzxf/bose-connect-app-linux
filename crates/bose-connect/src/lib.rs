@@ -180,11 +180,10 @@ impl BoseDevice {
     }
 
     /// Set the prompt language while preserving the current
-    /// voice-prompts on/off state.
+    /// voice-prompts on/off state and the other bits of the byte.
     pub fn set_language_keep_voice_prompts(&mut self, language: PromptLanguage) -> BoseResult<()> {
         let status = self.device_status()?;
-        let new = (status.language & VP_ENABLE_BIT) | (language as u8);
-        self.set_prompt_language(new)
+        self.set_prompt_language(crate::protocol::language_byte(status.language, language))
     }
 
     /// Toggle voice prompts without changing the language.
