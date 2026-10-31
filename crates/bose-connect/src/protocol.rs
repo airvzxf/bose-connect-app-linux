@@ -245,11 +245,43 @@ pub fn has_audio_modes(device_id: u16) -> bool {
     matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
 }
 
-/// `has_qc_ultra_settings` is true for devices with the settings
-/// decoded on the QC Ultra Headphones (`0x4066`): equalizer,
-/// immersive audio, battery prompt, auto play/pause, auto answer and
-/// the shortcut. Not tested on other devices, the QC45 included.
-pub fn has_qc_ultra_settings(device_id: u16) -> bool {
+/// `has_equalizer` is true for devices with the `01 07` equalizer:
+/// the QC Ultra Headphones (`0x4066`), verified on hardware.
+pub fn has_equalizer(device_id: u16) -> bool {
+    matches!(device_id, QC_ULTRA_HEADPHONES)
+}
+
+/// `has_battery_prompt` is true for devices with the battery-level
+/// prompt at power-on (the last byte of the 7-byte `01 03` payload):
+/// the QC Ultra Headphones (`0x4066`), verified on hardware.
+pub fn has_battery_prompt(device_id: u16) -> bool {
+    matches!(device_id, QC_ULTRA_HEADPHONES)
+}
+
+/// `has_immersive_audio` is true for devices with the `05 0f`
+/// immersive-audio setting: the QC Ultra Headphones (`0x4066`),
+/// verified on hardware.
+pub fn has_immersive_audio(device_id: u16) -> bool {
+    matches!(device_id, QC_ULTRA_HEADPHONES)
+}
+
+/// `has_auto_play_pause` is true for devices with the `01 18`
+/// automatic play/pause: the QC Ultra Headphones (`0x4066`), verified
+/// on hardware.
+pub fn has_auto_play_pause(device_id: u16) -> bool {
+    matches!(device_id, QC_ULTRA_HEADPHONES)
+}
+
+/// `has_auto_answer` is true for devices with the `01 1b` automatic
+/// call answering: the QC Ultra Headphones (`0x4066`), verified on
+/// hardware.
+pub fn has_auto_answer(device_id: u16) -> bool {
+    matches!(device_id, QC_ULTRA_HEADPHONES)
+}
+
+/// `has_shortcut` is true for devices with the `01 09` earcup
+/// shortcut: the QC Ultra Headphones (`0x4066`), verified on hardware.
+pub fn has_shortcut(device_id: u16) -> bool {
     matches!(device_id, QC_ULTRA_HEADPHONES)
 }
 
@@ -1447,9 +1479,19 @@ mod tests {
         assert!(has_audio_modes(0x4066));
         assert!(has_audio_modes(0x4039));
         assert!(!has_audio_modes(0x4014));
-        assert!(has_qc_ultra_settings(0x4066));
-        assert!(!has_qc_ultra_settings(0x4039));
-        assert!(!has_qc_ultra_settings(0x4014));
+        let qc_ultra_only: [fn(u16) -> bool; 6] = [
+            has_equalizer,
+            has_battery_prompt,
+            has_immersive_audio,
+            has_auto_play_pause,
+            has_auto_answer,
+            has_shortcut,
+        ];
+        for has in qc_ultra_only {
+            assert!(has(0x4066));
+            assert!(!has(0x4039));
+            assert!(!has(0x4014));
+        }
     }
 
     // ========================================================================

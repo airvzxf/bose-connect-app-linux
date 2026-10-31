@@ -608,41 +608,51 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
             }
         );
     }
-    if bose_connect::has_qc_ultra_settings(status.device_id) {
-        print_qc_ultra_settings(device)?;
-    }
-    Ok(())
+    print_settings(device, status.device_id)
 }
 
-/// The settings decoded on the QC Ultra (firmware 1.6.7).
-fn print_qc_ultra_settings(device: &mut BoseDevice) -> Result<()> {
+/// The settings decoded on the QC Ultra (firmware 1.6.7), each printed
+/// only on the devices known to have it.
+fn print_settings(device: &mut BoseDevice, device_id: u16) -> Result<()> {
     let on_off = |on: bool| if on { "on" } else { "off" };
-    let bands: Vec<String> = device
-        .equalizer()?
-        .iter()
-        .map(|b| format!("{}={}", eq_band_name(b.band), b.value))
-        .collect();
-    println!("\tEqualizer: {}", bands.join(", "));
-    let immersive = match device.immersive_audio()? {
-        ImmersiveAudio::Off => "off",
-        ImmersiveAudio::Still => "still",
-        ImmersiveAudio::Motion => "motion",
-    };
-    println!("\tImmersive Audio: {immersive}");
-    println!("\tBattery Prompt: {}", on_off(device.battery_prompt()?));
-    println!("\tAuto Play/Pause: {}", on_off(device.auto_play_pause()?));
-    println!(
-        "\tAuto Answer Calls: {}",
-        on_off(device.auto_answer_calls()?)
-    );
-    let shortcut = match device.shortcut()? {
-        ShortcutAction::BatteryLevel => "battery",
-        ShortcutAction::ImmersiveAudio => "immersive",
-        ShortcutAction::VoiceAssistant => "assistant",
-        ShortcutAction::Spotify => "spotify",
-        ShortcutAction::Off => "off",
-    };
-    println!("\tShortcut: {shortcut}");
+    if bose_connect::has_equalizer(device_id) {
+        let bands: Vec<String> = device
+            .equalizer()?
+            .iter()
+            .map(|b| format!("{}={}", eq_band_name(b.band), b.value))
+            .collect();
+        println!("\tEqualizer: {}", bands.join(", "));
+    }
+    if bose_connect::has_immersive_audio(device_id) {
+        let immersive = match device.immersive_audio()? {
+            ImmersiveAudio::Off => "off",
+            ImmersiveAudio::Still => "still",
+            ImmersiveAudio::Motion => "motion",
+        };
+        println!("\tImmersive Audio: {immersive}");
+    }
+    if bose_connect::has_battery_prompt(device_id) {
+        println!("\tBattery Prompt: {}", on_off(device.battery_prompt()?));
+    }
+    if bose_connect::has_auto_play_pause(device_id) {
+        println!("\tAuto Play/Pause: {}", on_off(device.auto_play_pause()?));
+    }
+    if bose_connect::has_auto_answer(device_id) {
+        println!(
+            "\tAuto Answer Calls: {}",
+            on_off(device.auto_answer_calls()?)
+        );
+    }
+    if bose_connect::has_shortcut(device_id) {
+        let shortcut = match device.shortcut()? {
+            ShortcutAction::BatteryLevel => "battery",
+            ShortcutAction::ImmersiveAudio => "immersive",
+            ShortcutAction::VoiceAssistant => "assistant",
+            ShortcutAction::Spotify => "spotify",
+            ShortcutAction::Off => "off",
+        };
+        println!("\tShortcut: {shortcut}");
+    }
     Ok(())
 }
 

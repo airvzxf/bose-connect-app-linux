@@ -15,9 +15,10 @@ tests.
 * Audio modes and "remember my mode" on the QC45 (device id
   `0x4039`): `has_audio_modes` is true for it, so `--audio-mode`,
   `--remember-mode` and the audio mode in `--device-status` work there.
-* `has_qc_ultra_settings`: the equalizer, immersive audio, battery
-  prompt, auto play/pause, auto answer and shortcut, which only the
-  QC Ultra is known to have. `--device-status` prints them only there.
+* Per-feature predicates `has_equalizer`, `has_battery_prompt`,
+  `has_immersive_audio`, `has_auto_play_pause`, `has_auto_answer` and
+  `has_shortcut`, true for the QC Ultra only so far. `--device-status`
+  prints each setting only on the devices that have it.
 
 ### Fixed
 

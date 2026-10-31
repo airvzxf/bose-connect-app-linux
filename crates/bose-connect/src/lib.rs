@@ -69,11 +69,12 @@ pub use crate::protocol::{
     get_auto_play_pause, get_battery_level, get_battery_prompt, get_device_bd_addr, get_device_id,
     get_device_info, get_device_status, get_equalizer, get_firmware_version, get_immersive_audio,
     get_paired_devices, get_remember_audio_mode, get_serial_number, get_shortcut, has_audio_modes,
-    has_legacy_settings, has_noise_cancelling, has_pairing_toggle, has_qc_ultra_settings,
-    has_self_voice, send_media_key, set_audio_mode, set_auto_answer_calls, set_auto_off,
-    set_auto_play_pause, set_battery_prompt, set_equalizer_band, set_immersive_audio, set_name,
-    set_noise_cancelling, set_pairing, set_prompt_language, set_remember_audio_mode,
-    set_self_voice, set_shortcut, set_voice_prompts, set_volume, DeviceStatusReport, PairedDevices,
+    has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer, has_immersive_audio,
+    has_legacy_settings, has_noise_cancelling, has_pairing_toggle, has_self_voice, has_shortcut,
+    send_media_key, set_audio_mode, set_auto_answer_calls, set_auto_off, set_auto_play_pause,
+    set_battery_prompt, set_equalizer_band, set_immersive_audio, set_name, set_noise_cancelling,
+    set_pairing, set_prompt_language, set_remember_audio_mode, set_self_voice, set_shortcut,
+    set_voice_prompts, set_volume, DeviceStatusReport, PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, EqBand, EqualizerBand,
