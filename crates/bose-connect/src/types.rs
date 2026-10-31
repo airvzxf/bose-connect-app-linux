@@ -418,8 +418,9 @@ pub const BOSE_CHANNEL: u8 = 8;
 /// (observed on firmware 1.6.7, 2026-10-07).
 pub const BOSE_FALLBACK_CHANNELS: [u8; 2] = [2, 1];
 
-/// Number of audio-mode slots on devices with audio modes. The QC
-/// Ultra answers slots 0..=9 and returns an error for slot 10.
+/// Maximum number of audio-mode slots on devices with audio modes.
+/// The QC Ultra answers slots 0..=9 and returns an error for slot 10;
+/// the QC45 answers slots 0..=3 and returns an error from slot 4 on.
 pub const MAX_AUDIO_MODES: u8 = 10;
 
 /// Bitmask for the voice-prompt language bits of the prompt-language
@@ -440,6 +441,8 @@ pub(crate) const NOISE_CANCELLING_20: u16 = 0x4020;
 pub(crate) const NOISE_CANCELLING_0C: u16 = 0x400c;
 /// Device ID 0x4066 — Bose QC Ultra Headphones.
 pub(crate) const QC_ULTRA_HEADPHONES: u16 = 0x4066;
+/// Device ID 0x4039 — Bose QuietComfort 45 headphones.
+pub(crate) const QC45_HEADPHONES: u16 = 0x4039;
 
 /// `CN_BASE_PACK_LEN + MAX_NAME_LEN - 1` — the worst-case length of
 /// a `SET_NAME` packet (4-byte prefix plus 31 name bytes). Re-exported
