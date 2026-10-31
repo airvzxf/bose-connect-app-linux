@@ -6,6 +6,42 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+Based on a hardware session with a QC45 (firmware 4.0.4) on
+2026-10-31; the captures are in `docs/protocol.md` and replayed by the
+tests.
+
+### Added
+
+* Audio modes and "remember my mode" on the QC45 (device id
+  `0x4039`): `has_audio_modes` is true for it, so `--audio-mode`,
+  `--remember-mode` and the audio mode in `--device-status` work there.
+* Per-feature predicates `has_equalizer`, `has_battery_prompt`,
+  `has_immersive_audio`, `has_auto_play_pause`, `has_auto_answer` and
+  `has_shortcut`, true for the QC Ultra only so far. `--device-status`
+  prints each setting only on the devices that have it.
+* Equalizer and shortcut on the QC45: `has_equalizer` and
+  `has_shortcut` are true for it, so `--equalizer`, `--shortcut` and
+  both lines in `--device-status` work there.
+* Voice prompts and prompt language on the QC45: `--voice-prompts`
+  and `--prompt-language` work there (`has_legacy_settings` is true
+  for it).
+* Self-voice on the QC45: `has_self_voice` is true for it, so
+  `--self-voice` works there.
+
+### Fixed
+
+* `set_audio_mode` accepts a PROCESSING reply without a RESULT (QC45)
+  and reads the new mode back with a GET.
+* `get_audio_modes` stops at the first slot that answers ERROR `06` or
+  `08` instead of failing; the QC45 has four slots, not ten.
+* `set_language_keep_voice_prompts` (`--prompt-language`) keeps the
+  voice-prompts setting and the other bits of the prompt-language
+  byte. It used to turn voice prompts on every time and to clear the
+  unknown bit `0x80` of the QC Ultra and the QC45.
+* `set_prompt_language` (also behind `--voice-prompts`) no longer
+  fails when the write is not answered (QC45): it reads the byte back
+  with a GET until it matches.
+
 ## [0.3.0][] - 2026-10-27
 
 Based on hardware sessions with a SoundLink Color II (firmware 4.0.1),
