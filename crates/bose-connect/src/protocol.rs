@@ -70,7 +70,7 @@ const SET_AUTO_OFF_WIDE_SEND_PREFIX: [u8; 4] = [0x01, 0x04, 0x02, 0x03];
 const GET_PROMPT_LANGUAGE_SEND: [u8; 4] = [0x01, 0x03, 0x01, 0x00];
 /// `01 03 02 02 <language byte> <battery prompt>`, QC Ultra.
 const SET_BATTERY_PROMPT_SEND_PREFIX: [u8; 4] = [0x01, 0x03, 0x02, 0x02];
-/// Length of the QC Ultra prompt-language payload; its last byte is
+/// Length of the QC Ultra and QC45 prompt-language payload; its last byte is
 /// the "battery level at power-on" prompt.
 const PROMPT_LANGUAGE_WIDE_LEN: usize = 7;
 
@@ -246,14 +246,18 @@ pub fn has_audio_modes(device_id: u16) -> bool {
 }
 
 /// `has_equalizer` is true for devices with the `01 07` equalizer:
-/// the QC Ultra Headphones (`0x4066`), verified on hardware.
+/// the QC Ultra Headphones (`0x4066`) and the QC45 (`0x4039`), both
+/// verified on hardware.
 pub fn has_equalizer(device_id: u16) -> bool {
-    matches!(device_id, QC_ULTRA_HEADPHONES)
+    matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
 }
 
 /// `has_battery_prompt` is true for devices with the battery-level
 /// prompt at power-on (the last byte of the 7-byte `01 03` payload):
-/// the QC Ultra Headphones (`0x4066`), verified on hardware.
+/// the QC Ultra Headphones (`0x4066`), verified on hardware. The QC45
+/// sends the same 7 bytes but has no such setting: writing the last
+/// byte is ignored, and its app offers the battery level only as the
+/// shortcut action.
 pub fn has_battery_prompt(device_id: u16) -> bool {
     matches!(device_id, QC_ULTRA_HEADPHONES)
 }
@@ -280,19 +284,21 @@ pub fn has_auto_answer(device_id: u16) -> bool {
 }
 
 /// `has_shortcut` is true for devices with the `01 09` earcup
-/// shortcut: the QC Ultra Headphones (`0x4066`), verified on hardware.
+/// shortcut: the QC Ultra Headphones (`0x4066`) and the QC45
+/// (`0x4039`), both verified on hardware.
 pub fn has_shortcut(device_id: u16) -> bool {
-    matches!(device_id, QC_ULTRA_HEADPHONES)
+    matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
 }
 
 /// `has_legacy_settings` is false for devices whose prompt-language
-/// payload is not the 1-byte QC35 layout. Changing the *language* there
-/// has not been tested (the QC Ultra's byte carries an extra bit `0x80`
-/// that the language setters would clear), so the CLI refuses
+/// payload is not the 1-byte QC35 layout: the QC Ultra and the QC45,
+/// which both send 7 bytes. Changing the *language* there has not been
+/// tested (their language byte carries an extra bit `0x80` that the
+/// language setters would clear), so the CLI refuses
 /// `--prompt-language` on them. Auto-off and voice prompts follow the
 /// layout the device reports and work on both.
 pub fn has_legacy_settings(device_id: u16) -> bool {
-    !matches!(device_id, QC_ULTRA_HEADPHONES)
+    !matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
 }
 
 /// `has_pairing_toggle` is a new predicate that does not exist
@@ -963,7 +969,7 @@ pub fn set_battery_prompt<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
     Ok(())
 }
 
-/// The 7-byte QC Ultra prompt-language payload, or
+/// The 7-byte QC Ultra and QC45 prompt-language payload, or
 /// [`BoseError::InvalidArgument`] for the 1-byte layout.
 fn wide_prompt_payload(payload: Vec<u8>) -> BoseResult<Vec<u8>> {
     match payload.len() {
@@ -975,7 +981,7 @@ fn wide_prompt_payload(payload: Vec<u8>) -> BoseResult<Vec<u8>> {
     }
 }
 
-/// Equalizer bands (QC Ultra, `01 07`), as `min max value band` per
+/// Equalizer bands (QC Ultra, QC45, `01 07`), as `min max value band` per
 /// band: `01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02` is bass, mid
 /// and treble at 0, each in `-10..=10`.
 pub fn get_equalizer<I: BoseIo>(io: &mut I) -> BoseResult<Vec<EqualizerBand>> {
@@ -983,7 +989,7 @@ pub fn get_equalizer<I: BoseIo>(io: &mut I) -> BoseResult<Vec<EqualizerBand>> {
     parse_equalizer(&read_response(io, 0x01, 0x07)?)
 }
 
-/// Set one equalizer band (QC Ultra): `01 07 02 02 <value> <band>`.
+/// Set one equalizer band (QC Ultra, QC45): `01 07 02 02 <value> <band>`.
 ///
 /// The value is checked against the range the device reports first.
 /// On firmware 1.6.7 an out-of-range value is answered with ERROR `06`
@@ -1080,17 +1086,19 @@ pub fn set_remember_audio_mode<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()
     set_byte(io, REMEMBER_AUDIO_MODE, u8::from(on))
 }
 
-/// Shortcut action (QC Ultra, `01 09`): reply
-/// `01 09 03 07 80 09 <action> 00 09 40 0a`; the last 4 bytes are
-/// unknown and constant.
+/// Shortcut action (QC Ultra, QC45, `01 09`): reply
+/// `01 09 03 07 80 09 <action> 00 09 40 0a` on the QC Ultra and
+/// `01 09 03 0b 80 09 <action> 00 01 40 08 00 00 00 80` on the QC45;
+/// the bytes after the action are unknown and constant.
 pub fn get_shortcut<I: BoseIo>(io: &mut I) -> BoseResult<ShortcutAction> {
     io.bose_send(&GET_SHORTCUT_SEND)?;
     parse_shortcut(&read_response(io, 0x01, 0x09)?)
 }
 
-/// Set the shortcut action (QC Ultra): `01 09 02 03 80 09 <action>`.
-/// Verified on hardware for [`ShortcutAction::ImmersiveAudio`]: the
-/// app follows and the button does it. Writing
+/// Set the shortcut action (QC Ultra, QC45): `01 09 02 03 80 09
+/// <action>`. Verified on hardware for [`ShortcutAction::ImmersiveAudio`]
+/// on the QC Ultra and [`ShortcutAction::BatteryLevel`] on the QC45
+/// (firmware 4.0.4): the app follows and the button does it. Writing
 /// [`ShortcutAction::Off`] has not been tried from a laptop yet.
 pub fn set_shortcut<I: BoseIo>(io: &mut I, action: ShortcutAction) -> BoseResult<()> {
     let mut send = [0u8; 7];
@@ -1472,26 +1480,33 @@ mod tests {
         assert!(!has_noise_cancelling(0));
     }
 
-    /// Audio modes on the QC Ultra and the QC45; the other QC Ultra
-    /// settings on the QC Ultra only.
+    /// Audio modes, equalizer and shortcut on the QC Ultra and
+    /// the QC45; the other QC Ultra settings on the QC Ultra only; the
+    /// 1-byte prompt-language layout on neither.
     #[test]
     fn audio_mode_device_ids() {
         assert!(has_audio_modes(0x4066));
         assert!(has_audio_modes(0x4039));
         assert!(!has_audio_modes(0x4014));
-        let qc_ultra_only: [fn(u16) -> bool; 6] = [
-            has_equalizer,
+        for has in [has_equalizer, has_shortcut] {
+            assert!(has(0x4066));
+            assert!(has(0x4039));
+            assert!(!has(0x4014));
+        }
+        let qc_ultra_only: [fn(u16) -> bool; 4] = [
             has_battery_prompt,
             has_immersive_audio,
             has_auto_play_pause,
             has_auto_answer,
-            has_shortcut,
         ];
         for has in qc_ultra_only {
             assert!(has(0x4066));
             assert!(!has(0x4039));
             assert!(!has(0x4014));
         }
+        assert!(!has_legacy_settings(0x4066));
+        assert!(!has_legacy_settings(0x4039));
+        assert!(has_legacy_settings(0x4020));
     }
 
     // ========================================================================

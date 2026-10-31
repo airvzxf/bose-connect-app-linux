@@ -450,7 +450,7 @@ pub(crate) const QC45_HEADPHONES: u16 = 0x4039;
 /// error at the definition site.
 pub const MAX_NAME_PACK_LEN_HELPER: usize = 4 + MAX_NAME_LEN - 1;
 
-/// Equalizer band of the QC Ultra (`01 07`).
+/// Equalizer band of the QC Ultra and the QC45 (`01 07`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum EqBand {
@@ -513,8 +513,8 @@ impl ImmersiveAudio {
     }
 }
 
-/// Action of the QC Ultra shortcut (touch and hold the volume strip of
-/// the right earcup; `01 09`).
+/// Action of the shortcut (`01 09`): touch and hold the volume strip of
+/// the QC Ultra's right earcup, or press and hold the QC45's button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum ShortcutAction {

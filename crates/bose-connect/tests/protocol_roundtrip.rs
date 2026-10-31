@@ -22,11 +22,13 @@ use std::thread;
 
 use bose_connect::protocol::{
     get_audio_mode, get_audio_mode_name, get_audio_modes, get_battery_level, get_device_id,
-    get_device_status, get_firmware_version, get_serial_number, set_audio_mode, set_auto_off,
-    set_name, set_pairing, set_prompt_language, set_self_voice, set_voice_prompts,
+    get_device_status, get_equalizer, get_firmware_version, get_serial_number, get_shortcut,
+    set_audio_mode, set_auto_off, set_equalizer_band, set_name, set_pairing, set_prompt_language,
+    set_self_voice, set_shortcut, set_voice_prompts,
 };
 use bose_connect::{
-    AutoOff, BdAddr, BoseError, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, VP_ENABLE_BIT,
+    AutoOff, BdAddr, BoseError, EqBand, EqualizerBand, NoiseCancelling, Pairing, PromptLanguage,
+    SelfVoice, ShortcutAction, VP_ENABLE_BIT,
 };
 
 /// Helper: create a `UnixStream` pair and hand back (client, server)
@@ -667,4 +669,75 @@ fn qc45_set_audio_mode_unconfirmed() {
         "expected UnconfirmedValue, got {:?}",
         result
     );
+}
+
+#[test]
+fn qc45_equalizer_reads_three_bands() {
+    let bands = with_mock_device(
+        |client| get_equalizer(client).unwrap(),
+        |server| {
+            expect_request(server, [0x01, 0x07, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02"))
+                .unwrap();
+        },
+    );
+    let expected: Vec<EqualizerBand> = [EqBand::Bass, EqBand::Mid, EqBand::Treble]
+        .into_iter()
+        .map(|band| EqualizerBand {
+            band,
+            min: -10,
+            max: 10,
+            value: 0,
+        })
+        .collect();
+    assert_eq!(bands, expected);
+}
+
+#[test]
+fn qc45_equalizer_set_bass() {
+    let result = with_mock_device(
+        |client| set_equalizer_band(client, EqBand::Bass, 1),
+        |server| {
+            expect_request(server, [0x01, 0x07, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 07 03 0c f6 0a 00 00 f6 0a 00 01 f6 0a 00 02"))
+                .unwrap();
+            expect_request(server, [0x01, 0x07, 0x02, 0x02, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 07 03 0c f6 0a 01 00 f6 0a 00 01 f6 0a 00 02"))
+                .unwrap();
+        },
+    );
+    assert!(result.is_ok(), "expected Ok, got {:?}", result);
+}
+
+/// The QC45's `01 09` payload is 11 bytes, the QC Ultra's 7; the
+/// action byte is at the same place.
+#[test]
+fn qc45_shortcut_reads_spotify() {
+    let action = with_mock_device(
+        |client| get_shortcut(client).unwrap(),
+        |server| {
+            expect_request(server, [0x01, 0x09, 0x01, 0x00]);
+            server
+                .write_all(&hex("01 09 03 0b 80 09 10 00 01 40 08 00 00 00 80"))
+                .unwrap();
+        },
+    );
+    assert_eq!(action, ShortcutAction::Spotify);
+}
+
+#[test]
+fn qc45_shortcut_set_battery_level() {
+    let result = with_mock_device(
+        |client| set_shortcut(client, ShortcutAction::BatteryLevel),
+        |server| {
+            expect_request(server, [0x01, 0x09, 0x02, 0x03, 0x80, 0x09, 0x03]);
+            server
+                .write_all(&hex("01 09 03 0b 80 09 03 00 01 40 08 00 00 00 80"))
+                .unwrap();
+        },
+    );
+    assert!(result.is_ok(), "expected Ok, got {:?}", result);
 }
