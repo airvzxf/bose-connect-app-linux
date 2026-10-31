@@ -269,7 +269,7 @@ struct Cli {
     ])]
     device_bd_addr: bool,
 
-    /// Set equalizer bands (QC Ultra), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10.
+    /// Set equalizer bands (QC Ultra, QC45), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10.
     #[arg(long = "equalizer", value_name = "BANDS", group = "qc_ultra_setting")]
     equalizer: Option<String>,
 
@@ -313,7 +313,7 @@ struct Cli {
     )]
     remember_mode: Option<String>,
 
-    /// Touch-and-hold shortcut of the right earcup (QC Ultra). action: battery, immersive,
+    /// Touch-and-hold shortcut of the right earcup (QC Ultra, QC45). action: battery, immersive,
     /// assistant, spotify, off.
     #[arg(long = "shortcut", value_name = "ACTION", group = "qc_ultra_setting")]
     shortcut: Option<String>,

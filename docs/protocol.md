@@ -261,6 +261,12 @@ QC Ultra (1.6.7) sends 7 bytes:
 | 2–6     | unknown, constant (`00 01 81 5e 01`)                         |
 | 7       | "Battery level at power-on" prompt — `set_battery_prompt(on)` |
 
+QC45 (4.0.4) sends the same 7 bytes, `81 00 01 81 5e 00 00` (English,
+prompts off), but has no battery prompt: `01 03 02 02 81 01` is
+answered with the unchanged payload, and its app offers the battery
+level only as the shortcut action (`01 09`). The library refuses
+`--prompt-language` there too (byte 1 carries `0x80`).
+
 Writes verified from a laptop: `01 03 02 01 86` (prompts off, the
 1-byte QC35 form) and `01 03 02 02 a6 00` / `a6 01` (battery prompt off
 / on). The 7-byte write `01 03 02 07 …` changes byte 1 only. Changing
@@ -302,7 +308,7 @@ minutes was then set from a laptop:
 
 Only on product ids `4014`, `4020`, `400c` (`has_noise_cancelling`).
 
-### `01 07` equalizer (QC Ultra) — `equalizer()`, `set_equalizer_band(band, value)`
+### `01 07` equalizer (QC Ultra, QC45) — `equalizer()`, `set_equalizer_band(band, value)`
 
 ```text
 > 01 07 01 00
@@ -313,13 +319,16 @@ Only on product ids `4014`, `4020`, `400c` (`has_noise_cancelling`).
 > 01 07 02 02 fd 02         # treble -3
 ```
 
+The QC45 (4.0.4) answers the same bytes; `01 07 02 02 01 00` (bass +1)
+and `01 07 02 02 00 00` were verified.
+
 **Out of range locks it.** `01 07 02 02 0b 01` (mid +11) was answered
 with ERROR `06`; from then on every `01 07` request, read or write,
 got ERROR `0c`, and the Bose app showed "there was an error" for the
 equalizer, until the headphones were switched off and on. The library
 refuses values outside the reported range before sending.
 
-### `01 09` buttons: shortcut (QC Ultra) — `shortcut()`, `set_shortcut(action)`
+### `01 09` buttons: shortcut (QC Ultra, QC45) — `shortcut()`, `set_shortcut(action)`
 
 ```text
 > 01 09 01 00
@@ -333,6 +342,17 @@ Actions: `01` voice assistant, `03` battery level, `10` Spotify, `13`
 immersive audio, `0e` shortcut off. Turning the shortcut back on in
 the app always gives `03`, whatever it was before. The write was
 verified with the button itself.
+
+QC45 (4.0.4): an 11-byte payload with the action at the same place. Its
+app offers "Hear battery level" (`03`) and Spotify (`10`). Setting `03`
+from a laptop was verified in the app and with the button.
+
+```text
+> 01 09 01 00
+< 01 09 03 0b 80 09 10 00 01 40 08 00 00 00 80   # Spotify, set in the app
+> 01 09 02 03 80 09 03                              # battery level
+< 01 09 03 0b 80 09 03 00 01 40 08 00 00 00 80
+```
 
 ### `01 0a`, `01 0c` (QC Ultra)
 
@@ -692,11 +712,12 @@ the previous one. Sends no notifications to a second client.
 
 ### QC45
 
-Product `4039`, firmware 4.0.4-4360+de6a887. Channel 8. Status dump
-in the QC35 layout, without `01 06`: `01 06 01 00` answers ERROR `04`,
-so no noise cancelling, audio modes instead (four slots, see block
-1f). Play/pause never completes (see block 05). The other QC Ultra
-settings (equalizer, immersive audio, shortcut, …) are not tested.
+Product `4039`, firmware 4.0.4-4360+de6a887. Channel 8. No `01 06`:
+`01 06 01 00` answers ERROR `04`, so no noise cancelling, audio modes
+instead (four slots, see block 1f). The 7-byte `01 03` payload of the
+QC Ultra, without its battery prompt. Equalizer and shortcut as on the
+QC Ultra (see `01 07`, `01 09`). Play/pause never completes (see block
+05). Immersive audio, auto play/pause and auto answer are not tested.
 
 ### SoundLink Color II
 

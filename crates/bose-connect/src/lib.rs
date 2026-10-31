@@ -281,12 +281,12 @@ impl BoseDevice {
         set_battery_prompt(&mut self.conn, on)
     }
 
-    /// Equalizer bands with their ranges (QC Ultra).
+    /// Equalizer bands with their ranges (QC Ultra, QC45).
     pub fn equalizer(&mut self) -> BoseResult<Vec<EqualizerBand>> {
         get_equalizer(&mut self.conn)
     }
 
-    /// Set one equalizer band (QC Ultra). Values outside the range the
+    /// Set one equalizer band (QC Ultra, QC45). Values outside the range the
     /// device reports are refused before anything is sent.
     pub fn set_equalizer_band(&mut self, band: EqBand, value: i8) -> BoseResult<()> {
         set_equalizer_band(&mut self.conn, band, value)
@@ -335,12 +335,12 @@ impl BoseDevice {
         set_remember_audio_mode(&mut self.conn, on)
     }
 
-    /// Shortcut action of the right earcup (QC Ultra).
+    /// Shortcut action of the right earcup (QC Ultra, QC45).
     pub fn shortcut(&mut self) -> BoseResult<ShortcutAction> {
         get_shortcut(&mut self.conn)
     }
 
-    /// Change the shortcut action (QC Ultra).
+    /// Change the shortcut action (QC Ultra, QC45).
     pub fn set_shortcut(&mut self, action: ShortcutAction) -> BoseResult<()> {
         set_shortcut(&mut self.conn, action)
     }
