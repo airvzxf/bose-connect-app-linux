@@ -18,7 +18,7 @@ Firmware-update notes (not part of the control protocol) stay in
 * [Block 02: battery](#block-02-battery)
 * [Block 04: paired devices](#block-04-paired-devices)
 * [Block 05: media and volume](#block-05-media-and-volume)
-* [Block 1f: audio modes (QC Ultra)](#block-1f-audio-modes-qc-ultra)
+* [Block 1f: audio modes (QC Ultra, QC45)](#block-1f-audio-modes-qc-ultra-qc45)
 * [Other blocks (QC Ultra)](#other-blocks-qc-ultra)
 * [Device notes](#device-notes)
 
@@ -60,7 +60,7 @@ Error codes seen (first payload byte of an ERROR packet):
 | `03` | block does not exist               | GET `xx 00` of an unknown block (QC Ultra)               |
 | `04` | function does not exist            | unknown functions (QC Ultra)                             |
 | `05` | function cannot be read this way   | e.g. `00 04`, `1f 01` (QC Ultra)                         |
-| `06` | value out of range                 | volume (QC35 II, SoundLink Color II), equalizer (QC Ultra) |
+| `06` | value out of range                 | volume (QC35 II, SoundLink Color II), equalizer (QC Ultra), audio-mode slot ≥ 4 (QC45) |
 | `08` | invalid slot / not available now   | audio-mode slot ≥ 10; `01 05` while the mode is modified (QC Ultra) |
 | `0b` | not a paired source                | connect to the device's own or an unknown address (all three) |
 | `0c` | function locked / busy             | media keys and the equalizer on the QC Ultra, see below; music status with unknown music |
@@ -163,7 +163,7 @@ fn battery(stream: &mut UnixStream) -> bose_connect::BoseResult<u8> {
 
 Product ids seen: `4014`, `4020` (QC35 series), `400c` (noise
 cancelling, from the C code), `400d` (SoundLink Color II), `4066` (QC
-Ultra).
+Ultra), `4039` (QC45).
 
 ### `00 05` firmware version — `firmware_version()`
 
@@ -518,6 +518,17 @@ CLI. The user noticed that media control on the phone also stopped
 once when the laptop connected, before any key was sent: whether the
 laptop connection alone causes it is open.
 
+QC45 (4.0.4, 2026-10-31), the source playing music:
+
+```text
+> 05 03 05 01 01               # play/pause
+< 05 03 07 01 01               # PROCESSING, no RESULT within 10 s
+```
+
+With the laptop as the active source, playback paused, and the laptop's
+and the headphones' own controls kept working. With the phone as the
+active source, nothing happened. The CLI refuses `01` on the QC45 too.
+
 ### `05 05` volume — `set_volume(level)`
 
 ```text
@@ -547,9 +558,9 @@ SoundLink Color II capture:
 < 05 05 04 01 06
 ```
 
-## Block 1f: audio modes (QC Ultra)
+## Block 1f: audio modes (QC Ultra, QC45)
 
-Captured on firmware 1.6.7.
+Captured on a QC Ultra, firmware 1.6.7. The QC45 differences are below.
 
 ```text
 > 1f 03 01 00                       # Current audio mode — audio_mode()
@@ -586,6 +597,42 @@ Other functions of the block:
 > 1f 02 01 00   < 1f 02 03 07 03 07 00 00 00 1f 02   # unknown
 > 1f 05 01 00   < 1f 05 03 01 01               # "Remember my mode" — remember_audio_mode()
 > 1f 08 01 00   < 1f 08 03 03 0a 00 07         # unknown
+```
+
+`1f 05 02 01 xx` sets "Remember my mode" (verified).
+
+### QC45
+
+Captured on firmware 4.0.4-4360+de6a887, 2026-10-31. Same requests and
+the same 47-byte `1f 06` payload, with these differences:
+
+```text
+> 1f 06 01 01 04                    # slot 4 and above
+< 1f 06 04 01 06                    # ERROR 06, not 08
+
+> 1f 03 05 02 xx 00                 # Switch to slot xx
+< 1f 03 07 00                       # PROCESSING only, no RESULT within 10 s
+> 1f 03 01 00                       # sent right after: already the new slot
+< 1f 03 03 01 xx
+```
+
+`set_audio_mode` reads the slot back with a GET after a PROCESSING
+packet.
+
+| Slot | Name    | Bytes 1–5          | Last 9 bytes                    |
+| ---- | ------- | ------------------ | ------------------------------- |
+| 0    | Quiet   | `00 01 00 00 01`   | `00 00 00 01 00 00 00 00 00`    |
+| 1    | Aware   | `00 02 00 00 01`   | `00 00 00 01 0a 00 00 00 00`    |
+| 2    | Commute | `00 07 01 01 01`   | `00 00 00 09 00 00 00 00 01`    |
+| 3    | (empty) | `00 00 01 01 00`   | `00 00 00 09 05 00 00 00 00`    |
+
+Slot 3 has an empty name instead of "None"; `audio_modes()` skips it.
+
+```text
+> 1f 00 01 00   < 1f 00 03 05 "1.0.0"          # block version
+> 1f 02 01 00   < 1f 02 03 06 02 02 00 00 00 09   # unknown
+> 1f 05 01 00   < 1f 05 03 01 00               # "Remember my mode"
+> 1f 08 01 00   < 1f 08 03 02 04 07            # unknown
 ```
 
 `1f 05 02 01 xx` sets "Remember my mode" (verified).
@@ -642,6 +689,14 @@ locks media control (see block 05). With multipoint off it accepts
 one source at a time, so the laptop needs multipoint on to connect
 next to the phone. Refuses a new connection for about a second after
 the previous one. Sends no notifications to a second client.
+
+### QC45
+
+Product `4039`, firmware 4.0.4-4360+de6a887. Channel 8. Status dump
+in the QC35 layout, without `01 06`: `01 06 01 00` answers ERROR `04`,
+so no noise cancelling, audio modes instead (four slots, see block
+1f). Play/pause never completes (see block 05). The other QC Ultra
+settings (equalizer, immersive audio, shortcut, …) are not tested.
 
 ### SoundLink Color II
 
