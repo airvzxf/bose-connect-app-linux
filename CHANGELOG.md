@@ -32,6 +32,9 @@ the project uses [Semantic Versioning](https://semver.org/).
   `has_immersive_audio`, `has_auto_play_pause`, `has_auto_answer` and
   `has_shortcut`, true for the QC Ultra only so far. `--device-status`
   prints each setting only on the devices that have it.
+* Equalizer and shortcut on the QC45: `has_equalizer` and
+  `has_shortcut` are true for it, so `--equalizer`, `--shortcut` and
+  both lines in `--device-status` work there.
 
 ### Fixed
 
@@ -56,6 +59,9 @@ the project uses [Semantic Versioning](https://semver.org/).
   a read lock while holding the write lock).
 * GUI: the voice-prompts switch and the profiles no longer reset the
   prompt language to English.
+* `--prompt-language` is refused on the QC45 (`has_legacy_settings` is
+  false for it): its language byte carries the same `0x80` bit as the
+  QC Ultra's, which the language write would clear.
 
 ## [0.3.0][] - 2026-10-27
 
