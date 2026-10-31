@@ -188,6 +188,7 @@ fn a_device_with_the_1_byte_language_layout_has_no_battery_prompt() {
 
 // ---- equalizer ----
 
+/// The QC45 (firmware 4.0.4) sends the same `01 07` layout.
 #[test]
 fn the_equalizer_reports_three_bands_with_their_range() {
     let bands = run_against_device(
