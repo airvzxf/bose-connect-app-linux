@@ -35,15 +35,8 @@ use clap::{ArgGroup, Parser, ValueHint};
     arg_required_else_help = false,
 )]
 #[command(group(
-    ArgGroup::new("qc_ultra_setting")
-        .multiple(false)
-        .conflicts_with_all([
-            "info", "device_status", "firmware_version", "serial_number", "battery_level",
-            "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-            "prompt_language", "voice_prompts", "pairing", "self_voice",
-            "connect_device", "disconnect_device", "remove_device", "send_packet",
-            "audio_mode", "set_volume", "send_media_key", "active_device", "device_bd_addr",
-        ])
+    // At most one command per run; `--channel` combines with any of them.
+    ArgGroup::new("command").multiple(false)
 ))]
 struct Cli {
     /// Bluetooth address of the Bose device ("AA:BB:CC:DD:EE:FF").
@@ -51,88 +44,86 @@ struct Cli {
     address: String,
 
     /// Print all device information.
-    #[arg(help_heading = "Device information", short = 'i', long = "info", conflicts_with_all = &[
-        "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Device information",
+        short = 'i',
+        long = "info",
+        group = "command"
+    )]
     info: bool,
 
     /// Print the device status (name, language, voice-prompts, auto-off, NC).
-    #[arg(help_heading = "Device information", short = 'd', long = "device-status", conflicts_with_all = &[
-        "info", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Device information",
+        short = 'd',
+        long = "device-status",
+        group = "command"
+    )]
     device_status: bool,
 
     /// Print the firmware version.
-    #[arg(help_heading = "Device information", short = 'f', long = "firmware-version", conflicts_with_all = &[
-        "info", "device_status", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Device information",
+        short = 'f',
+        long = "firmware-version",
+        group = "command"
+    )]
     firmware_version: bool,
 
     /// Print the serial number.
-    #[arg(help_heading = "Device information", short = 's', long = "serial-number", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Device information",
+        short = 's',
+        long = "serial-number",
+        group = "command"
+    )]
     serial_number: bool,
 
     /// Print the battery level as a percent.
-    #[arg(help_heading = "Device information", short = 'b', long = "battery-level", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Device information",
+        short = 'b',
+        long = "battery-level",
+        group = "command"
+    )]
     battery_level: bool,
 
     /// Print the device id and index revision.
-    #[arg(help_heading = "Device information", long = "device-id", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Device information",
+        long = "device-id",
+        group = "command"
+    )]
     device_id: bool,
 
     /// Print the device's BT address.
-    #[arg(help_heading = "Device information", long = "device-bd-addr", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "set_volume", "send_media_key", "active_device", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Device information",
+        long = "device-bd-addr",
+        group = "command"
+    )]
     device_bd_addr: bool,
 
     /// Switch the audio mode (QC Ultra, QC45). mode: its name (quiet,
     /// aware, immersion, …) or its slot index.
-    #[arg(help_heading = "Sound", short = 'm', long = "audio-mode", value_name = "MODE", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "set_volume", "send_media_key", "active_device", "device_bd_addr",
-    ])]
+    #[arg(
+        help_heading = "Sound",
+        short = 'm',
+        long = "audio-mode",
+        value_name = "MODE",
+        group = "command"
+    )]
     audio_mode: Option<String>,
 
     /// Change the noise-cancelling level. level: high, low, off. On
     /// the QC Ultra and QC45, use --audio-mode instead.
-    #[arg(help_heading = "Sound", short = 'c', long = "noise-cancelling", value_name = "LEVEL", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Sound",
+        short = 'c',
+        long = "noise-cancelling",
+        value_name = "LEVEL",
+        group = "command"
+    )]
     noise_cancelling: Option<String>,
 
     /// Set equalizer bands (QC Ultra, QC45), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10.
@@ -140,7 +131,7 @@ struct Cli {
         help_heading = "Sound",
         long = "equalizer",
         value_name = "BANDS",
-        group = "qc_ultra_setting"
+        group = "command"
     )]
     equalizer: Option<String>,
 
@@ -149,84 +140,81 @@ struct Cli {
         help_heading = "Sound",
         long = "immersive-audio",
         value_name = "SETTING",
-        group = "qc_ultra_setting"
+        group = "command"
     )]
     immersive_audio: Option<String>,
 
     /// Change the self-voice level. level: high, medium, low, off.
-    #[arg(help_heading = "Sound", short = 'e', long = "self-voice", value_name = "LEVEL", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Sound",
+        short = 'e',
+        long = "self-voice",
+        value_name = "LEVEL",
+        group = "command"
+    )]
     self_voice: Option<String>,
 
     /// Set the volume. The range is device-specific (e.g. 0..=25 on a QC35 II)
-    #[arg(help_heading = "Playback", long = "set-volume", value_name = "LEVEL", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "send_media_key", "active_device", "device_bd_addr", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Playback",
+        long = "set-volume",
+        value_name = "LEVEL",
+        group = "command"
+    )]
     set_volume: Option<u8>,
 
     /// Send a media key. key: pause (play/pause), next, prev
-    #[arg(help_heading = "Playback", long = "send-media-key", value_name = "KEY", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "set_volume", "active_device", "device_bd_addr", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Playback",
+        long = "send-media-key",
+        value_name = "KEY",
+        group = "command"
+    )]
     send_media_key: Option<String>,
 
     /// Print the active audio source's BT address.
-    #[arg(help_heading = "Playback", long = "active-device", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet",
-        "set_volume", "send_media_key", "device_bd_addr", "audio_mode",
-    ])]
+    #[arg(help_heading = "Playback", long = "active-device", group = "command")]
     active_device: bool,
 
     /// Change the device name.
-    #[arg(help_heading = "Settings", short = 'n', long = "name", value_name = "NAME", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Settings",
+        short = 'n',
+        long = "name",
+        value_name = "NAME",
+        group = "command"
+    )]
     name: Option<String>,
 
     /// Change the auto-off time. minutes: never, 5, 20, 40, 60, 180, or 1440
     /// (24 hours, QC Ultra only).
-    #[arg(help_heading = "Settings", short = 'o', long = "auto-off", value_name = "MINUTES", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Settings",
+        short = 'o',
+        long = "auto-off",
+        value_name = "MINUTES",
+        group = "command"
+    )]
     auto_off: Option<String>,
 
     /// Change the prompt language.
-    #[arg(help_heading = "Settings", short = 'l', long = "prompt-language", value_name = "LANG", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Settings",
+        short = 'l',
+        long = "prompt-language",
+        value_name = "LANG",
+        group = "command"
+    )]
     prompt_language: Option<String>,
 
     /// Toggle voice prompts. switch: on, off.
-    #[arg(help_heading = "Settings", short = 'v', long = "voice-prompts", value_name = "SWITCH", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Settings",
+        short = 'v',
+        long = "voice-prompts",
+        value_name = "SWITCH",
+        group = "command"
+    )]
     voice_prompts: Option<String>,
 
     /// Announce the battery level at power-on (QC Ultra). switch: on, off.
@@ -234,7 +222,7 @@ struct Cli {
         help_heading = "Settings",
         long = "battery-prompt",
         value_name = "SWITCH",
-        group = "qc_ultra_setting"
+        group = "command"
     )]
     battery_prompt: Option<String>,
 
@@ -243,7 +231,7 @@ struct Cli {
         help_heading = "Settings",
         long = "auto-play-pause",
         value_name = "SWITCH",
-        group = "qc_ultra_setting"
+        group = "command"
     )]
     auto_play_pause: Option<String>,
 
@@ -252,7 +240,7 @@ struct Cli {
         help_heading = "Settings",
         long = "auto-answer",
         value_name = "SWITCH",
-        group = "qc_ultra_setting"
+        group = "command"
     )]
     auto_answer: Option<String>,
 
@@ -261,7 +249,7 @@ struct Cli {
         help_heading = "Settings",
         long = "remember-mode",
         value_name = "SWITCH",
-        group = "qc_ultra_setting"
+        group = "command"
     )]
     remember_mode: Option<String>,
 
@@ -271,53 +259,54 @@ struct Cli {
         help_heading = "Settings",
         long = "shortcut",
         value_name = "ACTION",
-        group = "qc_ultra_setting"
+        group = "command"
     )]
     shortcut: Option<String>,
 
     /// Print the list of paired devices.
-    #[arg(help_heading = "Paired devices", short = 'a', long = "paired-devices", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Paired devices",
+        short = 'a',
+        long = "paired-devices",
+        group = "command"
+    )]
     paired_devices: bool,
 
     /// Connect to the device at the given Bluetooth address.
-    #[arg(help_heading = "Paired devices", long = "connect-device", value_name = "ADDRESS", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Paired devices",
+        long = "connect-device",
+        value_name = "ADDRESS",
+        group = "command"
+    )]
     connect_device: Option<String>,
 
     /// Disconnect the device at the given Bluetooth address.
-    #[arg(help_heading = "Paired devices", long = "disconnect-device", value_name = "ADDRESS", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Paired devices",
+        long = "disconnect-device",
+        value_name = "ADDRESS",
+        group = "command"
+    )]
     disconnect_device: Option<String>,
 
     /// Remove the device at the given Bluetooth address from the pairing list.
-    #[arg(help_heading = "Paired devices", long = "remove-device", value_name = "ADDRESS", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Paired devices",
+        long = "remove-device",
+        value_name = "ADDRESS",
+        group = "command"
+    )]
     remove_device: Option<String>,
 
     /// Toggle pairing discoverability. status: on, off.
-    #[arg(help_heading = "Paired devices", short = 'p', long = "pairing", value_name = "STATUS", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "send_packet", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Paired devices",
+        short = 'p',
+        long = "pairing",
+        value_name = "STATUS",
+        group = "command"
+    )]
     pairing: Option<String>,
 
     /// RFCOMM channel to use instead of the automatic choice
@@ -326,12 +315,12 @@ struct Cli {
     channel: Option<u8>,
 
     /// Send a raw hex packet (e.g. `0a1b2c3d`) and print the response.
-    #[arg(help_heading = "Advanced", long = "send-packet", value_name = "HEX", conflicts_with_all = &[
-        "info", "device_status", "firmware_version", "serial_number", "battery_level",
-        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
-        "prompt_language", "voice_prompts", "pairing", "self_voice",
-        "connect_device", "disconnect_device", "remove_device", "audio_mode",
-    ])]
+    #[arg(
+        help_heading = "Advanced",
+        long = "send-packet",
+        value_name = "HEX",
+        group = "command"
+    )]
     send_packet: Option<String>,
 }
 
@@ -1073,4 +1062,72 @@ fn _silence_unused_for_fuzz_targets(s: &str) {
     // Reserved hook so we can later add `cargo-fuzz` harnesses
     // without touching the imports above.
     let _ = parse_hex_packet(s);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    const ADDRESS: &str = "AA:BB:CC:DD:EE:FF";
+
+    /// One example invocation per command flag.
+    fn commands() -> Vec<Vec<&'static str>> {
+        let mut cmd = Cli::command();
+        // Resolves `#[arg(group = ...)]` into the group's members.
+        cmd.build();
+        let group = cmd
+            .get_groups()
+            .find(|g| g.get_id() == "command")
+            .expect("command group");
+        group
+            .get_args()
+            .map(|id| {
+                let arg = cmd.get_arguments().find(|a| a.get_id() == id).unwrap();
+                let flag: &'static str = format!("--{}", arg.get_long().unwrap()).leak();
+                if arg.get_action().takes_values() {
+                    vec![flag, "1"]
+                } else {
+                    vec![flag]
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_command_flag_is_in_the_command_group() {
+        let mut cmd = Cli::command();
+        cmd.build();
+        let in_group = commands().len();
+        // Every argument except the address, --channel, --help and --version.
+        let all = cmd
+            .get_arguments()
+            .filter(|a| {
+                !matches!(
+                    a.get_id().as_str(),
+                    "address" | "channel" | "help" | "version"
+                )
+            })
+            .count();
+        assert_eq!(in_group, all);
+    }
+
+    #[test]
+    fn two_commands_are_refused() {
+        let commands = commands();
+        for (i, a) in commands.iter().enumerate() {
+            for b in &commands[i + 1..] {
+                let args = [&["prog", ADDRESS][..], a, b].concat();
+                assert!(Cli::try_parse_from(&args).is_err(), "accepted {args:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn channel_combines_with_any_command() {
+        for command in commands() {
+            let args = [&["prog", ADDRESS, "--channel", "2"][..], &command].concat();
+            assert!(Cli::try_parse_from(&args).is_ok(), "refused {args:?}");
+        }
+    }
 }
