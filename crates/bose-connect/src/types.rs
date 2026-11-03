@@ -233,9 +233,10 @@ impl SelfVoice {
 /// between playing and paused depending on the current state.
 ///
 /// Byte `0x02` is deliberately not exposed. On a SoundLink Color II
-/// (firmware 4.0.1) the speaker acknowledges it like the other keys,
-/// but the source's player sees nothing — neither play nor pause,
-/// whether it was playing or paused.
+/// (firmware 4.0.1) it pauses only when the source reports that it is
+/// playing: it paused an Android phone playing Spotify (2026-11-02),
+/// but a Linux laptop's player saw nothing, whether it was playing or
+/// paused.
 ///
 /// Works on the SoundLink Color II (4.0.1) and the QC35 II (4.8.1).
 ///
@@ -245,8 +246,8 @@ impl SelfVoice {
 /// never completes; after it every key returns the ERROR packet
 /// `05 03 04 01 0c`, and the phone's own player controls stopped
 /// responding too, until the phone reconnected. Do not send `Pause`
-/// to a QC Ultra. Connecting the laptop may cause the same lock-up;
-/// that is not settled yet (see `TODO.md`).
+/// to a QC Ultra. Connecting the laptop does not cause the lock-up
+/// (tested 2026-10-29).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum MediaKey {
@@ -438,6 +439,8 @@ pub(crate) const NOISE_CANCELLING_14: u16 = 0x4014;
 pub(crate) const NOISE_CANCELLING_20: u16 = 0x4020;
 /// Device ID 0x400c — SoundLink II? Mirrors `NOISE_CANCELLING_0C`.
 pub(crate) const NOISE_CANCELLING_0C: u16 = 0x400c;
+/// Device ID 0x400d — Bose SoundLink Color II.
+pub(crate) const SOUNDLINK_COLOR_II: u16 = 0x400d;
 /// Device ID 0x4066 — Bose QC Ultra Headphones.
 pub(crate) const QC_ULTRA_HEADPHONES: u16 = 0x4066;
 
