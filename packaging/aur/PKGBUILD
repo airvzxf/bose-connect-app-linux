@@ -20,12 +20,12 @@
 #   git push aur master
 
 pkgname=bose-connect-gui
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="GTK4 + libadwaita front-end for the bose_connect RFCOMM library"
 arch=('x86_64')
 url="https://github.com/airvzxf/bose-connect-app-linux"
-license=('GPL3')
+license=('AGPL-3.0-or-later')
 depends=(
     'glib2'
     'gtk4'

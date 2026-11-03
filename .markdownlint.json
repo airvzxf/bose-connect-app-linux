@@ -1,5 +1,5 @@
 {
   "default": true,
   "MD007": { "indent": 4 },
-  "MD013": { "tables": false }
+  "MD013": { "tables": false, "code_blocks": false }
 }

@@ -1,10 +1,10 @@
 pkgbase = bose-connect-gui
 	pkgdesc = GTK4 + libadwaita front-end for the bose_connect RFCOMM library
-	pkgver = 0.3.0
+	pkgver = 0.4.0
 	pkgrel = 1
 	url = https://github.com/airvzxf/bose-connect-app-linux
 	arch = x86_64
-	license = GPL3
+	license = AGPL-3.0-or-later
 	depends = glib2
 	depends = gtk4
 	depends = libadwaita
@@ -13,7 +13,7 @@ pkgbase = bose-connect-gui
 	makedepends = rust
 	makedepends = git
 	makedepends = openssl
-	source = https://github.com/airvzxf/bose-connect-app-linux/archive/refs/tags/v0.3.0.tar.gz
+	source = https://github.com/airvzxf/bose-connect-app-linux/archive/refs/tags/v0.4.0.tar.gz
 	sha256sums = SKIP
 
 pkgname = bose-connect-gui
