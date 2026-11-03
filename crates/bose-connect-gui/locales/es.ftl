@@ -95,6 +95,8 @@ voice-prompts-title = Indicaciones de voz
 voice-prompts-subtitle = Anuncios hablados de estado y batería
 prompt-language-title = Idioma de las indicaciones
 prompt-language-subtitle = Idioma de las indicaciones de voz
+prompt-language-unknown = Desconocido ({ $code })
+prompt-language-read-only = Cámbialo en la app de Bose del teléfono: esta computadora aún no puede cambiarlo en este dispositivo
 
 ## Energía
 

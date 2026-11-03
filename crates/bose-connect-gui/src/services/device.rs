@@ -19,7 +19,7 @@ use parking_lot::Mutex;
 use bose_connect::types::Device as DeviceInfo;
 use bose_connect::{
     AutoOff as AutoOffWire, BdAddr, BoseDevice, BoseError, BoseResult, DeviceStatus,
-    DeviceStatusReport, NoiseCancelling, PairedDevices, PromptLanguage, SelfVoice, VP_ENABLE_BIT,
+    DeviceStatusReport, NoiseCancelling, PairedDevices, PromptLanguage, SelfVoice,
 };
 
 use crate::services::bluetooth::PairedBose;
@@ -521,13 +521,19 @@ impl DeviceService for RealService {
         self.set_and_read(|dev| dev.set_auto_off(minutes))
     }
 
-    fn set_language(&self, lang: PromptLanguage, voice: bool) -> Result<DeviceSnapshot> {
-        let byte = if voice {
-            lang as u8 | VP_ENABLE_BIT
-        } else {
-            lang as u8 & !VP_ENABLE_BIT
-        };
-        self.set_and_read(|dev| dev.set_prompt_language(byte))
+    fn set_language(&self, lang: PromptLanguage, _voice: bool) -> Result<DeviceSnapshot> {
+        self.set_and_read(|dev| {
+            let (device_id, _) = dev.device_id()?;
+            if !bose_connect::has_legacy_settings(device_id) {
+                // Same guard as the CLI: the QC Ultra's 7-byte
+                // language payload has not been written from here.
+                return Err(BoseError::InvalidArgument(
+                    "the prompt language cannot be changed on this device yet".into(),
+                ));
+            }
+            // Keeps the voice-prompts bit and the device's other bits.
+            dev.set_language_keep_voice_prompts(lang)
+        })
     }
 
     fn set_voice_prompts(&self, on: bool) -> Result<DeviceSnapshot> {
@@ -578,6 +584,7 @@ impl DeviceService for RealService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bose_connect::VP_ENABLE_BIT;
 
     use std::sync::mpsc;
 

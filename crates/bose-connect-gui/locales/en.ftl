@@ -96,6 +96,8 @@ voice-prompts-title = Voice prompts
 voice-prompts-subtitle = Spoken status and battery announcements
 prompt-language-title = Prompt language
 prompt-language-subtitle = Language of the voice prompts
+prompt-language-unknown = Unknown ({ $code })
+prompt-language-read-only = Change it in the Bose app on the phone: this computer cannot change it on this device yet
 
 ## Power
 

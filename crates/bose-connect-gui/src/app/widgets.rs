@@ -17,7 +17,6 @@ use gtk::prelude::*;
 use gtk::{glib, Box as GtkBox, Button, Image, Label, Orientation, StringList};
 
 use crate::app::model::{AppModel, AppMsg, ConnectionState, Page};
-use crate::i18n;
 use crate::t;
 
 // ---------------------------------------------------------------------------
@@ -891,61 +890,52 @@ impl OverviewPage {
         lang_row.add_prefix(&Image::from_icon_name(
             "preferences-desktop-locale-symbolic",
         ));
-        let lang_choices = [
-            "English",
-            "Français",
-            "Italiano",
-            "Deutsch",
-            "Español",
-            "Português",
-            "中文",
-            "한국어",
-            "Русский",
-            "Polski",
-            "Nederlands",
-            "日本語",
-            "Svenska",
-        ];
-        let lang_model = StringList::new(&lang_choices);
-        lang_row.set_model(Some(&lang_model));
-
-        let current_lang = match model.snapshot.as_ref() {
-            Some(s) => {
-                let byte = s.status.language & bose_connect::VP_MASK;
-                i18n::language_label(
-                    bose_connect::PromptLanguage::from_u8(byte)
-                        .unwrap_or(bose_connect::PromptLanguage::En),
-                )
+        // Native names, in the order of `prompt_languages()`.
+        let languages = crate::transport::prompt_languages();
+        let mut names: Vec<String> = languages
+            .iter()
+            .map(|l| crate::transport::prompt_language_label(*l).to_owned())
+            .collect();
+        // Only the low 5 bits are the language: a QC Ultra also sets
+        // bits 7 and 6, which a plain mask used to read as English.
+        let byte = model.snapshot.as_ref().map(|s| s.status.language);
+        let current = byte.and_then(bose_connect::PromptLanguage::from_status_byte);
+        let selected = match (byte, current) {
+            (_, Some(lang)) => languages.iter().position(|l| *l == lang),
+            (Some(byte), None) => {
+                names.push(t!(
+                    "prompt-language-unknown",
+                    code = format!("0x{byte:02x}")
+                ));
+                Some(names.len() - 1)
             }
-            None => "English",
+            (None, None) => None,
         };
-        if let Some(pos) = lang_choices.iter().position(|l| *l == current_lang) {
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        lang_row.set_model(Some(&StringList::new(&name_refs)));
+        if let Some(pos) = selected {
             lang_row.set_selected(pos as u32);
+        }
+        // Same rule as the CLI: no language write where its payload
+        // layout has not been tested.
+        if model
+            .snapshot
+            .as_ref()
+            .is_some_and(|s| !bose_connect::has_legacy_settings(s.device_id))
+        {
+            lang_row.set_sensitive(false);
+            lang_row.set_subtitle(&t!("prompt-language-read-only"));
         }
 
         let s_lang = sender.clone();
         lang_row.connect_selected_notify(move |r| {
-            let idx = r.selected() as usize;
-            let lang = match idx {
-                0 => bose_connect::PromptLanguage::En,
-                1 => bose_connect::PromptLanguage::Fr,
-                2 => bose_connect::PromptLanguage::It,
-                3 => bose_connect::PromptLanguage::De,
-                4 => bose_connect::PromptLanguage::Es,
-                5 => bose_connect::PromptLanguage::Pt,
-                6 => bose_connect::PromptLanguage::Zh,
-                7 => bose_connect::PromptLanguage::Ko,
-                8 => bose_connect::PromptLanguage::Ru,
-                9 => bose_connect::PromptLanguage::Pl,
-                10 => bose_connect::PromptLanguage::Nl,
-                11 => bose_connect::PromptLanguage::Ja,
-                12 => bose_connect::PromptLanguage::Sv,
-                _ => bose_connect::PromptLanguage::En,
-            };
-            s_lang.send_app(AppMsg::SetLanguage {
-                language: lang,
-                voice_prompts: true,
-            });
+            // The "unknown" entry, if any, is past the languages.
+            if let Some(&language) = languages.get(r.selected() as usize) {
+                s_lang.send_app(AppMsg::SetLanguage {
+                    language,
+                    voice_prompts: true,
+                });
+            }
         });
         voice_group.add(&lang_row);
         page.append(&voice_group);

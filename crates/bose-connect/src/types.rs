@@ -156,6 +156,15 @@ impl PromptLanguage {
         })
     }
 
+    /// Decode the language of a prompt-language status byte as the
+    /// device reports it, whatever its flag bits: only the low 5 bits
+    /// are the language. A SoundLink Color II sets bit 7, a QC Ultra
+    /// bits 7 and 6 (`e1` for English, firmware 1.6.7), and bit 5 is
+    /// the voice-prompts flag, which may be off.
+    pub fn from_status_byte(b: u8) -> Option<Self> {
+        Self::from_u8((b & LANGUAGE_CODE_MASK) | VP_ENABLE_BIT)
+    }
+
     /// 2-letter canonical string for printing (`EN`, `FR`, …).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -429,6 +438,9 @@ pub const MAX_AUDIO_MODES: u8 = 10;
 /// status flag). Mirrors `VP_MASK`.
 pub const VP_MASK: u8 = 0x7f;
 
+/// Low 5 bits of the prompt-language byte: the language code.
+pub const LANGUAGE_CODE_MASK: u8 = 0x1f;
+
 /// Bit that, when set, indicates "voice-prompts on" in the
 /// prompt-language response byte (bit 5). Mirrors `VP_ENABLE_BIT`.
 pub const VP_ENABLE_BIT: u8 = 0x20;
@@ -545,5 +557,39 @@ impl ShortcutAction {
             0x0e => Self::Off,
             _ => return None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_language_from_status_byte_ignores_the_flag_bits() {
+        // QC Ultra, firmware 1.6.7: bits 7 and 6 set, English.
+        assert_eq!(
+            PromptLanguage::from_status_byte(0xe1),
+            Some(PromptLanguage::En)
+        );
+        // Same flags, Spanish.
+        assert_eq!(
+            PromptLanguage::from_status_byte(0xe6),
+            Some(PromptLanguage::Es)
+        );
+        // SoundLink Color II echo bit (7), and voice prompts off.
+        assert_eq!(
+            PromptLanguage::from_status_byte(0xa6),
+            Some(PromptLanguage::Es)
+        );
+        assert_eq!(
+            PromptLanguage::from_status_byte(0x06),
+            Some(PromptLanguage::Es)
+        );
+        // Plain QC35 byte, and a code with no language.
+        assert_eq!(
+            PromptLanguage::from_status_byte(PromptLanguage::Sv as u8),
+            Some(PromptLanguage::Sv)
+        );
+        assert_eq!(PromptLanguage::from_status_byte(0x25), None);
     }
 }

@@ -18,7 +18,7 @@ use anyhow::{bail, Context, Result};
 use bose_connect::protocol::language_from_arg;
 use bose_connect::{
     BdAddr, BoseDevice, BoseError, DeviceStatus, DevicesConnected, EqBand, ImmersiveAudio,
-    MediaKey, NoiseCancelling, PromptLanguage, SelfVoice, ShortcutAction, VP_ENABLE_BIT, VP_MASK,
+    MediaKey, NoiseCancelling, PromptLanguage, SelfVoice, ShortcutAction, VP_ENABLE_BIT,
 };
 use clap::builder::styling::{AnsiColor, Styles};
 use clap::{ArgGroup, Parser, ValueHint};
@@ -599,15 +599,10 @@ fn do_device_status(device: &mut BoseDevice) -> Result<()> {
     println!("\tName: {}", status.name);
 
     // The Bose SLC II echoes the prompt-language byte with bit 7
-    // set as a status indicator, and encodes the actual language
-    // in the lower 5 bits; without AND+OR the lookup would fall
-    // through to 'Unknown' for every successful read. Same
-    // workaround the C code applies (commit 56917d5).
-    //
-    // The QC Ultra also sets bit 6, so only the low 5 bits are kept
-    // for the language code.
-    let cleaned = (status.language & VP_MASK & LANGUAGE_CODE_MASK) | VP_ENABLE_BIT;
-    if let Some(pl) = PromptLanguage::from_u8(cleaned) {
+    // set as a status indicator and the QC Ultra also sets bit 6;
+    // only the low 5 bits are the language. Same workaround the C
+    // code applies (commit 56917d5).
+    if let Some(pl) = PromptLanguage::from_status_byte(status.language) {
         println!("\tLanguage: {}", pl.as_str());
     } else {
         println!("\tLanguage: Unknown [0x{:02x}]", status.language);
@@ -714,9 +709,6 @@ fn eq_band_name(band: EqBand) -> &'static str {
         EqBand::Treble => "treble",
     }
 }
-
-/// Low 5 bits of the prompt-language byte: the language code.
-const LANGUAGE_CODE_MASK: u8 = 0x1f;
 
 /// Refuse `setting` on devices whose payload layout for it is not
 /// the 1-byte QC35 one, rather than writing a guessed value.
