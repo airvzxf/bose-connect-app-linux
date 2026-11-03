@@ -7,10 +7,9 @@ _bose_connect_gui() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    opts="--mock --real --real-bluetooth --headless --dump-tree
+    opts="--headless --dump-tree
           --help -h --version -V
-          --screenshot --address --mock-tick-ms --run-secs
-          --low-battery-test"
+          --screenshot --address --run-secs"
 
     case "${prev}" in
         --screenshot)
@@ -18,7 +17,7 @@ _bose_connect_gui() {
             # else to do here.
             return 0
             ;;
-        --address|--mock-tick-ms|--run-secs)
+        --address|--run-secs)
             # These all take a value; let the shell complete the
             # argument normally.
             return 0

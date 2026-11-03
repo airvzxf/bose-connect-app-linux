@@ -43,6 +43,19 @@ pub struct MockSeed {
     pub device_bd_addr: Option<BdAddr>,
 }
 
+/// Addresses of the simulated device and its sources. All of them
+/// are locally administered (`02:…`), so none can be a real device.
+pub mod demo {
+    /// The simulated headset itself.
+    pub const DEVICE: &str = "02:00:00:00:00:01";
+    /// This computer, as the simulated headset lists it.
+    pub const THIS_COMPUTER: &str = "02:00:00:00:00:02";
+    /// A phone connected to the simulated headset.
+    pub const PHONE: &str = "02:00:00:00:00:03";
+    /// A paired tablet that is not connected.
+    pub const TABLET: &str = "02:00:00:00:00:04";
+}
+
 impl Default for MockSeed {
     fn default() -> Self {
         let mut history = Vec::with_capacity(32);
@@ -51,33 +64,33 @@ impl Default for MockSeed {
             history.push(80 + i + noise);
         }
         Self {
-            address: "AA:BB:CC:DD:EE:FF".to_string(),
-            name: "QuietCompanion".to_string(),
+            address: demo::DEVICE.to_string(),
+            name: "Bose NC 700".to_string(),
             battery: 85,
             firmware: "1.3.2".to_string(),
-            serial: "08AB12CD345678".to_string(),
+            serial: "00000000000000000".to_string(),
             device_id: 0x4020,
             paired: vec![
                 (
-                    "11:22:33:44:55:66".to_string(),
-                    "Isra's Phone".to_string(),
-                    DeviceStatus::Connected,
-                ),
-                (
-                    "11:22:33:44:55:77".to_string(),
-                    "Workstation".to_string(),
+                    demo::THIS_COMPUTER.to_string(),
+                    "This computer".to_string(),
                     DeviceStatus::This,
                 ),
                 (
-                    "11:22:33:44:55:88".to_string(),
-                    "Tablet (sleep)".to_string(),
+                    demo::PHONE.to_string(),
+                    "Phone".to_string(),
+                    DeviceStatus::Connected,
+                ),
+                (
+                    demo::TABLET.to_string(),
+                    "Tablet".to_string(),
                     DeviceStatus::Disconnected,
                 ),
             ],
             history,
             volume: Some(45),
-            active_device: BdAddr::from_canonical("11:22:33:44:55:77"),
-            device_bd_addr: BdAddr::from_canonical("04:52:C7:BA:68:0D"),
+            active_device: BdAddr::from_canonical(demo::THIS_COMPUTER),
+            device_bd_addr: BdAddr::from_canonical(demo::DEVICE),
         }
     }
 }

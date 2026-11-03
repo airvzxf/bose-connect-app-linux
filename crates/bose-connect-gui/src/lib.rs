@@ -38,10 +38,10 @@
 //!   └────────────────────────────────────────────────────────────┘
 //! ```
 //!
-//! The mock service is the default; the real service wires to a
-//! `BoseDevice` over RFCOMM and is gated behind the
-//! `real-bluetooth` cargo feature so the binary builds on systems
-//! that don't have `libbluetooth-dev`. The tray icon and the
+//! The app always uses the real service, which wires to a
+//! `BoseDevice` over RFCOMM. The mock (simulated device) is for
+//! tests and screenshots only: set `BOSE_CONNECT_GUI_SIMULATOR=1`
+//! to use it. The tray icon and the
 //! Bluetooth discovery both live in `services::tray` and
 //! `services::bluetooth`, hand-rolled on top of `gio::DBus`.
 //!

@@ -117,6 +117,9 @@ pub struct AppModel {
     pub discovery: Vec<(String, String)>,
     /// Currently selected page in the sidebar.
     pub current_page: Page,
+    /// True when the app runs against the simulated device
+    /// (developers only); nothing about it is persisted.
+    pub simulator: bool,
 }
 
 impl AppModel {
@@ -136,6 +139,7 @@ impl AppModel {
             history: Vec::new(),
             discovery: Vec::new(),
             current_page: Page::Overview,
+            simulator: false,
         }
     }
 
