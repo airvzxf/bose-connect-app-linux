@@ -99,6 +99,14 @@ fn build_render_handle(
                 None => return,
             };
 
+            // Keep the scroll position: the new page has the same
+            // layout, so the user stays where they were.
+            let vadjustment = content_box
+                .ancestor(gtk::ScrolledWindow::static_type())
+                .and_downcast::<gtk::ScrolledWindow>()
+                .map(|scroll| scroll.vadjustment());
+            let scroll_value = vadjustment.as_ref().map(|adj| adj.value());
+
             let mut child = content_box.first_child();
             let mut cleared = 0;
             while let Some(c) = child {
@@ -110,6 +118,10 @@ fn build_render_handle(
             let active_page = snapshot.current_page;
             let new_widget = render_active_page(&snapshot, &sender);
             content_box.append(&new_widget);
+            if let (Some(adj), Some(value)) = (vadjustment, scroll_value) {
+                // The new page has no size until the next layout pass.
+                glib::idle_add_local_once(move || adj.set_value(value));
+            }
 
             // Update header bar controls
             header_widgets

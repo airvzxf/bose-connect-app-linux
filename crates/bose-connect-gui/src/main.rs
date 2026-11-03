@@ -455,7 +455,7 @@ fn activate(
             // Capture the page *before* applying the message so
             // we know whether the user navigated away from it.
             let prev_page = pump_model.borrow().current_page;
-            let prev_snapshot = pump_model.borrow().snapshot.is_some();
+            let prev_snapshot = pump_model.borrow().snapshot.clone();
             // Messages are handled one at a time, so device calls
             // never interleave on the single connection.
             let quiet_mode = pump_model.borrow().quiet_mode;
@@ -472,18 +472,23 @@ fn activate(
                     continue;
                 }
             };
-            let device_answered = !matches!(outcome, Outcome::None);
+            // A failed setter leaves the snapshot as it was, but the
+            // widget the user touched already shows the new value:
+            // redraw to put it back.
+            let device_failed = matches!(outcome, Outcome::Snapshot(Err(_)));
             {
                 let mut guard = pump_model.borrow_mut();
                 apply(&mut guard, msg, outcome);
             }
             let model_snapshot = pump_model.borrow();
             let page_changed = model_snapshot.current_page != prev_page;
-            let snap_changed = model_snapshot.snapshot.is_some() != prev_snapshot;
+            let snap_changed = model_snapshot.snapshot != prev_snapshot;
             drop(model_snapshot);
-            // With a real device, every answer can change what the
-            // page shows, so redraw after each device call.
-            if page_changed || snap_changed || (real_device && device_answered) {
+            // Redraw only when what the page shows changed: rebuilding
+            // the page after every device answer made it flicker (the
+            // 60 s refresh of a real device usually returns the same
+            // snapshot).
+            if page_changed || snap_changed || (real_device && device_failed) {
                 if let Some(handle) = pump_render.borrow().as_ref() {
                     handle.rebuild();
                 }
@@ -1004,6 +1009,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
         },
         M::Refresh => match outcome.snapshot() {
             Ok(snap) => {
+                tracing::info!(target: "device", "refreshed {}", snap.name);
                 model.snapshot = Some(snap.clone());
                 model.connection = ConnectionState::Connected;
                 model.log_success(format!("refreshed: {}", snap.name));

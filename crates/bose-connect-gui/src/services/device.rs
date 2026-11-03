@@ -33,7 +33,7 @@ pub struct Capability {
 }
 
 /// Snapshot of the device's identity and current state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DeviceSnapshot {
     pub address: BdAddr,
     pub name: String,

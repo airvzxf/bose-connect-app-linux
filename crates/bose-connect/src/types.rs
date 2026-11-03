@@ -347,7 +347,7 @@ impl DevicesConnected {
 /// Layout is fixed for FFI compatibility; the order matches the
 /// original `struct Device`. The address, status, and name are
 /// populated by [`crate::protocol::get_device_info`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device {
     /// 6-byte Bluetooth device address, MSB first as the device
     /// emits it (i.e. the order is the opposite of how BlueZ's
