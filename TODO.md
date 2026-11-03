@@ -25,6 +25,8 @@ cover the Rust migration + CI/CD.
     - [x] `dependabot.yml` — Cargo + GitHub Actions.
     - [x] `.remarkrc` — Codacy's Remark-lint no longer reports
           task-list checkboxes as undefined references (#80).
+    - [x] `.markdownlint.json` — Codacy's Markdownlint accepts the
+          4-space nested-list indentation used in these files.
 
 - [ ] **Portability.**
     - [ ] Docker image for the Rust build (the original C Docker
