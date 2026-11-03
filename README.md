@@ -18,7 +18,7 @@ The project is written in Rust. It started as a fork of
 The code has since been rewritten and extended, and that project
 remains its inspiration. This project is licensed under the
 AGPL-3.0-or-later (see [`LICENSE`](LICENSE)). The last C version is
-in the [`main`][main-branch] branch's history 
+in the [`main`][main-branch] branch's history
 (`git log --follow src/library/based.c`).
 
 ## Repository layout
