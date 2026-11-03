@@ -57,21 +57,36 @@ cover the Rust migration + CI/CD.
     - [x] `set_self_voice` drops the stray `38` of the C packet
           `01 0b 02 02 01 xx 38`, which spilled into the next request;
           verified on a QC Ultra and a QC35 II (2026-10-27).
+    - [x] BlueZ's own RFCOMM connections (hands-free profile and
+          the like) do not count towards the SoundLink Color II's
+          9-connection limit: 24 of them after a fresh power-on, and
+          the speaker stayed on (2026-10-29).
     - [ ] A SoundLink Color II switched off after only two CLI
           connections on 2026-10-27, after the user had disconnected
-          and reconnected it by hand. Find out whether BlueZ's own
-          RFCOMM connections (hands-free profile) count towards its
-          9-connection limit.
-    - [ ] On this CachyOS laptop, Bose headphones that reconnect often
-          play nothing until disconnected and connected by hand (not on
-          a Windows laptop). Check the BlueZ/PipeWire logs at reconnect;
-          related to the QC Ultra media-control lock above?
+          and reconnected it by hand. Next hypothesis: the phone's
+          Bose app connections to the control channel count too.
+          Test: fresh power-on, phone Bluetooth on, open and close the
+          app N times (logged), then CLI connections one at a time
+          until it switches off.
+    - [x] On this CachyOS laptop, Bose headphones that reconnect often
+          play nothing. Cause (QC Ultra, 2026-10-29): when the
+          headphones start the connection, BlueZ starts its own A2DP
+          connection at the same time (`a2dp-sink profile connect
+          failed: Device or resource busy`) and the stream never opens
+          (0 of 6). When the laptop starts it, audio plays (5 of 5).
+          Not related to the media-control lock. BlueZ is out of scope.
+    - [ ] CLI and GUI: show BlueZ's audio state over D-Bus
+          (`Device1.Connected`, and whether a `MediaTransport1` exists
+          and its state). When the device is connected without a media
+          transport, suggest disconnecting and reconnecting from this
+          computer.
     - [ ] QC Ultra media keys: after play/pause (`01`), which never
           completes, every key and the phone's own controls lock until
-          the phone reconnects. The user also saw the lock after only
-          connecting the laptop. Test: unlock with the laptop
-          disconnected, check the phone's controls, connect the laptop
-          without sending anything, check again.
+          the phone reconnects. Connecting the laptop does not cause
+          it: the headphone button and the phone's controls worked
+          with the laptop disconnected, cleanly connected, and stuck
+          without audio (2026-10-29). Key `01` remains the only proven
+          cause.
     - [ ] QC Ultra language: changing it from the laptop is untested
           (the setters clear bit `0x80`, which the device sets).
     - [ ] QC Ultra: decode `1f 08`, `1f 02`, the audio-mode settings
@@ -82,6 +97,10 @@ cover the Rust migration + CI/CD.
           probably 3 bytes there, not 2. Capture the raw reply.
     - [ ] The QC Ultra sends no notifications to a second client. Find
           out whether it needs a subscription request.
+
+- [ ] **GUI.**
+    - [ ] Every device answer rebuilds the whole page, which flickers.
+          Update the widgets in place.
 
 - [ ] **Architecture idea: device profiles** (not a decision).
     - [ ] Spike [`docs/ideas/device-profiles.md`](docs/ideas/device-profiles.md)

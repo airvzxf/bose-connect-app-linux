@@ -515,8 +515,11 @@ connections too, and the phone's own play, pause and skip stopped
 working, until the phone and headphones were disconnected and
 reconnected. The library refuses to send `01` to a QC Ultra from the
 CLI. The user noticed that media control on the phone also stopped
-once when the laptop connected, before any key was sent: whether the
-laptop connection alone causes it is open.
+once when the laptop connected, before any key was sent. A test on
+2026-10-29 did not reproduce that: with the laptop disconnected,
+cleanly connected, and connected without audio, the headphone button
+and the phone's controls kept working. Key `01` remains the only
+proven cause.
 
 ### `05 05` volume — `set_volume(level)`
 
@@ -657,6 +660,13 @@ between connections (7 s and 30 s both fail at the 9th), or on the
 Bluetooth link: disconnecting and reconnecting the speaker does not
 reset the count, only powering it off does. A single connection kept
 open for minutes with many requests is fine.
+
+BlueZ's own RFCOMM connections do not count. After a fresh
+power-on with the phone's Bluetooth off, BlueZ opened 13 Bluetooth
+links and 24 RFCOMM channels of its own (hands-free profile and the
+like) and the speaker stayed on (2026-10-29). After a disconnect the
+speaker may not answer a new connection (Page Timeout) for 10 to 30 s.
+Whether the phone's Bose app connections count is untested.
 
 Every CLI invocation opens and closes one connection, so on this speaker
 a handful of commands in a row is enough to switch it off. Long-lived

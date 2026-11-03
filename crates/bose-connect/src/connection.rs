@@ -181,7 +181,9 @@ impl Connection {
     ///
     /// * send `{ 0x00, 0x01, 0x01, 0x00 }`
     /// * verify the ACK is `{ 0x00, 0x01, 0x03, 0x05 }`
-    /// * discard the next 5 bytes (initial firmware version)
+    /// * discard the next 5 bytes: an ASCII version string. It is not
+    ///   the firmware version (captures show `1.0.4` and `1.2.0` on
+    ///   devices whose firmware is 4.0.1, 4.8.1 and 1.6.7).
     ///
     /// This is called automatically by [`Connection::open`]; only
     /// re-invoke it if you have a reason to reset the device state.
@@ -192,7 +194,7 @@ impl Connection {
 
         BoseIo::bose_write_check(self, &send, &ack)?;
 
-        // Throw away the initial firmware version.
+        // Throw away the version string.
         let mut garbage = [0u8; 5];
         BoseIo::bose_read_exact(self, &mut garbage)?;
         Ok(())
