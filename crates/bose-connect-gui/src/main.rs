@@ -11,15 +11,19 @@ use once_cell::sync::OnceCell;
 
 use bose_connect_gui::app::model::{AppModel, AppMsg, ConnectionState, Page, TICK_INTERVAL_MS};
 use bose_connect_gui::app::view::{build_root, RenderHandle};
-use bose_connect_gui::services::device::{DeviceService, DeviceSnapshot, MockService, RealService};
+use bose_connect_gui::services::bluetooth::PairedBose;
+use bose_connect_gui::services::device::{
+    DeviceService, DeviceSnapshot, MockScenario, MockService, RealService,
+};
 use bose_connect_gui::services::notifications::{NotificationLevel, Notifications};
 use bose_connect_gui::transport;
 
 /// How often the GUI re-reads a real device.
 const REAL_REFRESH_MS: u64 = 60_000;
 
-/// Set to `1` to run against the simulated device instead of a real
-/// one. For tests and screenshots only, so it is not in `--help`.
+/// Set to `1` (or `connected`, `disconnected`, `no-devices`) to run
+/// against the simulated device instead of a real one, in that
+/// scenario. For tests and screenshots only, so it is not in `--help`.
 const SIMULATOR_ENV: &str = "BOSE_CONNECT_GUI_SIMULATOR";
 
 static RUNTIME: OnceCell<Arc<tokio::runtime::Runtime>> = OnceCell::new();
@@ -41,7 +45,7 @@ fn runtime() -> &'static Arc<tokio::runtime::Runtime> {
 struct CliArgs {
     /// Use the simulated device (developers only): set by
     /// [`SIMULATOR_ENV`] or implied by `--low-battery-test`.
-    simulator: bool,
+    simulator: Option<MockScenario>,
     headless: bool,
     screenshot: Option<String>,
     address: Option<String>,
@@ -73,7 +77,9 @@ struct CliArgs {
 
 fn parse_cli() -> CliArgs {
     let mut cli = CliArgs {
-        simulator: std::env::var(SIMULATOR_ENV).is_ok_and(|v| v == "1"),
+        simulator: std::env::var(SIMULATOR_ENV)
+            .ok()
+            .and_then(|v| MockScenario::from_env_value(&v)),
         ..CliArgs::default()
     };
 
@@ -87,7 +93,7 @@ fn parse_cli() -> CliArgs {
             "--run-secs" => cli.run_secs = args.next().and_then(|s| s.parse().ok()),
             "--low-battery-test" => {
                 cli.low_battery_test = true;
-                cli.simulator = true;
+                cli.simulator = cli.simulator.or(Some(MockScenario::Connected));
             }
             "--tour" => cli.tour = true,
             "--dump-tree" => cli.dump_tree = true,
@@ -168,7 +174,7 @@ fn main() -> anyhow::Result<()> {
     // The app always talks to real devices. The simulated device
     // is for tests and screenshots only.
     let mut _simulator_ticker = None;
-    let _service: Arc<dyn DeviceService> = if cli.simulator {
+    let _service: Arc<dyn DeviceService> = if let Some(scenario) = cli.simulator {
         // The simulator needs a Tokio runtime for its background
         // battery-drain tick task. The `--low-battery-test` flag
         // seeds the device with a 10 % charge so the libnotify
@@ -186,7 +192,7 @@ fn main() -> anyhow::Result<()> {
         let (handle, ticker) = runtime().block_on(async { transport::spawn(seed, tick) });
         // Dropping the ticker stops the battery drain.
         _simulator_ticker = Some(ticker);
-        Arc::new(MockService::new(handle))
+        Arc::new(MockService::with_scenario(handle, scenario))
     } else {
         Arc::new(RealService::new())
     };
@@ -268,7 +274,14 @@ fn activate(
     }
 
     let mut model = AppModel::new(_service.clone());
-    model.simulator = cli.simulator;
+    model.simulator = cli.simulator.is_some();
+    match _service.known_devices() {
+        Ok(devices) => model.host_devices = Some(devices),
+        Err(e) => {
+            tracing::warn!(target: "bluez", "paired devices: {e}");
+            model.log_error(format!("paired devices: {e}"));
+        }
+    }
     // Resume on the last page the user was on, if any. Defaults
     // to Page::MyBose for a fresh install.
     if let Some(last_page) = model
@@ -284,15 +297,14 @@ fn activate(
     }
     // The model starts empty and fills in from the device once
     // `AppMsg::Connect` (sent below) answers.
-    let real_device = !cli.simulator;
-    let connect_to = if real_device {
-        cli.address
-            .clone()
-            .or_else(|| model.persisted.last_address.clone())
-    } else {
+    let real_device = cli.simulator.is_none();
+    if !real_device {
         model.log_info("Simulated device (developer mode)");
-        Some(bose_connect_gui::transport::demo::DEVICE.to_string())
-    };
+    }
+    let connect_to = cli
+        .address
+        .clone()
+        .or_else(|| startup_device(model.persisted.last_address.as_deref(), &model.host_devices));
     match &connect_to {
         Some(address) => model.connection = ConnectionState::Connecting(address.clone()),
         None => model.log_info("No device address yet: pick one or pass --address"),
@@ -370,16 +382,27 @@ fn activate(
     let pump_model = model_for_pump.clone();
     let pump_service = service_clone.clone();
     let pump_render = render_state.clone();
+    let pump_tx = tx.clone();
     glib::MainContext::default().spawn_local(async move {
         loop {
             let msg = match rx.recv_async().await {
                 Ok(m) => m,
                 Err(_) => break,
             };
-            // Capture the page *before* applying the message so
-            // we know whether the user navigated away from it.
-            let prev_page = pump_model.borrow().current_page;
-            let prev_snapshot = pump_model.borrow().snapshot.clone();
+            // Show "connecting" (and drop the old device's data)
+            // before the blocking call, which can take seconds.
+            if before_call(&mut pump_model.borrow_mut(), &msg) {
+                if let Some(handle) = pump_render.borrow().as_ref() {
+                    handle.rebuild();
+                }
+            }
+            // Capture the state *before* applying the message so
+            // we know whether what the window shows changed.
+            let prev = Shown::of(&pump_model.borrow());
+            let reload_after = matches!(
+                msg,
+                AppMsg::Connect(_) | AppMsg::Disconnect | AppMsg::Refresh
+            );
             // Messages are handled one at a time, so device calls
             // never interleave on the single connection.
             let quiet_mode = pump_model.borrow().quiet_mode;
@@ -404,15 +427,17 @@ fn activate(
                 let mut guard = pump_model.borrow_mut();
                 apply(&mut guard, msg, outcome);
             }
-            let model_snapshot = pump_model.borrow();
-            let page_changed = model_snapshot.current_page != prev_page;
-            let snap_changed = model_snapshot.snapshot != prev_snapshot;
-            drop(model_snapshot);
+            let changed = Shown::of(&pump_model.borrow()) != prev;
+            // A connection change can change which devices BlueZ
+            // reports as connected.
+            if reload_after {
+                let _ = pump_tx.send(AppMsg::ReloadDevices);
+            }
             // Redraw only when what the page shows changed: rebuilding
             // the page after every device answer made it flicker (the
             // 60 s refresh of a real device usually returns the same
             // snapshot).
-            if page_changed || snap_changed || (real_device && device_failed) {
+            if changed || (real_device && device_failed) {
                 if let Some(handle) = pump_render.borrow().as_ref() {
                     handle.rebuild();
                 }
@@ -440,24 +465,19 @@ fn activate(
         let _ = tx_for_widget_tray;
     }
 
-    // Bluetooth discovery (BlueZ). Connects to the system bus,
-    // walks `GetManagedObjects`, and subscribes to
-    // `InterfacesAdded` / `InterfacesRemoved`. The mpsc is
-    // polled on a slow (500 ms) glib timer so we can stay on
-    // the main thread; events fold into `AppMsg::DiscoveryFound`
-    // just like the wire level did. We try to connect to BlueZ
-    // once at startup; if it's not running, `BluetoothDiscovery::connect`
-    // returns a handle with `available() == false`, and the
-    // GUI's discover panel just stays empty.
+    // BlueZ device events. Connects to the system bus and
+    // subscribes to `InterfacesAdded` / `InterfacesRemoved`. The
+    // mpsc is polled on a slow (500 ms) glib timer so we can stay
+    // on the main thread. If BlueZ is not running,
+    // `BluetoothDiscovery::connect` returns a handle with
+    // `available() == false` and no events arrive.
     let (bt_handle, bt_rx) = match runtime()
         .block_on(bose_connect_gui::services::bluetooth::BluetoothDiscovery::connect())
     {
         Ok(pair) => pair,
         Err(err) => {
             tracing::warn!(target: "bluez", "discovery disabled: {err}");
-            // Synthetic empty receiver — `start_scan` will
-            // emit the simulated event for offline smoke
-            // tests.
+            // Synthetic empty receiver: no events.
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<
                 bose_connect_gui::services::bluetooth::DiscoveryEvent,
             >();
@@ -468,26 +488,23 @@ fn activate(
             )
         }
     };
-    // Trigger an active scan so the user actually sees
-    // devices when they click "Scan" — the smoke test path
-    // does the same.
-    let _ = runtime().block_on(bt_handle.start_scan()).ok();
+    // A device paired or removed meanwhile re-reads the list, at
+    // most once per poll.
+    let _bt_handle = bt_handle;
     let mut bt_rx = bt_rx;
     let tx_for_bt = tx.clone();
     glib::source::timeout_add_local(Duration::from_millis(500), move || {
+        use bose_connect_gui::services::bluetooth::DiscoveryEvent;
+        let mut reload = false;
         while let Ok(ev) = bt_rx.try_recv() {
-            let mapped = match ev {
-                bose_connect_gui::services::bluetooth::DiscoveryEvent::DeviceFound(d) => {
-                    Some(AppMsg::DiscoveryFound {
-                        address: d.address,
-                        name: d.name,
-                    })
-                }
-                _ => None,
+            reload |= match ev {
+                DiscoveryEvent::DeviceFound(d) => d.paired && d.is_bose,
+                DiscoveryEvent::DeviceRemoved(_) => true,
+                DiscoveryEvent::AdapterPowered(_) => false,
             };
-            if let Some(msg) = mapped {
-                let _ = tx_for_bt.send(msg);
-            }
+        }
+        if reload {
+            let _ = tx_for_bt.send(AppMsg::ReloadDevices);
         }
         glib::ControlFlow::Continue
     });
@@ -578,13 +595,18 @@ fn activate(
                 } else {
                     tick_service.refresh().ok()
                 };
-                if let Some(snap) = snap {
-                    tray.update(bose_connect_gui::services::tray::TraySnapshot {
+                tray.update(match snap {
+                    Some(snap) => bose_connect_gui::services::tray::TraySnapshot {
                         connected: true,
                         battery: snap.battery,
                         name: snap.name.clone(),
-                    });
-                }
+                    },
+                    None => bose_connect_gui::services::tray::TraySnapshot {
+                        connected: false,
+                        battery: 0,
+                        name: String::new(),
+                    },
+                });
             }
         }
         glib::ControlFlow::Continue
@@ -596,9 +618,13 @@ fn activate(
         let refresh_model = model_holder.clone();
         let refresh_tx = tx.clone();
         glib::timeout_add_local(Duration::from_millis(REAL_REFRESH_MS), move || {
-            if refresh_model.borrow().connection == ConnectionState::Connected {
-                let _ = refresh_tx.send(AppMsg::Refresh);
-            }
+            // `Refresh` re-reads the paired list too.
+            let msg = if refresh_model.borrow().connection == ConnectionState::Connected {
+                AppMsg::Refresh
+            } else {
+                AppMsg::ReloadDevices
+            };
+            let _ = refresh_tx.send(msg);
             glib::ControlFlow::Continue
         });
     }
@@ -806,6 +832,56 @@ fn band(battery: u8) -> i32 {
     }
 }
 
+/// The device to connect to at startup: the last one, while it is
+/// still paired and BlueZ has it connected, else the first paired
+/// Bose device BlueZ has connected. A device that is off is not
+/// tried, so the window opens on "connect to a device" at once.
+fn startup_device(last: Option<&str>, devices: &Option<Vec<PairedBose>>) -> Option<String> {
+    let connected: Vec<&PairedBose> = devices.iter().flatten().filter(|d| d.connected).collect();
+    last.and_then(|last| {
+        connected
+            .iter()
+            .find(|d| d.address.eq_ignore_ascii_case(last))
+    })
+    .or_else(|| connected.first())
+    .map(|d| d.address.clone())
+}
+
+/// Update the model before the blocking call behind `msg`; true when
+/// the window must be redrawn. Switching devices drops the old one's
+/// data at once, so it is never shown as the new device's.
+fn before_call(model: &mut AppModel, msg: &AppMsg) -> bool {
+    match msg {
+        AppMsg::Connect(address) => {
+            model.snapshot = None;
+            model.history.clear();
+            model.connection = ConnectionState::Connecting(address.clone());
+            true
+        }
+        _ => false,
+    }
+}
+
+/// What the window shows; a change triggers a full redraw.
+#[derive(PartialEq)]
+struct Shown {
+    page: Page,
+    snapshot: Option<DeviceSnapshot>,
+    connection: ConnectionState,
+    devices: Option<Vec<PairedBose>>,
+}
+
+impl Shown {
+    fn of(model: &AppModel) -> Self {
+        Self {
+            page: model.current_page,
+            snapshot: model.snapshot.clone(),
+            connection: model.connection.clone(),
+            devices: model.host_devices.clone(),
+        }
+    }
+}
+
 /// Dump the GTK widget tree rooted at `widget` to a `String`.
 fn dump_widget_tree(widget: &gtk::Widget, depth: usize, out: &mut String) {
     use std::fmt::Write as _;
@@ -843,6 +919,7 @@ enum Outcome {
     None,
     Snapshot(anyhow::Result<Box<DeviceSnapshot>>),
     Unit(anyhow::Result<()>),
+    Devices(anyhow::Result<Vec<PairedBose>>),
 }
 
 impl Outcome {
@@ -850,7 +927,7 @@ impl Outcome {
         match self {
             Outcome::Snapshot(r) => r.map(|b| *b),
             Outcome::Unit(r) => r.and_then(|()| anyhow::bail!("no snapshot returned")),
-            Outcome::None => anyhow::bail!("no device call was made"),
+            Outcome::Devices(_) | Outcome::None => anyhow::bail!("no device call was made"),
         }
     }
 
@@ -858,7 +935,7 @@ impl Outcome {
         match self {
             Outcome::Snapshot(r) => r.map(|_| ()),
             Outcome::Unit(r) => r,
-            Outcome::None => anyhow::bail!("no device call was made"),
+            Outcome::Devices(_) | Outcome::None => anyhow::bail!("no device call was made"),
         }
     }
 }
@@ -871,6 +948,11 @@ fn call_service(service: &Arc<dyn DeviceService>, msg: &AppMsg, quiet_mode: bool
     let snap = |r: anyhow::Result<DeviceSnapshot>| Outcome::Snapshot(r.map(Box::new));
     match msg {
         M::Connect(address) => snap(service.connect(address)),
+        M::Disconnect => {
+            service.disconnect();
+            Outcome::None
+        }
+        M::ReloadDevices => Outcome::Devices(service.known_devices()),
         M::Refresh => snap(service.refresh()),
         M::SetNoiseCancelling(level) => snap(service.set_noise_cancelling(*level)),
         M::SetAutoOff(min) => snap(service.set_auto_off(*min)),
@@ -932,9 +1014,29 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
             Err(e) => {
                 tracing::warn!(target: "device", "connect {address}: {e}");
                 model.log_error(format!("connect {address}: {e}"));
+                model.snapshot = None;
                 model.connection = ConnectionState::Error(e.to_string());
             }
         },
+        M::Disconnect => {
+            if let Some(snap) = model.snapshot.take() {
+                tracing::info!(target: "device", "disconnected from {}", snap.name);
+                model.log_info(format!("disconnected from {}", snap.name));
+            }
+            model.history.clear();
+            model.connection = ConnectionState::NotStarted;
+        }
+        M::ReloadDevices => {
+            if let Outcome::Devices(result) = outcome {
+                match result {
+                    Ok(devices) => model.host_devices = Some(devices),
+                    Err(e) => {
+                        tracing::warn!(target: "bluez", "paired devices: {e}");
+                        model.host_devices = None;
+                    }
+                }
+            }
+        }
         M::Refresh => match outcome.snapshot() {
             Ok(snap) => {
                 tracing::info!(target: "device", "refreshed {}", snap.name);
@@ -1203,4 +1305,47 @@ fn capture_widget_ppm(widget: &gtk::Widget, path: &std::path::Path) {
         path.display(),
         buf.len()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(address: &str, connected: bool) -> PairedBose {
+        PairedBose {
+            address: address.to_owned(),
+            name: address.to_owned(),
+            connected,
+            product_id: 0x4066,
+        }
+    }
+
+    #[test]
+    fn startup_prefers_the_last_device_while_it_is_connected() {
+        let devices = Some(vec![
+            device("02:00:00:00:00:01", true),
+            device("02:00:00:00:00:02", true),
+        ]);
+        assert_eq!(
+            startup_device(Some("02:00:00:00:00:02"), &devices).as_deref(),
+            Some("02:00:00:00:00:02")
+        );
+        // The last device is off: take a connected one.
+        let devices = Some(vec![
+            device("02:00:00:00:00:01", true),
+            device("02:00:00:00:00:02", false),
+        ]);
+        assert_eq!(
+            startup_device(Some("02:00:00:00:00:02"), &devices).as_deref(),
+            Some("02:00:00:00:00:01")
+        );
+    }
+
+    #[test]
+    fn startup_tries_nothing_without_a_connected_device() {
+        let devices = Some(vec![device("02:00:00:00:00:01", false)]);
+        assert_eq!(startup_device(Some("02:00:00:00:00:01"), &devices), None);
+        assert_eq!(startup_device(None, &Some(Vec::new())), None);
+        assert_eq!(startup_device(Some("02:00:00:00:00:01"), &None), None);
+    }
 }

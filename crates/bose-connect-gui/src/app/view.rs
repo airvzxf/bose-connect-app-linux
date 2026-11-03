@@ -134,11 +134,15 @@ fn build_render_handle(
                 .window_title
                 .set_subtitle(active_page.subtitle());
 
-            if let Some(s) = &snapshot.snapshot {
-                header_widgets.device_label.set_label(&s.name);
-            } else {
-                header_widgets.device_label.set_label("Desconectado");
-            }
+            header_widgets
+                .device_label
+                .set_label(&crate::app::widgets::device_button_label(&snapshot));
+            crate::app::widgets::fill_device_menu(
+                &header_widgets.device_menu,
+                &header_widgets.device_popover,
+                &snapshot,
+                &sender,
+            );
 
             tracing::info!(
                 target: "rebuild",
