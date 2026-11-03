@@ -18,6 +18,10 @@ use bose_connect_gui::transport;
 /// How often the GUI re-reads a real device.
 const REAL_REFRESH_MS: u64 = 60_000;
 
+/// Set to `1` to run against the simulated device instead of a real
+/// one. For tests and screenshots only, so it is not in `--help`.
+const SIMULATOR_ENV: &str = "BOSE_CONNECT_GUI_SIMULATOR";
+
 static RUNTIME: OnceCell<Arc<tokio::runtime::Runtime>> = OnceCell::new();
 
 fn runtime() -> &'static Arc<tokio::runtime::Runtime> {
@@ -35,18 +39,20 @@ fn runtime() -> &'static Arc<tokio::runtime::Runtime> {
 
 #[derive(Debug, Default, Clone)]
 struct CliArgs {
-    real: bool,
+    /// Use the simulated device (developers only): set by
+    /// [`SIMULATOR_ENV`] or implied by `--low-battery-test`.
+    simulator: bool,
     headless: bool,
     screenshot: Option<String>,
     address: Option<String>,
-    /// Override the mock's battery-drain interval. Used by the
-    /// `--low-battery-test` smoke; 0 means "default from transport::spawn".
+    /// Override the simulator's battery-drain interval (hidden
+    /// developer flag, used by the `--low-battery-test` smoke).
     mock_tick_ms: Option<u64>,
     /// If set, the app keeps running for this many seconds and then
     /// exits cleanly. Used to drive notification flows without a
     /// window manager.
     run_secs: Option<u64>,
-    /// Convenience flag: spawn a fresh mock seeded with battery=10
+    /// Hidden developer flag: spawn a fresh simulator seeded with battery=10
     /// and a fast tick so the app fires a low-battery libnotify
     /// notification within a couple of seconds, then exits. The
     /// GUI is fully painted but the notification is the deliverable
@@ -66,40 +72,38 @@ struct CliArgs {
 }
 
 fn parse_cli() -> CliArgs {
-    let mut cli = CliArgs::default();
+    let mut cli = CliArgs {
+        simulator: std::env::var(SIMULATOR_ENV).is_ok_and(|v| v == "1"),
+        ..CliArgs::default()
+    };
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--real" | "--real-bluetooth" => cli.real = true,
-            "--mock" => cli.real = false,
             "--headless" => cli.headless = true,
             "--screenshot" => cli.screenshot = args.next(),
             "--address" => cli.address = args.next(),
             "--mock-tick-ms" => cli.mock_tick_ms = args.next().and_then(|s| s.parse().ok()),
             "--run-secs" => cli.run_secs = args.next().and_then(|s| s.parse().ok()),
-            "--low-battery-test" => cli.low_battery_test = true,
+            "--low-battery-test" => {
+                cli.low_battery_test = true;
+                cli.simulator = true;
+            }
             "--tour" => cli.tour = true,
             "--dump-tree" => cli.dump_tree = true,
             "--page" => cli.page = args.next(),
             "--light" => cli.light = true,
             "--dark" => cli.dark = true,
             "-h" | "--help" => {
-                println!("bose-connect-gui — GTK4 + Relm4 GUI for Bose headphones");
+                println!("bose-connect-gui — GTK4 GUI for Bose headphones and speakers");
                 println!();
                 println!("Usage: bose-connect-gui [OPTIONS]");
                 println!();
                 println!("Options:");
-                println!("  --real, --real-bluetooth  Use the real RFCOMM transport");
-                println!("  --mock                    Use the in-process mock device");
                 println!("  --headless                Render once and exit (smoke tests)");
                 println!("  --screenshot PATH         Save a PPM of the first frame (headless)");
                 println!("  --address AA:BB:CC:DD:EE:FF  Override the persisted address");
-                println!("  --mock-tick-ms MS        Battery-drain interval (default 4000)");
                 println!("  --run-secs SECONDS        After running for N s, exit cleanly");
-                println!(
-                    "  --low-battery-test       Seed mock at 10 %% with fast tick; emits libnotify"
-                );
                 println!("  --version, -V             Print version and exit");
                 println!("  --dump-tree               Print the GTK widget tree to stdout");
                 println!(
@@ -161,16 +165,15 @@ fn main() -> anyhow::Result<()> {
 
     let cli = parse_cli();
 
-    // Build the device service eagerly so the background ticker
-    // runs even if the user dismisses the window quickly.
-    let _service: Arc<dyn DeviceService> = if cli.real {
-        Arc::new(RealService::new())
-    } else {
-        // The mock requires a Tokio runtime for its background
+    // The app always talks to real devices. The simulated device
+    // is for tests and screenshots only.
+    let mut _simulator_ticker = None;
+    let _service: Arc<dyn DeviceService> = if cli.simulator {
+        // The simulator needs a Tokio runtime for its background
         // battery-drain tick task. The `--low-battery-test` flag
-        // seeds the device with a 10 % charge and a 250 ms tick
-        // so the libnotify threshold-crossing fires within a few
-        // seconds of `activate`.
+        // seeds the device with a 10 % charge so the libnotify
+        // threshold-crossing fires within a few seconds of
+        // `activate`.
         let seed = if cli.low_battery_test {
             Some(bose_connect_gui::transport::MockSeed {
                 battery: 10,
@@ -180,8 +183,12 @@ fn main() -> anyhow::Result<()> {
             None
         };
         let tick = cli.mock_tick_ms.map(Duration::from_millis);
-        let (handle, _ticker) = runtime().block_on(async { transport::spawn(seed, tick) });
+        let (handle, ticker) = runtime().block_on(async { transport::spawn(seed, tick) });
+        // Dropping the ticker stops the battery drain.
+        _simulator_ticker = Some(ticker);
         Arc::new(MockService::new(handle))
+    } else {
+        Arc::new(RealService::new())
     };
 
     let _ = gtk::init();
@@ -260,12 +267,8 @@ fn activate(
         );
     }
 
-    // Seed an `AppModel` with a mock snapshot so the initial render
-    // has battery percentage and a device name. We connect the
-    // mock service so user interactions update the model — Relm4
-    // isn't necessary for the very first iteration because every
-    // widget mutates the AppModel directly.
     let mut model = AppModel::new(_service.clone());
+    model.simulator = cli.simulator;
     // Resume on the last page the user was on, if any. Defaults
     // to Page::MyBose for a fresh install.
     if let Some(last_page) = model
@@ -279,99 +282,20 @@ fn activate(
     if let Some(page) = cli.page.as_deref().and_then(Page::from_key) {
         model.current_page = page;
     }
-    // With the real transport the model starts empty and fills in
-    // from the device once `AppMsg::Connect` (sent below) answers.
-    let real_device = cli.real;
+    // The model starts empty and fills in from the device once
+    // `AppMsg::Connect` (sent below) answers.
+    let real_device = !cli.simulator;
     let connect_to = if real_device {
         cli.address
             .clone()
             .or_else(|| model.persisted.last_address.clone())
     } else {
-        None
+        model.log_info("Simulated device (developer mode)");
+        Some(bose_connect_gui::transport::demo::DEVICE.to_string())
     };
-    if real_device {
-        model.log_info("Real Bluetooth transport");
-        match &connect_to {
-            Some(address) => model.connection = ConnectionState::Connecting(address.clone()),
-            None => model.log_info("No device address yet: pick one or pass --address"),
-        }
-    } else {
-        model.connection = ConnectionState::Connected;
-        let addr_this = bose_connect::BdAddr {
-            b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
-        };
-        let addr_phone = bose_connect::BdAddr {
-            b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11],
-        };
-        let addr_tab = bose_connect::BdAddr {
-            b: [0x22, 0x33, 0x44, 0x55, 0x66, 0x77],
-        };
-        let device_mac = bose_connect::BdAddr {
-            b: [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D],
-        };
-        let snapshot = bose_connect_gui::services::device::DeviceSnapshot {
-            address: device_mac,
-            name: "Bose QC35 II 🐺".to_string(),
-            firmware: "4.5.2".to_string(),
-            serial: "07890123456789012".to_string(),
-            device_id: 0x400C,
-            battery: if cli.low_battery_test { 10 } else { 78 },
-            status: bose_connect::DeviceStatusReport {
-                device_id: 0x400C,
-                name: "Bose QC35 II 🐺".to_string(),
-                language: 0x05 | bose_connect::VP_ENABLE_BIT,
-                minutes: Some(20),
-                level: bose_connect::NoiseCancelling::High,
-            },
-            paired: bose_connect::PairedDevices {
-                addresses: [
-                    addr_this,
-                    addr_phone,
-                    addr_tab,
-                    bose_connect::BdAddr::ANY,
-                    bose_connect::BdAddr::ANY,
-                    bose_connect::BdAddr::ANY,
-                    bose_connect::BdAddr::ANY,
-                    bose_connect::BdAddr::ANY,
-                ],
-                num_devices: 3,
-                connected: bose_connect::DevicesConnected::Two,
-            },
-            devices: vec![
-                bose_connect_gui::transport::make_device_info(
-                    addr_this,
-                    "Workstation (Este equipo)",
-                    bose_connect::DeviceStatus::This,
-                ),
-                bose_connect_gui::transport::make_device_info(
-                    addr_phone,
-                    "Pixel 8 Pro",
-                    bose_connect::DeviceStatus::Connected,
-                ),
-                bose_connect_gui::transport::make_device_info(
-                    addr_tab,
-                    "iPad Pro",
-                    bose_connect::DeviceStatus::Disconnected,
-                ),
-            ],
-            capabilities: bose_connect_gui::services::device::Capability {
-                noise_cancelling: true,
-                self_voice: true,
-                pairing_toggle: true,
-            },
-            volume: Some(45),
-            active_device: Some(addr_this),
-            device_bd_addr: Some(device_mac),
-            audio: None,
-        };
-        model.snapshot = Some(snapshot);
-        model.history = vec![85; 24];
-        for i in 80..85 {
-            model.history.push(i + 1);
-        }
-        model.log_info("Welcome — Bose Connect for Linux");
-        model.log_success("Connected to QuietCompanion");
-        model.log_info("Mock transport active");
+    match &connect_to {
+        Some(address) => model.connection = ConnectionState::Connecting(address.clone()),
+        None => model.log_info("No device address yet: pick one or pass --address"),
     }
 
     // Set up a self-peeking channel so widgets can dispatch
@@ -998,8 +922,12 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
                 model.log_success(format!("connected to {}", snap.name));
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
-                model.persisted.last_address = Some(address);
-                model.persisted.save();
+                // The simulator must not replace the real device
+                // the next launch reconnects to.
+                if !model.simulator {
+                    model.persisted.last_address = Some(address);
+                    model.persisted.save();
+                }
             }
             Err(e) => {
                 tracing::warn!(target: "device", "connect {address}: {e}");

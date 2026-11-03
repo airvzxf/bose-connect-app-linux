@@ -15,7 +15,7 @@ crates/bose-connect-gui
 │   │   ├── view.rs     widget tree assembly
 │   │   └── widgets.rs  pure functions that paint AdwToolbarView
 │   ├── services
-│   │   ├── device.rs        DeviceService trait + MockService + RealService stub
+│   │   ├── device.rs        DeviceService trait + RealService + MockService (simulator)
 │   │   ├── state.rs         PersistedState + 4 Profiles (Focus/Travel/Home/Quiet)
 │   │   ├── tray.rs          Hand-rolled StatusNotifierItem via gio::DBus
 │   │   ├── bluetooth.rs     Hand-rolled BlueZ discovery via gio::DBus
@@ -73,14 +73,30 @@ gdbus call --session --dest org.freedesktop.DBus --object-path / \
 
 | Flag | Effect |
 | --- | --- |
-| `--real` / `--real-bluetooth` | Use the real RFCOMM transport |
-| `--mock` | (default) In-process mock device |
+| `--address AA:BB:CC:DD:EE:FF` | Connect to this device instead of the last one |
 | `--headless` | Render once and exit; writes `/tmp/bose-connect-gui.smoke` |
 | `--run-secs SECONDS` | Exit cleanly after `SECONDS` |
-| `--mock-tick-ms MS` | Battery-drain interval for the mock (default `4000`) |
-| `--low-battery-test` | Seed the mock at 10 % to fire a low-battery alert |
 | `--screenshot PATH` | Save the first frame to `PATH` (headless) |
 | `--dump-tree` | Print the GTK widget tree, one widget per line, to stdout |
+
+The app always talks to real devices.
+
+### Simulated device (developers only)
+
+For tests and screenshots, `BOSE_CONNECT_GUI_SIMULATOR=1` replaces
+the real device with an in-process simulator. Its addresses are
+locally administered (`02:00:00:00:00:0N`), so they can never be a
+real device, and it does not overwrite the address the next launch
+reconnects to. Two hidden flags drive it:
+
+| Flag | Effect |
+| --- | --- |
+| `--mock-tick-ms MS` | Battery-drain interval (default `4000`) |
+| `--low-battery-test` | Use the simulator at 10 % to fire a low-battery alert |
+
+```bash
+BOSE_CONNECT_GUI_SIMULATOR=1 cargo run -p bose-connect-gui
+```
 
 ## KDE Plasma integration
 
@@ -108,9 +124,6 @@ gdbus call --session --dest org.freedesktop.DBus --object-path / \
 
 ## Deferred to a follow-up PR
 
-* `RealService::connect` — the public surface is laid out; the
-  RFCOMM open + `init_connection` round-trip is deliberately
-  stubbed so the GUI builds without a real RFCOMM socket.
 * An active Bluetooth scan must be triggered once after
   `StartDiscovery` is called; today the discovery list
   populates from `GetManagedObjects` at startup, but a
