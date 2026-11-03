@@ -6,6 +6,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+## [0.4.0][] - 2026-11-03
+
 ### Added
 
 * `bose-connect-gui --real --address AA:BB:CC:DD:EE:FF` talks to the
@@ -42,6 +44,16 @@ the project uses [Semantic Versioning](https://semver.org/).
   for it).
 * Self-voice on the QC45: `has_self_voice` is true for it, so
   `--self-voice` works there.
+
+### Changed
+
+* License metadata now matches the `LICENSE` file: AGPL-3.0-or-later
+  in `Cargo.toml` (crates.io), the Debian and AUR recipes, the
+  AppStream metainfo and the GUI's About dialog. They said GPL-3.0.
+* README: the project is presented as a Rust app and library inspired
+  by Denton-L/based-connect rather than as a fork of it; the CLI usage
+  block is the current `--help`.
+* TODO.md lists open work only.
 
 ### Fixed
 
@@ -192,7 +204,8 @@ First Rust release: a port of the original C implementation, with the
 `bose-connect` library, the `bose-connect-app-linux` CLI and a C FFI
 (`bose_connect.h`).
 
-[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/airvzxf/bose-connect-app-linux/releases/tag/v0.1.0

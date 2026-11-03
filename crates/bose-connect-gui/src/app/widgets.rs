@@ -405,7 +405,7 @@ pub fn show_about_dialog(parent: &impl glib::object::IsA<gtk::Window>) {
         ))
         .website("https://github.com/airvzxf/bose-connect-app-linux")
         .issue_url("https://github.com/airvzxf/bose-connect-app-linux/issues")
-        .license_type(gtk::License::Gpl30)
+        .license_type(gtk::License::Agpl30)
         .copyright("© 2024-2026 Bose Connect Contributors")
         .build();
     dialog.present(Some(parent.as_ref()));

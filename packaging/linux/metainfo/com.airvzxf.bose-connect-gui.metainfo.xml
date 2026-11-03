@@ -12,25 +12,29 @@
   <summary>Drive a Bose QuietComfort or SoundLink over RFCOMM</summary>
   <summary xml:lang="es">Controla unos audífonos Bose QuietComfort o SoundLink sobre RFCOMM</summary>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>AGPL-3.0-or-later</project_license>
   <developer_name>Israel Roldan</developer_name>
   <update_contact>israel.alberto.rv@gmail.com</update_contact>
   <url type="homepage">https://github.com/airvzxf/bose-connect-app-linux</url>
   <url type="bugtracker">https://github.com/airvzxf/bose-connect-app-linux/issues</url>
   <description>
     <p>
-      A reverse-engineered Linux port of the Bose Connect app
-      originally forked from Denton-L/based-connect. This package
-      is the GTK4 + libadwaita + Relm4 front-end that wraps the
-      upstream <code>bose_connect</code> RFCOMM library.
+      Controls Bose Bluetooth headphones and speakers from Linux by
+      speaking the same RFCOMM protocol as the official Bose Connect
+      app. This package is the GTK4 + libadwaita front-end built on
+      the <code>bose_connect</code> library. The project started as a
+      fork of the C program Denton-L/based-connect and was rewritten
+      in Rust.
     </p>
     <p>
-      Features include a hero battery card with sparkline history,
-      four setting tiles (noise cancelling, voice prompts, language,
-      auto-off), four one-click Profiles (Focus, Travel, Home, Quiet),
-      a paired-devices panel, and a live activity log. KDE Plasma 6
-      notifications are wired through libnotify; persistent state
-      lives at <code>~/.config/bose-connect/state.json</code>.
+      It shows the battery with its recent history, playback
+      controls, the settings each device supports (noise cancelling
+      or audio modes, self-voice, voice prompts and language,
+      auto-off, pairing mode), the paired sources, and whether this
+      computer has a working audio stream to the device. It keeps one
+      connection open per session, sends low-battery notifications
+      and has a tray icon; the last device is remembered in
+      <code>~/.config/bose-connect/state.json</code>.
     </p>
   </description>
   <categories>
@@ -52,6 +56,11 @@
     <binary>bose-connect-gui</binary>
   </provides>
   <releases>
+    <release version="0.4.0" date="2026-11-03" urgency="medium">
+      <description>
+        <p>The GUI now controls a real device over one persistent connection, redraws only when the device state changes, and shows whether this computer has a working audio stream to the device, with a hint to reconnect when it does not. Adds QuietComfort 45 support (audio modes, equalizer, shortcut, self-voice), pairing mode on the SoundLink Color II, and a grouped command-line help.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-27" urgency="medium">
       <description>
         <p>The GUI is still a mockup on a simulated device. The protocol library reads every reply from its header, fixes the paired-device commands, adds RFCOMM channel 1 as a fallback and adds the QC Ultra Headphones settings (equalizer, immersive audio, auto-off and more).</p>

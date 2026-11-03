@@ -2,18 +2,24 @@
 
 > **Not an official app.**
 
-A reverse-engineered Linux port of the **Bose Connect** app,
-originally forked from [Denton-L/based-connect][denton-l]. This
-repository keeps the original GPL-3.0 license.
+A desktop app, a command-line tool and a Rust library to control
+Bose Bluetooth headphones and speakers from Linux.
 
-If you own a Bose device, you'll know that `Bose Connect` is not
-available on Linux. This program re-implements the RFCOMM protocol
-the official app speaks so the device can be controlled from Linux.
+If you own a Bose device, you'll know that the **Bose Connect** app
+is not available on Linux. This project speaks the same RFCOMM
+protocol as the official app, so the device can be controlled from
+Linux: battery, name, auto-off, voice prompts, noise cancelling or
+audio modes, equalizer, paired sources, volume and media keys.
 
-This is the **Rust** port of the codebase. The original C
-implementation lives on the [`main`][main-branch] branch's git
-history; see `git log --follow src/library/based.c` for the last
-C version.
+![The desktop app controlling a QuietComfort Ultra](docs/images/gui-overview.png)
+
+The project is written in Rust. It started as a fork of
+[Denton-L/based-connect][denton-l], a C program under the GPL-3.0.
+The code has since been rewritten and extended, and that project
+remains its inspiration. This project is licensed under the
+AGPL-3.0-or-later (see [`LICENSE`](LICENSE)). The last C version is
+in the [`main`][main-branch] branch's history
+(`git log --follow src/library/based.c`).
 
 ## Repository layout
 
@@ -81,59 +87,61 @@ Build from source:
 cargo install --path crates/bose-connect-cli
 ```
 
-Then run, exactly like the original C version (every flag is
-preserved):
+Then run it; every flag of the C version is still accepted:
 
 ```text
-Usage: bose-connect-app-linux [options] <address>
-  # address: The Bluetooth address of the Bose's device.
+Usage: bose-connect-app-linux [OPTIONS] <ADDRESS>
 
-  -h, --help
-    Print the help message.
-  -i, --info
-    Print all the device information.
-  -d, --device-status
-    Print the device status information.
-  -f, --firmware-version
-    Print the firmware version on the device.
-  -s, --serial-number
-    Print the serial number of the device.
-  -b, --battery-level
-    Print the battery level of the device as a percent.
-  -a, --paired-devices
-    Print the devices currently connected to the device.
-  --device-id
-    Print the device id followed by the index revision.
-  -n <name>, --name=<name>
-    Change the name of the device.
-  -o <minutes>, --auto-off=<minutes>
-    Change the auto-off time.
-    minutes: never, 5, 20, 40, 60, 180, or 1440 (24 hours, QC Ultra only)
-  -c <level>, --noise-cancelling=<level>
-    Change the noise cancelling level.  level: high, low, off
-  -l <language>, --prompt-language=<language>
-    Change the voice-prompt language.
-    language: en, fr, it, de, es, pt, zh, ko, nl, ja, sv
-  -v <switch>, --voice-prompts=<switch>
-    Change whether voice-prompts are on or off.  switch: on, off
-  -p <status>, --pairing=<status>
-    Change whether the device is pairing.  status: on, off
-  -e, --self-voice=<level>
-    Change the self voice level.  level: high, medium, low, off
-  --connect-device=<address>
-    Attempt to connect to the device at address.
-  --disconnect-device=<address>
-    Disconnect the device at address.
-  --remove-device=<address>
-    Remove the device at address from the pairing list.
-  -m <mode>, --audio-mode=<mode>
-    Change the audio mode (QC Ultra, QC45).
-    mode: quiet, aware, immersion, commute, or a slot index
-  --channel=<channel>
-    Use this RFCOMM channel instead of the automatic choice (8, then 2, then 1).
-  --audio-state
-    Print how BlueZ sees the device's audio link to this computer, without
-    opening a Bose connection. `--info` prints it too.
+Arguments:
+  <ADDRESS>  Bluetooth address of the Bose device ("AA:BB:CC:DD:EE:FF")
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+Device information:
+  -i, --info              Print all device information
+  -d, --device-status     Print the device status (name, language, voice-prompts, auto-off, NC)
+  -f, --firmware-version  Print the firmware version
+  -s, --serial-number     Print the serial number
+  -b, --battery-level     Print the battery level as a percent
+      --device-id         Print the device id and index revision
+      --device-bd-addr    Print the device's BT address
+      --audio-state       Print how BlueZ sees the device's audio link to this computer, without opening a Bose connection
+
+Sound:
+  -m, --audio-mode <MODE>          Switch the audio mode (QC Ultra, QC45). mode: its name (quiet, aware, immersion, …) or its slot index
+  -c, --noise-cancelling <LEVEL>   Change the noise-cancelling level. level: high, low, off. On the QC Ultra and QC45, use --audio-mode instead
+      --equalizer <BANDS>          Set equalizer bands (QC Ultra, QC45), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10
+      --immersive-audio <SETTING>  Immersive audio (QC Ultra). setting: off, still, motion
+  -e, --self-voice <LEVEL>         Change the self-voice level. level: high, medium, low, off
+
+Playback:
+      --set-volume <LEVEL>    Set the volume. The range is device-specific (e.g. 0..=25 on a QC35 II)
+      --send-media-key <KEY>  Send a media key. key: pause (play/pause), next, prev
+      --active-device         Print the active audio source's BT address
+
+Settings:
+  -n, --name <NAME>               Change the device name
+  -o, --auto-off <MINUTES>        Change the auto-off time. minutes: never, 5, 20, 40, 60, 180, or 1440 (24 hours, QC Ultra only)
+  -l, --prompt-language <LANG>    Change the prompt language
+  -v, --voice-prompts <SWITCH>    Toggle voice prompts. switch: on, off
+      --battery-prompt <SWITCH>   Announce the battery level at power-on (QC Ultra). switch: on, off
+      --auto-play-pause <SWITCH>  Pause when the headphones come off and resume when they go on (QC Ultra). switch: on, off
+      --auto-answer <SWITCH>      Answer calls by putting the headphones on (QC Ultra). switch: on, off
+      --remember-mode <SWITCH>    Start in the last audio mode used (QC Ultra, QC45). switch: on, off
+      --shortcut <ACTION>         Touch-and-hold shortcut of the right earcup (QC Ultra, QC45). action: battery, immersive, assistant, spotify, off
+
+Paired devices:
+  -a, --paired-devices               Print the list of paired devices
+      --connect-device <ADDRESS>     Connect to the device at the given Bluetooth address
+      --disconnect-device <ADDRESS>  Disconnect the device at the given Bluetooth address
+      --remove-device <ADDRESS>      Remove the device at the given Bluetooth address from the pairing list
+  -p, --pairing <STATUS>             Toggle pairing discoverability. status: on, off
+
+Advanced:
+      --channel <CHANNEL>  RFCOMM channel to use instead of the automatic choice (8, then 2, then 1)
+      --send-packet <HEX>  Send a raw hex packet (e.g. `0a1b2c3d`) and print the response
 ```
 
 When a device is connected but this computer has no audio stream to
@@ -193,9 +201,8 @@ cargo build --workspace --release --locked
 
 ### Docker
 
-The original C repo's Docker setup is replaced by a
-`rust:1.83-bookworm`-based image (Dockerfile / compose TBD; tracked
-in TODO.md). For now, install the toolchain locally.
+There is no Docker image yet (tracked in `TODO.md`). Install the
+toolchain locally.
 
 ## CI/CD
 
@@ -208,7 +215,7 @@ The `.github/workflows/` directory contains:
 | `cargo-audit.yml` | RustSec advisory scanner, nightly                        |
 | `release.yml`     | Tag-triggered release: crates.io publish + GitHub release with binary artefacts |
 
-## Migrating from the C version
+## Coming from the C version
 
 | C source file       | Rust counterpart                                      |
 | ------------------- | ----------------------------------------------------- |
@@ -218,11 +225,10 @@ The `.github/workflows/` directory contains:
 | `src/library/util.c` | `crates/bose-connect/src/util.rs`                    |
 | `src/library/based.h` (enums) | `crates/bose-connect/src/types.rs`     |
 
-The on-wire protocol is unchanged: every byte sequence,
-masked-ACK mask, and short-read / short-write semantic is
-preserved verbatim from the original C. If a regression slips
-through, `git diff feat/migration-to-rust main -- src/library/based.c`
-shows the source-of-truth protocol implementation side-by-side.
+The commands of the C version send the same bytes, except where a
+capture on a real device showed that the C bytes were wrong; replies
+are read from their header instead of fixed-size acknowledgements.
+[`docs/protocol.md`](docs/protocol.md) records each case.
 
 ## QuietComfort Ultra Headphones
 
