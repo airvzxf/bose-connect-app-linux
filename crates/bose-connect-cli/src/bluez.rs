@@ -39,14 +39,16 @@ fn classify(objects: &ManagedObjects, address: &str) -> AudioState {
         let props = ifaces.get("org.bluez.Device1")?;
         let addr = string(props.get("Address")?)?;
         addr.eq_ignore_ascii_case(address).then(|| {
-            (
-                path,
-                props.get("Connected").and_then(boolean).unwrap_or(false),
-            )
+            let connected = props.get("Connected").and_then(boolean).unwrap_or(false);
+            let product = props
+                .get("Modalias")
+                .and_then(string)
+                .and_then(|m| bose_connect::audio_state::product_id_from_modalias(&m));
+            (path, connected, product)
         })
     });
-    let Some((device_path, connected)) = device else {
-        return AudioState::classify::<&str, &str>(None, &[]);
+    let Some((device_path, connected, product)) = device else {
+        return AudioState::classify::<&str, &str>(None, None, &[]);
     };
     let transports: Vec<(String, String)> = objects
         .iter()
@@ -65,7 +67,7 @@ fn classify(objects: &ManagedObjects, address: &str) -> AudioState {
             (path.to_string(), state)
         })
         .collect();
-    AudioState::classify(Some(connected), &transports)
+    AudioState::classify(Some(connected), product, &transports)
 }
 
 fn string(value: &OwnedValue) -> Option<String> {
