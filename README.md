@@ -253,9 +253,27 @@ locks media control until the phone reconnects). See
 ## Disclaimer
 
 This has only been tested on Bose `QuietComfort 35's` with
-firmware 1.3.2, 1.2.9, 1.06, `SoundLink II's` with firmware
-2.1.1 and `QuietComfort Ultra Headphones` with firmware 1.6.7.
-I cannot ensure that this program works on any other devices.
+firmware 1.3.2, 1.2.9, 1.06, `QuietComfort 35 II` with firmware
+4.8.1, `SoundLink II's` with firmware 2.1.1, `SoundLink Color II`
+with firmware 4.0.1 and `QuietComfort Ultra Headphones` with
+firmware 1.6.7. I cannot ensure that this program works on any
+other devices.
+
+## Trademark and affiliation notice
+
+This is an independent, community-maintained project written so
+that Linux can talk to Bluetooth audio devices their owners
+already have. It is not affiliated with, endorsed, sponsored or
+supported by Bose Corporation.
+
+* "Bose", "Bose Connect", "QuietComfort" and "SoundLink" are
+  trademarks of Bose Corporation. They are used here only to name
+  the products this software works with.
+* The repository contains no Bose source code, binaries, firmware
+  images or keys. The protocol notes in
+  [`docs/protocol.md`](docs/protocol.md) describe the packets the
+  devices send and accept over RFCOMM, and the code that speaks
+  them was written independently.
 
 [denton-l]: https://github.com/Denton-L/based-connect
 [main-branch]: https://github.com/airvzxf/bose-connect-app-linux/tree/main
