@@ -11,9 +11,12 @@ use once_cell::sync::OnceCell;
 
 use bose_connect_gui::app::model::{AppModel, AppMsg, ConnectionState, Page, TICK_INTERVAL_MS};
 use bose_connect_gui::app::view::{build_root, RenderHandle};
-use bose_connect_gui::services::device::{DeviceService, MockService, RealService};
+use bose_connect_gui::services::device::{DeviceService, DeviceSnapshot, MockService, RealService};
 use bose_connect_gui::services::notifications::{NotificationLevel, Notifications};
 use bose_connect_gui::transport;
+
+/// How often the GUI re-reads a real device.
+const REAL_REFRESH_MS: u64 = 60_000;
 
 static RUNTIME: OnceCell<Arc<tokio::runtime::Runtime>> = OnceCell::new();
 
@@ -276,87 +279,108 @@ fn activate(
     if let Some(page) = cli.page.as_deref().and_then(Page::from_key) {
         model.current_page = page;
     }
-    model.connection = ConnectionState::Connected;
-    let addr_this = bose_connect::BdAddr {
-        b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
+    // With the real transport the model starts empty and fills in
+    // from the device once `AppMsg::Connect` (sent below) answers.
+    let real_device = cli.real;
+    let connect_to = if real_device {
+        cli.address
+            .clone()
+            .or_else(|| model.persisted.last_address.clone())
+    } else {
+        None
     };
-    let addr_phone = bose_connect::BdAddr {
-        b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11],
-    };
-    let addr_tab = bose_connect::BdAddr {
-        b: [0x22, 0x33, 0x44, 0x55, 0x66, 0x77],
-    };
-    let device_mac = bose_connect::BdAddr {
-        b: [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D],
-    };
-    let snapshot = bose_connect_gui::services::device::DeviceSnapshot {
-        address: device_mac,
-        name: "Bose QC35 II 🐺".to_string(),
-        firmware: "4.5.2".to_string(),
-        serial: "07890123456789012".to_string(),
-        device_id: 0x400C,
-        battery: if cli.low_battery_test { 10 } else { 78 },
-        status: bose_connect::DeviceStatusReport {
-            device_id: 0x400C,
+    if real_device {
+        model.log_info("Real Bluetooth transport");
+        match &connect_to {
+            Some(address) => model.connection = ConnectionState::Connecting(address.clone()),
+            None => model.log_info("No device address yet: pick one or pass --address"),
+        }
+    } else {
+        model.connection = ConnectionState::Connected;
+        let addr_this = bose_connect::BdAddr {
+            b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
+        };
+        let addr_phone = bose_connect::BdAddr {
+            b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11],
+        };
+        let addr_tab = bose_connect::BdAddr {
+            b: [0x22, 0x33, 0x44, 0x55, 0x66, 0x77],
+        };
+        let device_mac = bose_connect::BdAddr {
+            b: [0x04, 0x52, 0xC7, 0xBA, 0x68, 0x0D],
+        };
+        let snapshot = bose_connect_gui::services::device::DeviceSnapshot {
+            address: device_mac,
             name: "Bose QC35 II 🐺".to_string(),
-            language: 0x05 | bose_connect::VP_ENABLE_BIT,
-            minutes: Some(20),
-            level: bose_connect::NoiseCancelling::High,
-        },
-        paired: bose_connect::PairedDevices {
-            addresses: [
-                addr_this,
-                addr_phone,
-                addr_tab,
-                bose_connect::BdAddr::ANY,
-                bose_connect::BdAddr::ANY,
-                bose_connect::BdAddr::ANY,
-                bose_connect::BdAddr::ANY,
-                bose_connect::BdAddr::ANY,
+            firmware: "4.5.2".to_string(),
+            serial: "07890123456789012".to_string(),
+            device_id: 0x400C,
+            battery: if cli.low_battery_test { 10 } else { 78 },
+            status: bose_connect::DeviceStatusReport {
+                device_id: 0x400C,
+                name: "Bose QC35 II 🐺".to_string(),
+                language: 0x05 | bose_connect::VP_ENABLE_BIT,
+                minutes: Some(20),
+                level: bose_connect::NoiseCancelling::High,
+            },
+            paired: bose_connect::PairedDevices {
+                addresses: [
+                    addr_this,
+                    addr_phone,
+                    addr_tab,
+                    bose_connect::BdAddr::ANY,
+                    bose_connect::BdAddr::ANY,
+                    bose_connect::BdAddr::ANY,
+                    bose_connect::BdAddr::ANY,
+                    bose_connect::BdAddr::ANY,
+                ],
+                num_devices: 3,
+                connected: bose_connect::DevicesConnected::Two,
+            },
+            devices: vec![
+                bose_connect_gui::transport::make_device_info(
+                    addr_this,
+                    "Workstation (Este equipo)",
+                    bose_connect::DeviceStatus::This,
+                ),
+                bose_connect_gui::transport::make_device_info(
+                    addr_phone,
+                    "Pixel 8 Pro",
+                    bose_connect::DeviceStatus::Connected,
+                ),
+                bose_connect_gui::transport::make_device_info(
+                    addr_tab,
+                    "iPad Pro",
+                    bose_connect::DeviceStatus::Disconnected,
+                ),
             ],
-            num_devices: 3,
-            connected: bose_connect::DevicesConnected::Two,
-        },
-        devices: vec![
-            bose_connect_gui::transport::make_device_info(
-                addr_this,
-                "Workstation (Este equipo)",
-                bose_connect::DeviceStatus::This,
-            ),
-            bose_connect_gui::transport::make_device_info(
-                addr_phone,
-                "Pixel 8 Pro",
-                bose_connect::DeviceStatus::Connected,
-            ),
-            bose_connect_gui::transport::make_device_info(
-                addr_tab,
-                "iPad Pro",
-                bose_connect::DeviceStatus::Disconnected,
-            ),
-        ],
-        capabilities: bose_connect_gui::services::device::Capability {
-            noise_cancelling: true,
-            self_voice: true,
-            pairing_toggle: true,
-        },
-        volume: Some(45),
-        active_device: Some(addr_this),
-        device_bd_addr: Some(device_mac),
-    };
-    model.snapshot = Some(snapshot);
-    model.history = vec![85; 24];
-    for i in 80..85 {
-        model.history.push(i + 1);
+            capabilities: bose_connect_gui::services::device::Capability {
+                noise_cancelling: true,
+                self_voice: true,
+                pairing_toggle: true,
+            },
+            volume: Some(45),
+            active_device: Some(addr_this),
+            device_bd_addr: Some(device_mac),
+        };
+        model.snapshot = Some(snapshot);
+        model.history = vec![85; 24];
+        for i in 80..85 {
+            model.history.push(i + 1);
+        }
+        model.log_info("Welcome — Bose Connect for Linux");
+        model.log_success("Connected to QuietCompanion");
+        model.log_info("Mock transport active");
     }
-    model.log_info("Welcome — Bose Connect for Linux");
-    model.log_success("Connected to QuietCompanion");
-    model.log_info("Mock transport active");
 
     // Set up a self-peeking channel so widgets can dispatch
     // messages back to the AppModel. We use a plain `flume`
     // sender here because the GUI is a one-writer / one-reader
     // pump.
     let (tx, rx) = flume::unbounded::<AppMsg>();
+    if let Some(address) = connect_to {
+        let _ = tx.send(AppMsg::Connect(address));
+    }
 
     // Tray icon — hand-rolled StatusNotifierItem. We always start
     // it (even when running headless) so the smoke test can
@@ -431,15 +455,34 @@ fn activate(
             // we know whether the user navigated away from it.
             let prev_page = pump_model.borrow().current_page;
             let prev_snapshot = pump_model.borrow().snapshot.is_some();
+            // Messages are handled one at a time, so device calls
+            // never interleave on the single connection.
+            let quiet_mode = pump_model.borrow().quiet_mode;
+            let service = pump_service.clone();
+            let (msg, outcome) = match gtk::gio::spawn_blocking(move || {
+                let outcome = call_service(&service, &msg, quiet_mode);
+                (msg, outcome)
+            })
+            .await
+            {
+                Ok(pair) => pair,
+                Err(_) => {
+                    tracing::error!(target: "device", "device call panicked");
+                    continue;
+                }
+            };
+            let device_answered = !matches!(outcome, Outcome::None);
             {
                 let mut guard = pump_model.borrow_mut();
-                apply(&pump_service, &mut guard, msg);
+                apply(&mut guard, msg, outcome);
             }
             let model_snapshot = pump_model.borrow();
             let page_changed = model_snapshot.current_page != prev_page;
             let snap_changed = model_snapshot.snapshot.is_some() != prev_snapshot;
             drop(model_snapshot);
-            if page_changed || snap_changed {
+            // With a real device, every answer can change what the
+            // page shows, so redraw after each device call.
+            if page_changed || snap_changed || (real_device && device_answered) {
                 if let Some(handle) = pump_render.borrow().as_ref() {
                     handle.rebuild();
                 }
@@ -544,10 +587,17 @@ fn activate(
         // mock can change faster than the user can press
         // Refresh, and we want the threshold-crossing to fire
         // without manual interaction.
-        let live_battery = tick_service
-            .refresh()
-            .ok()
-            .map(|s| (s.battery, s.name.clone()));
+        // The real transport is read through `AppMsg::Refresh`
+        // instead (see below): a device call here would block the
+        // main thread.
+        let live_battery = if real_device {
+            None
+        } else {
+            tick_service
+                .refresh()
+                .ok()
+                .map(|s| (s.battery, s.name.clone()))
+        };
         let prev = {
             let g = tick_model.borrow();
             g.history.last().copied().unwrap_or(100)
@@ -593,7 +643,12 @@ fn activate(
             // battery band (Active ≥ 26 %, NeedsAttention ≤ 25 %,
             // Passive when no device).
             if let Some(tray) = tray_handle_for_tick.as_ref() {
-                if let Ok(snap) = tick_service.refresh() {
+                let snap = if real_device {
+                    tick_model.borrow().snapshot.clone()
+                } else {
+                    tick_service.refresh().ok()
+                };
+                if let Some(snap) = snap {
                     tray.update(bose_connect_gui::services::tray::TraySnapshot {
                         connected: true,
                         battery: snap.battery,
@@ -604,6 +659,19 @@ fn activate(
         }
         glib::ControlFlow::Continue
     });
+
+    // Re-read the real device now and then (battery, paired
+    // sources), over the open connection and off the main thread.
+    if real_device {
+        let refresh_model = model_holder.clone();
+        let refresh_tx = tx.clone();
+        glib::timeout_add_local(Duration::from_millis(REAL_REFRESH_MS), move || {
+            if refresh_model.borrow().connection == ConnectionState::Connected {
+                let _ = refresh_tx.send(AppMsg::Refresh);
+            }
+            glib::ControlFlow::Continue
+        });
+    }
 
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -839,10 +907,101 @@ fn dump_widget_tree(widget: &gtk::Widget, depth: usize, out: &mut String) {
     }
 }
 
-fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
+/// Result of the blocking device call behind one [`AppMsg`].
+enum Outcome {
+    /// The message does not talk to the device.
+    None,
+    Snapshot(anyhow::Result<Box<DeviceSnapshot>>),
+    Unit(anyhow::Result<()>),
+}
+
+impl Outcome {
+    fn snapshot(self) -> anyhow::Result<DeviceSnapshot> {
+        match self {
+            Outcome::Snapshot(r) => r.map(|b| *b),
+            Outcome::Unit(r) => r.and_then(|()| anyhow::bail!("no snapshot returned")),
+            Outcome::None => anyhow::bail!("no device call was made"),
+        }
+    }
+
+    fn unit(self) -> anyhow::Result<()> {
+        match self {
+            Outcome::Snapshot(r) => r.map(|_| ()),
+            Outcome::Unit(r) => r,
+            Outcome::None => anyhow::bail!("no device call was made"),
+        }
+    }
+}
+
+/// Run the device call behind `msg`. It blocks on socket I/O with
+/// the real service, so the pump runs it with
+/// `gio::spawn_blocking`, never on the GTK main thread.
+fn call_service(service: &Arc<dyn DeviceService>, msg: &AppMsg, quiet_mode: bool) -> Outcome {
+    use bose_connect_gui::app::model::AppMsg as M;
+    let snap = |r: anyhow::Result<DeviceSnapshot>| Outcome::Snapshot(r.map(Box::new));
+    match msg {
+        M::Connect(address) => snap(service.connect(address)),
+        M::Refresh => snap(service.refresh()),
+        M::SetNoiseCancelling(level) => snap(service.set_noise_cancelling(*level)),
+        M::SetAutoOff(min) => snap(service.set_auto_off(*min)),
+        M::SetLanguage {
+            language,
+            voice_prompts,
+        } => snap(service.set_language(*language, *voice_prompts)),
+        M::SetVoicePrompts(on) => snap(service.set_voice_prompts(*on)),
+        M::SetPairing(on) => snap(service.set_pairing(*on)),
+        M::SetName(name) => snap(service.set_name(name)),
+        M::SetVolume(level) => snap(service.set_volume(*level)),
+        M::SendMediaKey(key) => Outcome::Unit(service.send_media_key(*key)),
+        M::SetSelfVoice(level) => snap(service.set_self_voice(*level)),
+        M::PairedConnect(addr) => snap(service.connect_device(*addr)),
+        M::PairedDisconnect(addr) => snap(service.disconnect_device(*addr)),
+        M::PairedRemove(addr) => snap(service.remove_device(*addr)),
+        M::ApplyProfile(profile) => {
+            // Apply each setting in turn, in the original C CLI's
+            // order; a failed one does not stop the others.
+            let p = bose_connect_gui::services::state::Profiles::resolve(*profile);
+            let mut last = None;
+            if let Some(nc) = p.noise_cancelling {
+                last = Some(service.set_noise_cancelling(nc));
+            }
+            if let Some(voice) = p.voice_prompts {
+                last = Some(service.set_voice_prompts(voice));
+            }
+            if let Some(auto) = p.auto_off {
+                last = Some(service.set_auto_off(auto));
+            }
+            last.map_or(Outcome::None, snap)
+        }
+        // `quiet_mode` is the state *before* the toggle.
+        M::ToggleQuietMode if !quiet_mode => {
+            let _ = service.set_noise_cancelling(bose_connect::NoiseCancelling::High);
+            let _ = service.set_voice_prompts(false);
+            snap(service.set_auto_off(bose_connect::AutoOff::Never))
+        }
+        _ => Outcome::None,
+    }
+}
+
+fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
     use bose_connect_gui::app::model::AppMsg as M;
     match msg {
-        M::Refresh => match service.refresh() {
+        M::Connect(address) => match outcome.snapshot() {
+            Ok(snap) => {
+                tracing::info!(target: "device", "connected to {address} ({})", snap.name);
+                model.log_success(format!("connected to {}", snap.name));
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
+                model.persisted.last_address = Some(address);
+                model.persisted.save();
+            }
+            Err(e) => {
+                tracing::warn!(target: "device", "connect {address}: {e}");
+                model.log_error(format!("connect {address}: {e}"));
+                model.connection = ConnectionState::Error(e.to_string());
+            }
+        },
+        M::Refresh => match outcome.snapshot() {
             Ok(snap) => {
                 model.snapshot = Some(snap.clone());
                 model.connection = ConnectionState::Connected;
@@ -850,7 +1009,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("refresh: {e}")),
         },
-        M::SetNoiseCancelling(level) => match service.set_noise_cancelling(level) {
+        M::SetNoiseCancelling(_) => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success("set noise cancelling");
                 model.snapshot = Some(snap);
@@ -858,7 +1017,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set NC: {e}")),
         },
-        M::SetAutoOff(min) => match service.set_auto_off(min) {
+        M::SetAutoOff(_) => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success("set auto-off");
                 model.snapshot = Some(snap);
@@ -866,10 +1025,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set auto-off: {e}")),
         },
-        M::SetLanguage {
-            language,
-            voice_prompts,
-        } => match service.set_language(language, voice_prompts) {
+        M::SetLanguage { .. } => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success("set language");
                 model.snapshot = Some(snap);
@@ -877,18 +1033,15 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set lang: {e}")),
         },
-        M::SetVoicePrompts(on) => {
-            let lang = bose_connect::PromptLanguage::En;
-            match service.set_language(lang, on) {
-                Ok(snap) => {
-                    model.log_success("set voice prompts");
-                    model.snapshot = Some(snap);
-                    model.connection = ConnectionState::Connected;
-                }
-                Err(e) => model.log_error(format!("set voice prompts: {e}")),
+        M::SetVoicePrompts(_) => match outcome.snapshot() {
+            Ok(snap) => {
+                model.log_success("set voice prompts");
+                model.snapshot = Some(snap);
+                model.connection = ConnectionState::Connected;
             }
-        }
-        M::SetPairing(on) => match service.set_pairing(on) {
+            Err(e) => model.log_error(format!("set voice prompts: {e}")),
+        },
+        M::SetPairing(_) => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success("toggle pairing");
                 model.snapshot = Some(snap);
@@ -896,7 +1049,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set pairing: {e}")),
         },
-        M::SetName(name) => match service.set_name(&name) {
+        M::SetName(name) => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success(format!("nombre actualizado: {name}"));
                 model.snapshot = Some(snap);
@@ -904,7 +1057,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set name: {e}")),
         },
-        M::SetVolume(level) => match service.set_volume(level) {
+        M::SetVolume(level) => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success(format!("volumen ajustado a {level} / 75"));
                 model.snapshot = Some(snap);
@@ -912,13 +1065,13 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set volume: {e}")),
         },
-        M::SendMediaKey(key) => match service.send_media_key(key) {
+        M::SendMediaKey(key) => match outcome.unit() {
             Ok(()) => {
                 model.log_success(format!("comando multimedia enviado: {key:?}"));
             }
             Err(e) => model.log_error(format!("media key: {e}")),
         },
-        M::SetSelfVoice(level) => match service.set_self_voice(level) {
+        M::SetSelfVoice(_) => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success("voz propia configurada");
                 model.snapshot = Some(snap);
@@ -926,7 +1079,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("set self-voice: {e}")),
         },
-        M::PairedConnect(addr) => match service.connect_device(addr) {
+        M::PairedConnect(addr) => match outcome.snapshot() {
             Ok(snap) => {
                 let formatted = bose_connect_gui::i18n::format_address(addr);
                 model.log_success(format!("conectando a {formatted}"));
@@ -935,7 +1088,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("connect device: {e}")),
         },
-        M::PairedDisconnect(addr) => match service.disconnect_device(addr) {
+        M::PairedDisconnect(addr) => match outcome.snapshot() {
             Ok(snap) => {
                 let formatted = bose_connect_gui::i18n::format_address(addr);
                 model.log_success(format!("desconectando {formatted}"));
@@ -944,7 +1097,7 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             }
             Err(e) => model.log_error(format!("disconnect device: {e}")),
         },
-        M::PairedRemove(addr) => match service.remove_device(addr) {
+        M::PairedRemove(addr) => match outcome.snapshot() {
             Ok(snap) => {
                 let formatted = bose_connect_gui::i18n::format_address(addr);
                 model.log_success(format!("dispositivo {formatted} eliminado"));
@@ -958,15 +1111,8 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
             // Apply each setting sequentially. We forward through
             // the same `apply` function so the order matches the
             // original C CLI.
-            let p = bose_connect_gui::services::state::Profiles::resolve(profile);
-            if let Some(nc) = p.noise_cancelling {
-                let _ = service.set_noise_cancelling(nc);
-            }
-            if let Some(voice) = p.voice_prompts {
-                let _ = service.set_language(bose_connect::PromptLanguage::En, voice);
-            }
-            if let Some(auto) = p.auto_off {
-                let _ = service.set_auto_off(auto);
+            if let Ok(snap) = outcome.snapshot() {
+                model.snapshot = Some(snap);
             }
             model.persisted.active_profile = Some(profile);
             model.persisted.save();
@@ -977,10 +1123,8 @@ fn apply(service: &Arc<dyn DeviceService>, model: &mut AppModel, msg: AppMsg) {
                 "quiet mode {}",
                 if model.quiet_mode { "on" } else { "off" }
             ));
-            if model.quiet_mode {
-                let _ = service.set_noise_cancelling(bose_connect::NoiseCancelling::High);
-                let _ = service.set_language(bose_connect::PromptLanguage::En, false);
-                let _ = service.set_auto_off(bose_connect::AutoOff::Never);
+            if let Ok(snap) = outcome.snapshot() {
+                model.snapshot = Some(snap);
             }
         }
         M::Acknowledge => model.log.clear(),

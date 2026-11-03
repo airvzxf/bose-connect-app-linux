@@ -16,13 +16,13 @@ cargo install cargo-deb
 
 # 2. Build and pack. The output lands in target/debian/.
 cargo deb --workspace --no-build
-# → target/debian/bose-connect-gui_0.2.0_amd64.deb
+# → target/debian/bose-connect-gui_0.3.0_amd64.deb
 ```
 
 Install locally for testing:
 
 ```bash
-sudo dpkg -i target/debian/bose-connect-gui_0.2.0_amd64.deb
+sudo dpkg -i target/debian/bose-connect-gui_0.3.0_amd64.deb
 bose-connect-gui   # should appear in the Plasma launcher
 ```
 

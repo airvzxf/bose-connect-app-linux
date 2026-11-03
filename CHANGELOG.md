@@ -6,6 +6,23 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Added
+
+* `bose-connect-gui --real --address AA:BB:CC:DD:EE:FF` talks to the
+  device through the library over one persistent RFCOMM connection
+  (reopened after a socket error), instead of the simulated device.
+  Device calls run off the GTK main thread, one at a time; a real
+  device is re-read every 60 s. The last address is remembered.
+  Pause is refused on the QC Ultra, as in the CLI. Not yet tested
+  against hardware.
+
+### Fixed
+
+* GUI mock: every setting change froze the window (each setter took
+  a read lock while holding the write lock).
+* GUI: the voice-prompts switch and the profiles no longer reset the
+  prompt language to English.
+
 ## [0.3.0][] - 2026-10-27
 
 Based on hardware sessions with a SoundLink Color II (firmware 4.0.1),
