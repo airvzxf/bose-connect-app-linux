@@ -22,6 +22,7 @@ use bose_connect::{
     DeviceStatusReport, NoiseCancelling, PairedDevices, PromptLanguage, SelfVoice, VP_ENABLE_BIT,
 };
 
+use crate::services::bluetooth::PairedBose;
 use crate::transport::{self, MockHandle};
 
 /// Per-device capability table derived from the device id.
@@ -63,6 +64,13 @@ pub trait DeviceService: Send + Sync + 'static {
     /// Re-derive every get_* and return the latest snapshot.
     fn refresh(&self) -> Result<DeviceSnapshot>;
 
+    /// Close the connection, so the device is free for another
+    /// client (a phone app, the CLI).
+    fn disconnect(&self);
+
+    /// The Bose devices paired with this computer.
+    fn known_devices(&self) -> Result<Vec<PairedBose>>;
+
     fn set_name(&self, name: &str) -> Result<DeviceSnapshot>;
     fn set_noise_cancelling(&self, level: NoiseCancelling) -> Result<DeviceSnapshot>;
     fn set_self_voice(&self, level: SelfVoice) -> Result<DeviceSnapshot>;
@@ -90,13 +98,43 @@ pub trait DeviceService: Send + Sync + 'static {
 // Mock
 // ---------------------------------------------------------------------------
 
+/// What the simulated computer has paired: lets tests and
+/// screenshots reach every state of the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MockScenario {
+    /// The simulated headset is paired and connected; a simulated
+    /// speaker is paired but off.
+    Connected,
+    /// Both are paired, neither is connected.
+    Disconnected,
+    /// No Bose device is paired.
+    NoDevices,
+}
+
+impl MockScenario {
+    /// Parse the value of `BOSE_CONNECT_GUI_SIMULATOR`.
+    pub fn from_env_value(value: &str) -> Option<Self> {
+        match value {
+            "1" | "connected" => Some(Self::Connected),
+            "disconnected" => Some(Self::Disconnected),
+            "no-devices" => Some(Self::NoDevices),
+            _ => None,
+        }
+    }
+}
+
 pub struct MockService {
     handle: MockHandle,
+    scenario: MockScenario,
 }
 
 impl MockService {
     pub fn new(handle: MockHandle) -> Self {
-        Self { handle }
+        Self::with_scenario(handle, MockScenario::Connected)
+    }
+
+    pub fn with_scenario(handle: MockHandle, scenario: MockScenario) -> Self {
+        Self { handle, scenario }
     }
 
     fn snapshot(&self) -> DeviceSnapshot {
@@ -140,14 +178,41 @@ impl MockService {
 
 impl DeviceService for MockService {
     fn connect(&self, address: &str) -> Result<DeviceSnapshot> {
-        let mut state = self.handle.write();
-        if !address.is_empty() {
-            if let Some(a) = BdAddr::from_canonical(address) {
-                state.address = a;
-            }
+        // Only the simulated headset answers; the simulated speaker
+        // is "switched off", like a real device out of range.
+        if !address.eq_ignore_ascii_case(transport::demo::DEVICE)
+            || self.scenario == MockScenario::NoDevices
+        {
+            bail!("connect {address}: Host is down (simulated)");
         }
+        let mut state = self.handle.write();
         state.connected = true;
         Ok(Self::snapshot_from(&state))
+    }
+
+    fn disconnect(&self) {
+        self.handle.write().connected = false;
+    }
+
+    fn known_devices(&self) -> Result<Vec<PairedBose>> {
+        let connected = self.scenario == MockScenario::Connected;
+        Ok(match self.scenario {
+            MockScenario::NoDevices => Vec::new(),
+            _ => vec![
+                PairedBose {
+                    address: transport::demo::DEVICE.to_owned(),
+                    name: self.handle.read().name.clone(),
+                    connected,
+                    product_id: self.handle.read().device_id,
+                },
+                PairedBose {
+                    address: transport::demo::SPEAKER.to_owned(),
+                    name: "Bose SoundLink Color II".to_owned(),
+                    connected: false,
+                    product_id: 0x400d,
+                },
+            ],
+        })
     }
 
     fn refresh(&self) -> Result<DeviceSnapshot> {
@@ -427,6 +492,18 @@ impl DeviceService for RealService {
         self.read_snapshot()
     }
 
+    fn disconnect(&self) {
+        let mut inner = self.inner.lock();
+        // Dropping the device closes the socket.
+        inner.device = None;
+        inner.address = None;
+    }
+
+    fn known_devices(&self) -> Result<Vec<PairedBose>> {
+        crate::services::bluetooth::paired_bose_devices()
+            .ok_or_else(|| anyhow!("BlueZ is not reachable over the system bus"))
+    }
+
     fn set_name(&self, name: &str) -> Result<DeviceSnapshot> {
         transport::validate_name(name).map_err(|e| anyhow!(e))?;
         self.set_and_read(|dev| dev.set_name(name))
@@ -540,7 +617,7 @@ mod tests {
             svc.set_voice_prompts(false).expect("voice prompts");
             svc.set_name("Desk").expect("name");
             svc.set_volume(30).expect("volume");
-            svc.connect("AA:BB:CC:DD:EE:FF").expect("connect");
+            svc.connect(transport::demo::DEVICE).expect("connect");
             let snap = svc.refresh().expect("refresh");
             assert_eq!(snap.status.minutes, Some(AutoOffWire::Min20 as u16));
             assert_eq!(snap.name, "Desk");
@@ -561,6 +638,34 @@ mod tests {
                 PromptLanguage::Es as u8 & !VP_ENABLE_BIT
             );
         });
+    }
+
+    #[test]
+    fn mock_scenarios_list_their_devices() {
+        let svc = mock_service();
+        let devices = svc.known_devices().expect("devices");
+        assert_eq!(devices.len(), 2);
+        assert!(devices[0].connected && !devices[1].connected);
+        assert!(svc.connect(transport::demo::SPEAKER).is_err());
+
+        let (handle, scenario) = (svc.handle.clone(), MockScenario::NoDevices);
+        let empty = MockService::with_scenario(handle, scenario);
+        assert!(empty.known_devices().expect("devices").is_empty());
+        assert!(empty.connect(transport::demo::DEVICE).is_err());
+
+        assert_eq!(
+            MockScenario::from_env_value("1"),
+            Some(MockScenario::Connected)
+        );
+        assert_eq!(MockScenario::from_env_value("0"), None);
+    }
+
+    #[test]
+    fn real_service_disconnect_forgets_the_address() {
+        let svc = RealService::new();
+        svc.disconnect();
+        let err = svc.refresh().expect_err("no address after disconnect");
+        assert!(err.to_string().contains("connect first"), "{err}");
     }
 
     #[test]

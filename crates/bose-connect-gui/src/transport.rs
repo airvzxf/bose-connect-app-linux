@@ -54,6 +54,8 @@ pub mod demo {
     pub const PHONE: &str = "02:00:00:00:00:03";
     /// A paired tablet that is not connected.
     pub const TABLET: &str = "02:00:00:00:00:04";
+    /// A second Bose device paired with this computer, switched off.
+    pub const SPEAKER: &str = "02:00:00:00:00:05";
 }
 
 impl Default for MockSeed {

@@ -10,8 +10,6 @@
 //! - Signal subscription on
 //!   `org.freedesktop.DBus.ObjectManager.{InterfacesAdded,InterfacesRemoved}`
 //!   for live updates as the kernel brings devices up / down.
-//! - Per-device `StartDiscovery` on `org.bluez.Adapter1` to
-//!   trigger an active scan when the user clicks "Scan".
 //!
 //! The service is **optional**: when BlueZ is not running (the
 //! common case in `cargo check` smoke tests and CI), `connect()`
@@ -67,7 +65,6 @@ const BLUEZ_BUS_NAME: &str = "org.bluez";
 const BLUEZ_OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
 const OBJECT_MANAGER_OBJECT_PATH: &str = "/";
 const BLUEZ_DEVICE_INTERFACE: &str = "org.bluez.Device1";
-const BLUEZ_ADAPTER_INTERFACE: &str = "org.bluez.Adapter1";
 const BLUEZ_TRANSPORT_INTERFACE: &str = "org.bluez.MediaTransport1";
 
 /// Manager for `org.bluez` device discovery. Holds the system-bus
@@ -171,44 +168,8 @@ impl BluetoothDiscovery {
         Ok((discovery, rx))
     }
 
-    /// Best-effort: start an active discovery scan on every
-    /// available BlueZ adapter. The mock falls back to the
-    /// pre-baked simulated discovery when BlueZ isn't running.
-    pub async fn start_scan(&self) -> Result<Vec<String>> {
-        let Some(conn) = &self.conn else {
-            // Fallback for tests / CI: emit a single
-            // simulated Bose device after a short delay.
-            Self::spawn_simulated_events(self.tx.clone());
-            return Ok(Vec::new());
-        };
-
-        // Refresh the adapter list (call GetManagedObjects) and
-        // call StartDiscovery on every adapter we find.
-        let adapter_paths = adapter_paths(conn)?;
-        for path in &adapter_paths {
-            let msg = gtk::gio::DBusMessage::new_method_call(
-                Some(BLUEZ_BUS_NAME),
-                path,
-                Some(BLUEZ_ADAPTER_INTERFACE),
-                "StartDiscovery",
-            );
-            match conn.send_message(&msg, gtk::gio::DBusSendMessageFlags::NONE) {
-                Ok(serial) => tracing::debug!(
-                    target: "bluez",
-                    "StartDiscovery on {path} (serial={serial})",
-                ),
-                Err(err) => tracing::warn!(
-                    target: "bluez",
-                    "StartDiscovery on {path} failed: {err}",
-                ),
-            }
-        }
-        Ok(adapter_paths)
-    }
-
     /// True when the system bus connection succeeded and BlueZ
-    /// is reachable. When this is false, `start_scan` only
-    /// emits the offline simulated event.
+    /// is reachable.
     pub fn available(&self) -> bool {
         self.conn.is_some()
     }
@@ -217,22 +178,6 @@ impl BluetoothDiscovery {
     /// needs the current list without consuming the mpsc.
     pub fn snapshot(&self) -> Vec<DiscoveredDevice> {
         self.snapshot.lock().clone()
-    }
-
-    /// For tests / offline smoke: pretend to discover a Bose
-    /// device after a short delay.
-    pub fn spawn_simulated_events(rx: mpsc::UnboundedSender<DiscoveryEvent>) {
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let _ = rx.send(DiscoveryEvent::DeviceFound(DiscoveredDevice {
-                path: "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF".into(),
-                address: "AA:BB:CC:DD:EE:FF".into(),
-                name: "QuietCompanion".into(),
-                paired: true,
-                connected: false,
-                is_bose: true,
-            }));
-        });
     }
 
     /// Filter helper: true when the supplied UUID string matches
@@ -405,51 +350,56 @@ fn decode_device(path: &str, device_dict: &VariantDict) -> Option<DiscoveredDevi
     })
 }
 
-/// Walk the body of `GetManagedObjects` and return the
-/// adapter (`/org/bluez/hci*`) paths.
-fn adapter_paths(conn: &gtk::gio::DBusConnection) -> Result<Vec<String>> {
-    let body = conn.call_sync(
-        Some(BLUEZ_BUS_NAME),
-        OBJECT_MANAGER_OBJECT_PATH,
-        BLUEZ_OBJECT_MANAGER,
-        "GetManagedObjects",
-        None,
-        None,
-        gtk::gio::DBusCallFlags::NONE,
-        1_500,
-        None::<&gtk::gio::Cancellable>,
-    )?;
-    let body = body.try_child_value(0).unwrap_or(body);
-    let n = body.n_children();
-    let mut out = Vec::new();
-    for i in 0..n {
-        let entry = match body.try_child_value(i) {
-            Some(v) => v,
-            None => continue,
-        };
-        let path_v = entry.try_child_value(0);
-        let path: Option<String> = path_v.as_ref().and_then(|v| v.str().map(str::to_owned));
-        let Some(path) = path else { continue };
-        if !path.contains("/hci") || path.contains("/dev_") {
-            continue;
-        }
-        let iface_v = match entry.try_child_value(1) {
-            Some(v) => v,
-            None => continue,
-        };
-        if interface_props(&iface_v, BLUEZ_ADAPTER_INTERFACE).is_some() {
-            out.push(path);
-        }
-    }
-    Ok(out)
+/// Product id of the SoundLink Color II, the only speaker among the
+/// supported devices; the GUI shows a speaker icon for it.
+const SOUNDLINK_COLOR_II: u16 = 0x400d;
+
+/// A Bose device paired with this computer, as BlueZ lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairedBose {
+    /// Canonical `AA:BB:CC:DD:EE:FF` address.
+    pub address: String,
+    /// The name the desktop shows (BlueZ `Alias`, else `Name`).
+    pub name: String,
+    /// True while BlueZ has a link to it.
+    pub connected: bool,
+    /// The product id from the `Modalias` (`bluetooth:v009EpPPPP…`).
+    pub product_id: u16,
 }
 
-/// How BlueZ sees the audio link to the device at `address`: its
-/// `org.bluez.Device1` and the `org.bluez.MediaTransport1` objects
-/// that point at it. Blocking (one `GetManagedObjects`, 1.5 s
-/// timeout); safe to call off the main thread. `None` when the
+impl PairedBose {
+    /// Build one from the `org.bluez.Device1` properties; `None`
+    /// unless it is paired and its `Modalias` names Bose (`v009E`).
+    pub fn from_properties(
+        address: &str,
+        name: &str,
+        paired: bool,
+        connected: bool,
+        modalias: &str,
+    ) -> Option<Self> {
+        let product_id = bose_connect::audio_state::product_id_from_modalias(modalias)?;
+        paired.then(|| Self {
+            address: address.to_ascii_uppercase(),
+            name: if name.is_empty() {
+                address.to_ascii_uppercase()
+            } else {
+                name.to_owned()
+            },
+            connected,
+            product_id,
+        })
+    }
+
+    /// True for a speaker, false for headphones.
+    pub fn is_speaker(&self) -> bool {
+        self.product_id == SOUNDLINK_COLOR_II
+    }
+}
+
+/// Every object BlueZ manages: `(object path, a{sa{sv}} interfaces)`.
+/// Blocking (one `GetManagedObjects`, 1.5 s timeout). `None` when the
 /// system bus or BlueZ is not reachable.
-pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
+fn managed_objects() -> Option<Vec<(String, gtk::glib::Variant)>> {
     let conn =
         gtk::gio::bus_get_sync(gtk::gio::BusType::System, None::<&gtk::gio::Cancellable>).ok()?;
     let body = conn
@@ -483,6 +433,39 @@ pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
         // `VariantDict`.
         entries.push((path, ifaces));
     }
+    Some(entries)
+}
+
+/// The Bose devices paired with this computer, sorted by name.
+/// Blocking; `None` when BlueZ is not reachable.
+pub fn paired_bose_devices() -> Option<Vec<PairedBose>> {
+    let mut devices: Vec<PairedBose> = managed_objects()?
+        .iter()
+        .filter_map(|(_, ifaces)| {
+            let props = VariantDict::new(Some(&interface_props(ifaces, BLUEZ_DEVICE_INTERFACE)?));
+            let text = |key: &str| props.lookup::<String>(key).ok().flatten();
+            let flag = |key: &str| props.lookup::<bool>(key).ok().flatten().unwrap_or(false);
+            let name = text("Alias").or_else(|| text("Name")).unwrap_or_default();
+            PairedBose::from_properties(
+                &text("Address")?,
+                &name,
+                flag("Paired"),
+                flag("Connected"),
+                &text("Modalias").unwrap_or_default(),
+            )
+        })
+        .collect();
+    devices.sort_by(|a, b| a.name.cmp(&b.name).then(a.address.cmp(&b.address)));
+    Some(devices)
+}
+
+/// How BlueZ sees the audio link to the device at `address`: its
+/// `org.bluez.Device1` and the `org.bluez.MediaTransport1` objects
+/// that point at it. Blocking (one `GetManagedObjects`, 1.5 s
+/// timeout); safe to call off the main thread. `None` when the
+/// system bus or BlueZ is not reachable.
+pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
+    let entries = managed_objects()?;
     let device = entries.iter().find_map(|(path, ifaces)| {
         let props = VariantDict::new(Some(&interface_props(ifaces, BLUEZ_DEVICE_INTERFACE)?));
         let addr: String = props.lookup("Address").ok().flatten()?;
@@ -550,7 +533,55 @@ pub fn indexed_snapshot(devices: &[DiscoveredDevice]) -> HashMap<String, Discove
 
 #[cfg(test)]
 mod tests {
-    use super::is_bose_modalias;
+    use super::{is_bose_modalias, PairedBose};
+
+    #[test]
+    fn paired_bose_needs_paired_and_the_bose_vendor() {
+        let qc = PairedBose::from_properties(
+            "bc:87:fa:00:00:01",
+            "My QC Ultra",
+            true,
+            true,
+            "bluetooth:v009Ep4066d0167",
+        )
+        .expect("paired Bose device");
+        assert_eq!(qc.address, "BC:87:FA:00:00:01");
+        assert_eq!(qc.product_id, 0x4066);
+        assert!(qc.connected);
+        assert!(!qc.is_speaker());
+
+        let speaker = PairedBose::from_properties(
+            "02:00:00:00:00:05",
+            "",
+            true,
+            false,
+            "bluetooth:v009Ep400Dd0401",
+        )
+        .expect("paired Bose speaker");
+        assert!(speaker.is_speaker());
+        assert_eq!(
+            speaker.name, "02:00:00:00:00:05",
+            "falls back to the address"
+        );
+
+        // Seen nearby but not paired, and a paired non-Bose device.
+        assert!(PairedBose::from_properties(
+            "02:00:00:00:00:06",
+            "x",
+            false,
+            false,
+            "bluetooth:v009Ep4066d0167"
+        )
+        .is_none());
+        assert!(PairedBose::from_properties(
+            "02:00:00:00:00:07",
+            "Keyboard",
+            true,
+            true,
+            "usb:v05ACp0257d0001"
+        )
+        .is_none());
+    }
 
     #[test]
     fn bose_modalias() {

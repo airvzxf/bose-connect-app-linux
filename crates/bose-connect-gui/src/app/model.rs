@@ -17,6 +17,7 @@ use bose_connect::{AutoOff as AutoOffWire, NoiseCancelling, PromptLanguage, Self
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::services::bluetooth::PairedBose;
 use crate::services::device::{Capability, DeviceService, DeviceSnapshot};
 use crate::services::state::{PersistedState, ProfileName};
 use crate::services::tray::TrayCommand;
@@ -40,10 +41,8 @@ pub enum LogLevel {
 /// Connection state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionState {
-    /// Address not yet chosen (cold start).
+    /// No device chosen, or the user disconnected.
     NotStarted,
-    /// A discovery scan is running.
-    Discovering,
     /// User picked an address; waiting for `connect` to complete.
     Connecting(String),
     /// Connected; live data is fresh.
@@ -113,8 +112,9 @@ pub struct AppModel {
     pub quiet_mode: bool,
     /// Battery history we keep around for the sparkline.
     pub history: Vec<u8>,
-    /// Discovery list (BlueZ events). Empty in mock.
-    pub discovery: Vec<(String, String)>,
+    /// The Bose devices paired with this computer (BlueZ); `None`
+    /// until the first read, or when BlueZ is not reachable.
+    pub host_devices: Option<Vec<PairedBose>>,
     /// Currently selected page in the sidebar.
     pub current_page: Page,
     /// True when the app runs against the simulated device
@@ -137,7 +137,7 @@ impl AppModel {
             }],
             quiet_mode: false,
             history: Vec::new(),
-            discovery: Vec::new(),
+            host_devices: None,
             current_page: Page::Overview,
             simulator: false,
         }
@@ -178,6 +178,32 @@ impl AppModel {
         }
     }
 
+    /// The address the GUI is connected or connecting to.
+    pub fn active_address(&self) -> Option<String> {
+        match &self.connection {
+            ConnectionState::Connecting(address) => Some(address.clone()),
+            ConnectionState::Connected => self
+                .snapshot
+                .as_ref()
+                .map(|s| crate::i18n::format_address(s.address)),
+            _ => None,
+        }
+    }
+
+    /// The display name of a paired device, else its address.
+    pub fn device_name(&self, address: &str) -> String {
+        self.host_devices
+            .iter()
+            .flatten()
+            .find(|d| d.address.eq_ignore_ascii_case(address))
+            .map_or_else(|| address.to_owned(), |d| d.name.clone())
+    }
+
+    /// True when BlueZ answered and lists no paired Bose device.
+    pub fn no_paired_devices(&self) -> bool {
+        self.host_devices.as_ref().is_some_and(Vec::is_empty)
+    }
+
     /// Capabilities snapshot.
     pub fn capabilities(&self) -> Capability {
         match &self.snapshot {
@@ -211,6 +237,12 @@ pub enum AppMsg {
     /// `BoseDevice::open` round-trip).
     SnapshotReady(DeviceSnapshot),
     SnapshotError(String),
+
+    /// Close the connection to the current device.
+    Disconnect,
+
+    /// Re-read the Bose devices paired with this computer.
+    ReloadDevices,
 
     /// Manual refresh — re-issues every get_* on the device.
     Refresh,
@@ -252,12 +284,6 @@ pub enum AppMsg {
 
     /// Periodic battery tick — pushed from a worker.
     BatteryTick(u8),
-
-    /// Discovery tick — pushed when BlueZ finds a new device.
-    DiscoveryFound {
-        address: String,
-        name: String,
-    },
 
     /// Dismiss an error or warning.
     Acknowledge,

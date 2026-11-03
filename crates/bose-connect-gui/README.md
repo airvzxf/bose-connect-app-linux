@@ -94,8 +94,16 @@ reconnects to. Two hidden flags drive it:
 | `--mock-tick-ms MS` | Battery-drain interval (default `4000`) |
 | `--low-battery-test` | Use the simulator at 10 % to fire a low-battery alert |
 
+The value picks what the simulated computer has paired:
+
+| Value | Window |
+| --- | --- |
+| `1` or `connected` | A headset, connected, and a speaker that is off |
+| `disconnected` | Both paired, neither connected: "connect to a device" |
+| `no-devices` | No Bose device paired: how to pair one |
+
 ```bash
-BOSE_CONNECT_GUI_SIMULATOR=1 cargo run -p bose-connect-gui
+BOSE_CONNECT_GUI_SIMULATOR=disconnected cargo run -p bose-connect-gui
 ```
 
 ## KDE Plasma integration
@@ -109,11 +117,12 @@ BOSE_CONNECT_GUI_SIMULATOR=1 cargo run -p bose-connect-gui
   Plasma tray icon, hand-rolled on `gio::DBus`. The watcher
   picks the icon up after a real `Register` call captured by
   `dbus-monitor --session interface='org.kde.StatusNotifierWatcher'`.
-* BlueZ (`org.bluez` over the **system** bus) is queried once at
-  startup via `GetManagedObjects`, plus live updates from
-  `InterfacesAdded` / `InterfacesRemoved`. The Bose Connect
-  service UUID `0000fddd-0000-1000-8000-00805f9b34fb` is used
-  to flag Bose candidates in the discover list.
+* BlueZ (`org.bluez` over the **system** bus) lists the Bose
+  devices paired with this computer (`GetManagedObjects`, a
+  `Modalias` with vendor `009E`) for the device menu and the
+  "My Bose" page. The list is read again when the menu opens,
+  every 60 s, after each connection change and on
+  `InterfacesAdded` / `InterfacesRemoved`.
 * Custom icons compiled into the binary via `glib-build-tools`
   (hicolor + symbolic SVG).
 * CSS injected at startup from the GResource bundle, so the desktop
