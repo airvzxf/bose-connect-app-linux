@@ -567,7 +567,7 @@ fn bluez_audio_row(state: bose_connect::AudioState) -> adw::ActionRow {
             "bluetooth-disabled-symbolic",
         ),
         AudioState::ConnectedWithoutAudio => (
-            "Conectado, pero sin audio desde esta computadora",
+            "Conectado, pero sin audio funcional desde esta computadora",
             "dialog-warning-symbolic",
         ),
         AudioState::Idle => ("Audio listo (en pausa)", "audio-speakers-symbolic"),
@@ -579,7 +579,7 @@ fn bluez_audio_row(state: bose_connect::AudioState) -> adw::ActionRow {
     let row = adw::ActionRow::new();
     row.set_title("Audio en esta computadora");
     row.set_subtitle(if state.needs_reconnect_hint() {
-        "Conectado, pero sin audio desde esta computadora. Si esperas sonido de aquí, \
+        "Conectado, pero sin audio funcional desde esta computadora. Si esperas sonido de aquí, \
          desconecta el dispositivo y vuelve a conectarlo desde esta computadora: cuando el \
          dispositivo inicia la conexión, BlueZ puede no abrir el audio."
     } else {

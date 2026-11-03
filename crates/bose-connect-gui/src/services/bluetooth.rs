@@ -494,26 +494,29 @@ pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
         })
     });
     let Some((device_path, connected)) = device else {
-        return Some(bose_connect::AudioState::classify::<&str>(None, &[]));
+        return Some(bose_connect::AudioState::classify::<&str, &str>(None, &[]));
     };
-    let states: Vec<String> = entries
+    let transports: Vec<(String, String)> = entries
         .iter()
-        .filter_map(|(_, ifaces)| interface_props(ifaces, BLUEZ_TRANSPORT_INTERFACE))
-        .map(|props| VariantDict::new(Some(&props)))
-        .filter(|props| {
-            props
-                .lookup_value("Device", None)
-                .is_some_and(|v| v.str() == Some(device_path.as_str()))
-        })
-        .map(|props| {
-            props
+        .filter_map(|(path, ifaces)| {
+            let props =
+                VariantDict::new(Some(&interface_props(ifaces, BLUEZ_TRANSPORT_INTERFACE)?));
+            let device = props.lookup_value("Device", None)?;
+            if device.str() != Some(device_path.as_str()) {
+                return None;
+            }
+            let state = props
                 .lookup::<String>("State")
                 .ok()
                 .flatten()
-                .unwrap_or_else(|| "idle".to_owned())
+                .unwrap_or_else(|| "idle".to_owned());
+            Some((path.clone(), state))
         })
         .collect();
-    Some(bose_connect::AudioState::classify(Some(connected), &states))
+    Some(bose_connect::AudioState::classify(
+        Some(connected),
+        &transports,
+    ))
 }
 
 /// The `a{sv}` properties of `interface` in an `a{sa{sv}}`

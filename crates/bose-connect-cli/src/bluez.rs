@@ -46,25 +46,26 @@ fn classify(objects: &ManagedObjects, address: &str) -> AudioState {
         })
     });
     let Some((device_path, connected)) = device else {
-        return AudioState::classify::<&str>(None, &[]);
+        return AudioState::classify::<&str, &str>(None, &[]);
     };
-    let states: Vec<String> = objects
-        .values()
-        .filter_map(|ifaces| ifaces.get("org.bluez.MediaTransport1"))
-        .filter(|props| {
+    let transports: Vec<(String, String)> = objects
+        .iter()
+        .filter_map(|(path, ifaces)| Some((path, ifaces.get("org.bluez.MediaTransport1")?)))
+        .filter(|(_, props)| {
             props
                 .get("Device")
                 .and_then(|v| OwnedObjectPath::try_from(v.try_clone().ok()?).ok())
                 .is_some_and(|p| &p == device_path)
         })
-        .map(|props| {
-            props
+        .map(|(path, props)| {
+            let state = props
                 .get("State")
                 .and_then(string)
-                .unwrap_or_else(|| "idle".to_string())
+                .unwrap_or_else(|| "idle".to_string());
+            (path.to_string(), state)
         })
         .collect();
-    AudioState::classify(Some(connected), &states)
+    AudioState::classify(Some(connected), &transports)
 }
 
 fn string(value: &OwnedValue) -> Option<String> {
@@ -80,7 +81,9 @@ pub fn describe(state: AudioState) -> &'static str {
     match state {
         AudioState::Unknown => "unknown to BlueZ (not paired with this computer)",
         AudioState::Disconnected => "not connected to this computer",
-        AudioState::ConnectedWithoutAudio => "connected, but without audio to this computer",
+        AudioState::ConnectedWithoutAudio => {
+            "connected, but without a working audio stream to this computer"
+        }
         AudioState::Idle => "connected, audio ready (not playing)",
         AudioState::Playing => "connected, playing audio from this computer",
     }

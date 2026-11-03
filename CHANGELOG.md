@@ -18,8 +18,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 * `--audio-state` and a GUI row show how BlueZ sees the device's audio
   link to this computer (`org.bluez.Device1` and
   `org.bluez.MediaTransport1` over D-Bus), with a hint to reconnect
-  from this computer when it is connected without audio. `--info`
-  prints it too. Library: `AudioState`.
+  from this computer when it is connected without a working audio
+  stream. A transport outside the device's stream endpoints
+  (`dev_XX/fd0` instead of `dev_XX/sepN/fd0`) counts as not working:
+  that is what BlueZ leaves after a headphone-started connection that
+  plays nothing. `--info` prints it too. Library: `AudioState`.
 * `--pairing` (and the GUI pairing switch) on the SoundLink Color II.
   Entering pairing mode disconnects every audio source.
 

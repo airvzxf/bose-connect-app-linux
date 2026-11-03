@@ -105,8 +105,11 @@ cover the Rust migration + CI/CD.
 - [ ] **GUI.**
     - [ ] The BlueZ audio row is refreshed with the device (every
           60 s). Follow `PropertiesChanged` for live updates.
-    - [ ] Check the "connected without audio" hint on hardware: let
-          the QC Ultra start the connection on this laptop.
+    - [x] Check the "connected without audio" hint on hardware
+          (2026-11-03, QC Ultra, 3 of 3 headphone-started connections:
+          BlueZ kept a transport outside any stream endpoint, reported
+          it `active`, and nothing played; the hint showed, and cleared
+          after reconnecting from the laptop).
     - [ ] Every device answer rebuilds the whole page, which flickers.
           Update the widgets in place.
 
