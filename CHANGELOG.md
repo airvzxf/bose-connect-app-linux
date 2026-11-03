@@ -13,11 +13,17 @@ the project uses [Semantic Versioning](https://semver.org/).
   (reopened after a socket error), instead of the simulated device.
   Device calls run off the GTK main thread, one at a time; a real
   device is re-read every 60 s. The last address is remembered.
-  Pause is refused on the QC Ultra, as in the CLI. Not yet tested
-  against hardware.
+  Pause is refused on the QC Ultra, as in the CLI. Tested on a QC
+  Ultra, a QC35 II and a SoundLink Color II.
+* `--pairing` (and the GUI pairing switch) on the SoundLink Color II.
+  Entering pairing mode disconnects every audio source.
 
 ### Fixed
 
+* `device_info` read the name of a Bose device (another SoundLink
+  Color II in the list) with a leading `01` byte: such devices have 3
+  bytes between the status and the name, not 2. The status byte's
+  high bits no longer turn a connected device into "disconnected".
 * GUI mock: every setting change froze the window (each setter took
   a read lock while holding the write lock).
 * GUI: the voice-prompts switch and the profiles no longer reset the

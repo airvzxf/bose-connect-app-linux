@@ -384,13 +384,32 @@ tried on a QC35.
 # number of devices = ll / 6. cc: 01 one device connected, 03 two
 ```
 
+The list is ordered by most recent use: on a SoundLink Color II the
+laptop came first while it was the active source, the phone after it
+was (2026-11-02).
+
 ### `04 05` device info (C) — `device_info(address)`
 
 ```text
 > 04 05 01 06 <addr>
-< 04 05 03 ll <addr> ss gg gg <name>
-# ss: 00 disconnected, 01 connected, 03 this device. gg gg: unknown.
+< 04 05 03 ll <addr> ss <extra> <name>
+# ss bits 0-1: 00 disconnected, 01 connected, 03 this device.
+# ss bit 2 (04): a Bose device; <extra> is then 3 bytes, else 2.
 ```
+
+SoundLink Color II, firmware 4.0.1 (2026-11-02), asked about the three
+devices in its list:
+
+```text
+< 04 05 03 20 2c41a10b7c82 c4 40 0d 01 "Bose SLC II Black 🐺"
+< 04 05 03 26 d46d6d174da4 03 01 03 "GT73EVR-7RF-Titan-Pro-CachyOS"
+< 04 05 03 1d 0062018c0cb7 01 02 03 "motorola edge 50 neo"
+```
+
+For the other speaker the 3 bytes start with its product id `40 0d`.
+The meaning of the last byte (`01`) and of the 2 bytes of other
+devices is unknown, and so are the high status bits (`c4` here, `54`
+in an earlier capture of the same speaker).
 
 ### `04 01` connect a source — `connect_device(address)`
 
@@ -450,7 +469,26 @@ Whether a late reply follows is not known.
 # xx: 00 off, 01 on
 ```
 
-Only on the QC35 series (`has_pairing_toggle`).
+Allowed on the QC35 series and the SoundLink Color II
+(`has_pairing_toggle`). SoundLink Color II, firmware 4.0.1
+(2026-11-02):
+
+```text
+> 04 08 05 01 01
+< 04 08 07 00                       # PROCESSING
+< 04 08 06 01 01                    # RESULT
+< 05 01 03 09 00 02 01 00 00 00 00 00 00
+< 04 02 06 06 <laptop>  04 02 06 06 <phone>
+> 04 08 01 00
+< 04 08 03 01 01
+> 04 08 05 01 00
+< 04 08 06 01 00
+```
+
+Entering pairing mode disconnected both audio sources (the laptop and
+the phone); the control connection stayed open. Leaving it does not
+reconnect them, and the speaker then took a few seconds to answer a
+new connection.
 
 ## Block 05: media and volume
 
@@ -494,9 +532,23 @@ on the SoundLink Color II and the QC35 II; the QC Ultra sends `00 0f 01`.
 ```
 
 SoundLink Color II (4.0.1): `04` restarts the current track when it has
-been playing for a few seconds, like a physical button. `02` is
-acknowledged the same way but has no visible effect, whether the player
-is playing or paused.
+been playing for a few seconds, like a physical button.
+
+`02` pauses only when the source tells the speaker that it is playing.
+With an Android phone playing Spotify (2026-11-02), `02` paused it and
+`01` resumed it, each time within a second:
+
+```text
+> 05 03 05 01 02
+< 05 03 07 00  05 03 06 00  05 04 03 03 02 00 51   # paused at 81 s
+> 05 03 05 01 01
+< 05 03 07 00  05 03 06 00  05 04 03 03 01 00 51   # playing
+< 05 06 07 00  05 06 03 .. 00 <title>  ... 05 06 06 00
+```
+
+With the laptop as the source (an earlier test), `02` was acknowledged
+the same way but the player saw nothing, whether it was playing or
+paused. The library does not expose `02`.
 
 QC Ultra (1.6.7, 2026-10-07), with multipoint on, the phone playing
 and the laptop connected on channel 1:
@@ -666,7 +718,15 @@ power-on with the phone's Bluetooth off, BlueZ opened 13 Bluetooth
 links and 24 RFCOMM channels of its own (hands-free profile and the
 like) and the speaker stayed on (2026-10-29). After a disconnect the
 speaker may not answer a new connection (Page Timeout) for 10 to 30 s.
-Whether the phone's Bose app connections count is untested.
+The phone's Bose app connections do count. After a fresh power-on,
+the app was opened and closed 6 times; the laptop's second control
+connection worked, and the speaker was found switched off before the
+third one could open (2026-11-02). That also explains a speaker that
+switched off after only two CLI connections.
+
+With a 3.5 mm cable plugged in, the speaker switches Bluetooth off
+completely (its Bluetooth light goes off and connections fail with
+`EHOSTDOWN`), so nothing can be read over RFCOMM in that mode.
 
 Every CLI invocation opens and closes one connection, so on this speaker
 a handful of commands in a row is enough to switch it off. Long-lived
@@ -675,5 +735,4 @@ clients (the GUI) should keep one connection open.
 Media keys work; volume scale 100 with 99 the highest accepted level;
 the volume reply comes twice; the paired-device replies differ from
 the C acknowledgements (see block 04). Keeps at most two connections.
-`device_info` returns the Black speaker's name with a leading `01`
-byte, so the 2-byte skip after the status is probably 3 bytes there.
+Pairing mode works (see block 04).

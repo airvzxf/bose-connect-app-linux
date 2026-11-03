@@ -394,9 +394,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         // check the protocol would waste ~3 s (1 s per retry)
         // waiting for a response that never comes before
         // surfacing AckMismatch. The C version does not
-        // short-circuit here; the SoundLink II returns
-        // AckMismatch on `SET_PAIRING` after a full timeout
-        // budget.
+        // short-circuit here.
         let (device_id, _) = device.device_id()?;
         if !bose_connect::has_pairing_toggle(device_id) {
             bail!("this device does not support pairing-toggle");

@@ -34,7 +34,7 @@ use crate::types::{
     AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, EqBand, EqualizerBand, ImmersiveAudio,
     MediaKey, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, ShortcutAction, MAX_AUDIO_MODES,
     MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NOISE_CANCELLING_0C, NOISE_CANCELLING_14,
-    NOISE_CANCELLING_20, QC_ULTRA_HEADPHONES, VP_ENABLE_BIT, VP_MASK,
+    NOISE_CANCELLING_20, QC_ULTRA_HEADPHONES, SOUNDLINK_COLOR_II, VP_ENABLE_BIT, VP_MASK,
 };
 
 // Re-export the helper that wraps CN_BASE_PACK_LEN + MAX_NAME_LEN - 1
@@ -198,6 +198,12 @@ const OP_ERROR: u8 = 0x04;
 const OP_RESULT: u8 = 0x06;
 const OP_PROCESSING: u8 = 0x07;
 
+/// Device-info status bit set for a Bose device (see
+/// [`get_device_info`]).
+const BOSE_DEVICE_BIT: u8 = 0x04;
+/// Device-info status bits that hold the connection state.
+const CONNECTION_BITS: u8 = 0x03;
+
 const BT_ADDR_LEN: usize = 6;
 const CN_BASE_PACK_LEN: usize = 4;
 const MAX_BT_PACK_LEN_T: usize = crate::types::MAX_BT_PACK_LEN;
@@ -227,7 +233,7 @@ pub fn has_noise_cancelling(device_id: u16) -> bool {
 /// Conservative allow-list: the QC35 series (device IDs `0x4014`
 /// and `0x4020`) and the QC Ultra Headphones (`0x4066`, same
 /// packet format, verified on hardware) expose self-voice. The
-/// SoundLink II (`0x400d`) does not. If a new device is found
+/// SoundLink Color II (`0x400d`) does not. If a new device is found
 /// to support self-voice, add its device ID here and the CLI's
 /// pre-flight check will start allowing the command.
 pub fn has_self_voice(device_id: u16) -> bool {
@@ -258,13 +264,19 @@ pub fn has_legacy_settings(device_id: u16) -> bool {
 /// `has_pairing_toggle` is a new predicate that does not exist
 /// in the original C code. It mirrors [`has_self_voice`] but
 /// for the `--pairing` flag (which controls RFCOMM
-/// discoverability). Only the QC35 series supports it; the
-/// SoundLink II returns an `AckMismatch` immediately, but the
-/// 1 s timeout per retry means the C version wastes ~3 s on
-/// every call before failing. Pre-flighting here saves that
-/// wall-clock cost.
+/// discoverability). Allow-list: the QC35 series and the
+/// SoundLink Color II (`0x400d`). On a SoundLink Color II,
+/// firmware 4.0.1 (2026-11-02), `04 08 05 01 01` is answered
+/// with PROCESSING `04 08 07 00` and RESULT `04 08 06 01 01`,
+/// and entering pairing mode disconnects every connected audio
+/// source (`04 02 06 06 <addr>` for each); the control
+/// connection stays open. Pre-flighting the other devices saves
+/// the ~3 s the C version spends on retries before failing.
 pub fn has_pairing_toggle(device_id: u16) -> bool {
-    matches!(device_id, NOISE_CANCELLING_14 | NOISE_CANCELLING_20)
+    matches!(
+        device_id,
+        NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | SOUNDLINK_COLOR_II
+    )
 }
 
 /// `int send_packet(int sock, const void *send, size_t send_n,
@@ -744,9 +756,16 @@ pub fn get_device_info<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<Dev
 
     io.bose_send(&send)?;
 
-    // Reply `04 05 03 ll <addr> ss gg gg <name>`.
+    // Reply `04 05 03 ll <addr> ss <extra> <name>`. Bit 0x04 of the
+    // status marks a Bose device; its <extra> is 3 bytes, the product
+    // id and one more byte (`40 0d 01` for a SoundLink Color II
+    // Black). Other devices have 2 bytes of unknown meaning (`01 03`
+    // for a laptop, `02 03` for a phone). Captured on a SoundLink
+    // Color II, firmware 4.0.1 (2026-11-02). The low 2 bits of the
+    // status are the connection state; the high bits (`c4`, `54`
+    // seen for the Black speaker) are unknown.
     let payload = read_response(io, 0x04, 0x05)?;
-    if payload.len() < BT_ADDR_LEN + 1 + BYTES_POSITION_2 {
+    if payload.len() < BT_ADDR_LEN + 1 {
         return Err(BoseError::AckMismatch);
     }
     let (addr, rest) = payload.split_at(BT_ADDR_LEN);
@@ -756,12 +775,13 @@ pub fn get_device_info<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<Dev
             format!("{:02X?}", addr),
         ));
     }
-    // After the status byte come 2 bytes of garbage. The C code's
-    // comment "TODO(wolf): figure out what the first byte of garbage
-    // is for" is preserved here as a literal 2-byte skip — we don't
-    // pretend to know what they mean.
-    let status = DeviceStatus::from_u8(rest[0]).unwrap_or(DeviceStatus::Disconnected);
-    let name = &rest[1 + BYTES_POSITION_2..];
+    let extra = if rest[0] & BOSE_DEVICE_BIT != 0 { 3 } else { 2 };
+    if rest.len() < 1 + extra {
+        return Err(BoseError::AckMismatch);
+    }
+    let status =
+        DeviceStatus::from_u8(rest[0] & CONNECTION_BITS).unwrap_or(DeviceStatus::Disconnected);
+    let name = &rest[1 + extra..];
     if name.len() > MAX_NAME_LEN_T {
         return Err(BoseError::InvalidArgument(format!(
             "device name length {} exceeds MAX_NAME_LEN={}",

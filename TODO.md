@@ -63,13 +63,11 @@ cover the Rust migration + CI/CD.
           the like) do not count towards the SoundLink Color II's
           9-connection limit: 24 of them after a fresh power-on, and
           the speaker stayed on (2026-10-29).
-    - [ ] A SoundLink Color II switched off after only two CLI
-          connections on 2026-10-27, after the user had disconnected
-          and reconnected it by hand. Next hypothesis: the phone's
-          Bose app connections to the control channel count too.
-          Test: fresh power-on, phone Bluetooth on, open and close the
-          app N times (logged), then CLI connections one at a time
-          until it switches off.
+    - [x] A SoundLink Color II switched off after only two CLI
+          connections on 2026-10-27. Cause: the phone's Bose app
+          connections count towards the limit too (2026-11-02: 6 app
+          openings, then the speaker was off before the third CLI
+          connection).
     - [x] On this CachyOS laptop, Bose headphones that reconnect often
           play nothing. Cause (QC Ultra, 2026-10-29): when the
           headphones start the connection, BlueZ starts its own A2DP
@@ -94,9 +92,13 @@ cover the Rust migration + CI/CD.
     - [ ] QC Ultra: decode `1f 08`, `1f 02`, the audio-mode settings
           bytes, and how the app creates custom modes (`1f 06` SET);
           "Source / multipoint" settings; noise-cancelling level.
-    - [ ] `get_device_info` shows the SoundLink Color II Black's name
-          with a leading `01`: the garbage after the status byte is
-          probably 3 bytes there, not 2. Capture the raw reply.
+    - [x] `get_device_info` showed the SoundLink Color II Black's name
+          with a leading `01`: a Bose device (status bit `04`) has 3
+          bytes before the name, other devices 2 (captured 2026-11-02).
+    - [x] SoundLink Color II pairing mode works (`--pairing`), and
+          entering it disconnects every audio source (2026-11-02).
+    - [ ] Paired-list byte `cc` (`01`, `03`): a count or one bit per
+          list position? Every capture had the connected devices first.
     - [ ] The QC Ultra sends no notifications to a second client. Find
           out whether it needs a subscription request.
 
