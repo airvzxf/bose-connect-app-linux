@@ -113,8 +113,14 @@ cover the Rust migration + CI/CD.
     - [x] Every device answer rebuilt the whole page, which flickered.
           The page is now rebuilt only when the snapshot changes (or a
           setter fails), and keeps its scroll position.
-    - [ ] Update the widgets in place instead of rebuilding the page
-          when the snapshot does change.
+    - [x] Decided (2026-11-03): keep rebuilding the whole page when
+          the snapshot changes, instead of updating widgets in place
+          or per section. Every setter reads the device back and the
+          page is drawn from that snapshot, so it never shows a stale
+          value. Per-section updates can miss an input (an audio mode
+          also changes other settings) and leave old data on screen,
+          as the phone app does. The cost is a visible redraw when the
+          user changes a setting.
 
 - [ ] **Architecture idea: device profiles** (not a decision).
     - [ ] Spike [`docs/ideas/device-profiles.md`](docs/ideas/device-profiles.md)
