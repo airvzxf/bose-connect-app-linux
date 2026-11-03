@@ -12,7 +12,37 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+/// Embed every `locales/<lang>.ftl` (Fluent) into the binary: write
+/// `$OUT_DIR/locales.rs` with one `(lang, source)` pair per file, so
+/// a new language is one new file and no code change.
+fn embed_locales() {
+    println!("cargo:rerun-if-changed=locales");
+    let dir = Path::new("locales");
+    let mut locales: Vec<(String, String)> = fs::read_dir(dir)
+        .expect("read locales/")
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            (path.extension()? == "ftl").then(|| {
+                let lang = path.file_stem().unwrap().to_str().unwrap().to_owned();
+                let abs = fs::canonicalize(&path).expect("locale path");
+                (lang, abs.to_str().expect("UTF-8 path").to_owned())
+            })
+        })
+        .collect();
+    locales.sort();
+    let mut out = String::from("/// `(language tag, Fluent source)` for every bundled locale.\n");
+    out.push_str("pub(crate) const LOCALES: &[(&str, &str)] = &[\n");
+    for (lang, path) in &locales {
+        out.push_str(&format!("    ({lang:?}, include_str!({path:?})),\n"));
+    }
+    out.push_str("];\n");
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR set by cargo");
+    fs::write(Path::new(&out_dir).join("locales.rs"), out).expect("write locales.rs");
+}
+
 fn main() {
+    embed_locales();
+
     // Re-run when any resource file changes.
     println!("cargo:rerun-if-changed=resources");
     println!("cargo:rerun-if-env-changed=BOSE_GUI_GRESOURCE");

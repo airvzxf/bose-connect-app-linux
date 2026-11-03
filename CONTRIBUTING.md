@@ -19,6 +19,32 @@ Follow this simple steps to start the adventure:
 - Optional, we can have a Google meeting to discuss the changes, also we can
   share the screen.
 
+## Translating the GUI
+
+The graphical interface (`crates/bose-connect-gui`) uses [Fluent][fluent].
+Each language is one file in `crates/bose-connect-gui/locales/`, named
+after its language code: `en.ftl` (English, the source language and the
+fallback), `es.ftl` (Spanish). The GUI follows the desktop language
+(`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`) and shows English for
+anything a translation lacks.
+
+To add a language, for example French:
+
+1. Copy `en.ftl` to `fr.ftl` (`pt-BR.ftl` for a regional variant).
+2. Translate the text after each `=`. Keep the message ids (left of
+   the `=`), the `{ $name }` arguments, and the brand names (Bose,
+   Bose Connect, BlueZ, RFCOMM) as they are.
+3. Run `cargo test -p bose-connect-gui`: it fails if a file does not
+   parse or does not have exactly the messages of `en.ftl`.
+4. Check it in the window: `LC_ALL=fr_FR.UTF-8 cargo run -p
+   bose-connect-gui`. Without a Bose device, add
+   `BOSE_CONNECT_GUI_SIMULATOR=1` to see every setting.
+
+No code change is needed: the build embeds every `.ftl` file it finds.
+When you add or change a message in the code, add it to `en.ftl` and
+to every other locale (in English if you cannot translate it); the
+same test points out what is missing.
+
 ## Versioning and releases
 
 - Version nomenclature `v1.2.20210809.9ee26d8`, this is the description for
@@ -124,3 +150,5 @@ scanners.
 [contribute-github]: https://docs.github.com/en/github/collaborating-with-pull-requests
 
 [development-notes]: ./DEVELOPMENT.md
+
+[fluent]: https://projectfluent.org/

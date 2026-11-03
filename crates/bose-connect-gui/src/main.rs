@@ -573,16 +573,16 @@ fn activate(
                     NotificationLevel::Warning
                 };
                 let body = match now_band {
-                    0 => "Battery critical — last 5 %. Plug in immediately.",
-                    1 => "Battery low — plug in soon.",
-                    _ => "Battery dropped below threshold.",
+                    0 => bose_connect_gui::t!("notify-battery-critical"),
+                    1 => bose_connect_gui::t!("notify-battery-low"),
+                    _ => bose_connect_gui::t!("notify-battery-threshold"),
                 };
                 let title = "Bose Connect";
                 tracing::info!(
                     target: "battery",
                     "cross band {prev_band} -> {now_band} (battery={b}%); notifying"
                 );
-                let _ = Notifications::notify(title, body, level);
+                let _ = Notifications::notify(title, &body, level);
             }
 
             // Mirror the latest snapshot into the SNI so the
@@ -1088,7 +1088,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
         },
         M::SetName(name) => match outcome.snapshot() {
             Ok(snap) => {
-                model.log_success(format!("nombre actualizado: {name}"));
+                model.log_success(format!("renamed to {name}"));
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
             }
@@ -1096,7 +1096,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
         },
         M::SetVolume(level) => match outcome.snapshot() {
             Ok(snap) => {
-                model.log_success(format!("volumen ajustado a {level} / 75"));
+                model.log_success(format!("volume set to {level} / 75"));
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
             }
@@ -1104,13 +1104,13 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
         },
         M::SendMediaKey(key) => match outcome.unit() {
             Ok(()) => {
-                model.log_success(format!("comando multimedia enviado: {key:?}"));
+                model.log_success(format!("media key sent: {key:?}"));
             }
             Err(e) => model.log_error(format!("media key: {e}")),
         },
         M::SetSelfVoice(_) => match outcome.snapshot() {
             Ok(snap) => {
-                model.log_success("voz propia configurada");
+                model.log_success("set self-voice");
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
             }
@@ -1119,7 +1119,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
         M::PairedConnect(addr) => match outcome.snapshot() {
             Ok(snap) => {
                 let formatted = bose_connect_gui::i18n::format_address(addr);
-                model.log_success(format!("conectando a {formatted}"));
+                model.log_success(format!("connecting source {formatted}"));
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
             }
@@ -1128,7 +1128,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
         M::PairedDisconnect(addr) => match outcome.snapshot() {
             Ok(snap) => {
                 let formatted = bose_connect_gui::i18n::format_address(addr);
-                model.log_success(format!("desconectando {formatted}"));
+                model.log_success(format!("disconnecting source {formatted}"));
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
             }
@@ -1137,7 +1137,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
         M::PairedRemove(addr) => match outcome.snapshot() {
             Ok(snap) => {
                 let formatted = bose_connect_gui::i18n::format_address(addr);
-                model.log_success(format!("dispositivo {formatted} eliminado"));
+                model.log_success(format!("removed source {formatted}"));
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
             }

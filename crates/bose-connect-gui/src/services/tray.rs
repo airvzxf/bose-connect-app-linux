@@ -547,11 +547,11 @@ fn prop_value(snap: &TraySnapshot, property: &str) -> gtk::glib::Variant {
         "Category" => "ApplicationStatus".to_variant(),
         "Id" => "com.airvzxf.bose-connect-gui".to_variant(),
         "Title" => if snap.connected {
-            format!("Bose Connect ({}%)", snap.battery)
+            crate::t!("tray-battery", percent = snap.battery)
         } else if snap.name.is_empty() {
             "Bose Connect for Linux".to_string()
         } else {
-            format!("{} — disconnected", snap.name)
+            crate::t!("tray-disconnected", name = snap.name.as_str())
         }
         .to_variant(),
         "Status" => status_for(snap).as_str().to_variant(),
@@ -567,7 +567,7 @@ fn prop_value(snap: &TraySnapshot, property: &str) -> gtk::glib::Variant {
         // distinct "alarm" glyph yet; KDE Plasma 6 will simply
         // NOT animate between the two when they're identical).
         "AttentionIconPixmap" => pixmap_variant(1),
-        "AttentionIconDescription" => "Bose Connect — battery is low".to_variant(),
+        "AttentionIconDescription" => crate::t!("tray-battery-low").to_variant(),
         "OverlayIconName" => String::new().to_variant(),
         "OverlayIconPixmap" => {
             // a(iiay) — empty array; KDE represents "no

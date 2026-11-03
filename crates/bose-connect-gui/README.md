@@ -21,8 +21,9 @@ crates/bose-connect-gui
 │   │   ├── bluetooth.rs     Hand-rolled BlueZ discovery via gio::DBus
 │   │   ├── notifications.rs notify-rust → org.freedesktop.Notifications
 │   │   └── media_player.rs  MPRIS state holder
-│   ├── i18n            label helpers
+│   ├── i18n            the translation layer (Fluent, `t!`)
 │   └── transport.rs    in-process BoseIo simulator with battery-drain tick
+├── locales           one Fluent file per language (en.ftl, es.ftl)
 └── resources
     ├── style.css        hero-card, tiles, sparkline, quiet-mode
     ├── icons/…          symbolic + full-color app icon (SVG)
@@ -79,7 +80,9 @@ gdbus call --session --dest org.freedesktop.DBus --object-path / \
 | `--screenshot PATH` | Save the first frame to `PATH` (headless) |
 | `--dump-tree` | Print the GTK widget tree, one widget per line, to stdout |
 
-The app always talks to real devices.
+The app always talks to real devices. Its text follows the desktop
+language: English by default, Spanish for `es_*` locales (see
+"Translating the GUI" in `CONTRIBUTING.md` to add one).
 
 ### Simulated device (developers only)
 
