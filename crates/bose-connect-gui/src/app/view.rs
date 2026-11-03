@@ -132,7 +132,7 @@ fn build_render_handle(
                 .set_visible(active_page == Page::Overview);
             header_widgets
                 .window_title
-                .set_subtitle(active_page.subtitle());
+                .set_subtitle(&active_page.subtitle());
 
             header_widgets
                 .device_label

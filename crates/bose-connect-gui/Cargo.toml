@@ -50,11 +50,14 @@ rand = "0.10"
 flume = "0.12"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 cairo-rs = "0.22"
+fluent-bundle = "0.16"
+unic-langid = "0.9"
 
 [build-dependencies]
 glib-build-tools = "0.22"
 
 [dev-dependencies]
+fluent-syntax = "0.12"
 # `assets` module tests use a tempdir-backed $XDG_DATA_HOME.
 tempfile = "3"
 

@@ -79,17 +79,19 @@ impl Page {
         }
     }
 
+    /// Name of the page in logs (not translated).
     pub fn title(self) -> &'static str {
         match self {
-            Page::Overview => "Bose Connect",
-            Page::MyBose => "Mis dispositivos Bose",
+            Page::Overview => "Overview",
+            Page::MyBose => "My Bose devices",
         }
     }
 
-    pub fn subtitle(self) -> &'static str {
+    /// The header bar subtitle, in the desktop language.
+    pub fn subtitle(self) -> String {
         match self {
-            Page::Overview => "Panel de control y ajustes",
-            Page::MyBose => "Dispositivos emparejados en esta laptop",
+            Page::Overview => crate::t!("page-overview-subtitle"),
+            Page::MyBose => crate::t!("page-mybose-subtitle"),
         }
     }
 }
