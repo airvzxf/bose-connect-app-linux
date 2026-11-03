@@ -110,8 +110,11 @@ cover the Rust migration + CI/CD.
           BlueZ kept a transport outside any stream endpoint, reported
           it `active`, and nothing played; the hint showed, and cleared
           after reconnecting from the laptop).
-    - [ ] Every device answer rebuilds the whole page, which flickers.
-          Update the widgets in place.
+    - [x] Every device answer rebuilt the whole page, which flickered.
+          The page is now rebuilt only when the snapshot changes (or a
+          setter fails), and keeps its scroll position.
+    - [ ] Update the widgets in place instead of rebuilding the page
+          when the snapshot does change.
 
 - [ ] **Architecture idea: device profiles** (not a decision).
     - [ ] Spike [`docs/ideas/device-profiles.md`](docs/ideas/device-profiles.md)

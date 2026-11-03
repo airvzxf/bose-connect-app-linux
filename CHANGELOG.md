@@ -28,6 +28,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+* GUI: the page flickered after every device answer, including the
+  60 s refresh, because it was rebuilt each time. It is now rebuilt
+  only when the device snapshot changed or a setter failed, and keeps
+  its scroll position when it is.
 * GUI Bluetooth discovery found no devices (object paths were read as
   strings) and would have panicked on `InterfacesAdded` (an
   `a{sa{sv}}` dict passed to `VariantDict`). Bose devices are now
