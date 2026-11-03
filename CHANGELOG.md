@@ -15,11 +15,21 @@ the project uses [Semantic Versioning](https://semver.org/).
   device is re-read every 60 s. The last address is remembered.
   Pause is refused on the QC Ultra, as in the CLI. Tested on a QC
   Ultra, a QC35 II and a SoundLink Color II.
+* `--audio-state` and a GUI row show how BlueZ sees the device's audio
+  link to this computer (`org.bluez.Device1` and
+  `org.bluez.MediaTransport1` over D-Bus), with a hint to reconnect
+  from this computer when it is connected without audio. `--info`
+  prints it too. Library: `AudioState`.
 * `--pairing` (and the GUI pairing switch) on the SoundLink Color II.
   Entering pairing mode disconnects every audio source.
 
 ### Fixed
 
+* GUI Bluetooth discovery found no devices (object paths were read as
+  strings) and would have panicked on `InterfacesAdded` (an
+  `a{sa{sv}}` dict passed to `VariantDict`). Bose devices are now
+  recognised by BlueZ's `Modalias` vendor id `009E`; none of the
+  tested devices lists the Bose Connect UUID.
 * `device_info` read the name of a Bose device (another SoundLink
   Color II in the list) with a leading `01` byte: such devices have 3
   bytes between the status and the name, not 2. The status byte's

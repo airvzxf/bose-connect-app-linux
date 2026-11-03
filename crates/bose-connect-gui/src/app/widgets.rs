@@ -553,6 +553,47 @@ impl HeroCard {
     }
 }
 
+/// Row that shows how BlueZ sees the audio link to this computer,
+/// with the reconnect advice when it is connected without audio.
+fn bluez_audio_row(state: bose_connect::AudioState) -> adw::ActionRow {
+    use bose_connect::AudioState;
+    let (title, icon) = match state {
+        AudioState::Unknown => (
+            "No emparejado con esta computadora",
+            "bluetooth-disabled-symbolic",
+        ),
+        AudioState::Disconnected => (
+            "Sin conexión de audio con esta computadora",
+            "bluetooth-disabled-symbolic",
+        ),
+        AudioState::ConnectedWithoutAudio => (
+            "Conectado, pero sin audio desde esta computadora",
+            "dialog-warning-symbolic",
+        ),
+        AudioState::Idle => ("Audio listo (en pausa)", "audio-speakers-symbolic"),
+        AudioState::Playing => (
+            "Reproduciendo audio de esta computadora",
+            "audio-speakers-symbolic",
+        ),
+    };
+    let row = adw::ActionRow::new();
+    row.set_title("Audio en esta computadora");
+    row.set_subtitle(if state.needs_reconnect_hint() {
+        "Conectado, pero sin audio desde esta computadora. Si esperas sonido de aquí, \
+         desconecta el dispositivo y vuelve a conectarlo desde esta computadora: cuando el \
+         dispositivo inicia la conexión, BlueZ puede no abrir el audio."
+    } else {
+        title
+    });
+    row.set_subtitle_lines(0);
+    let image = Image::from_icon_name(icon);
+    if state.needs_reconnect_hint() {
+        image.add_css_class("warning");
+    }
+    row.add_prefix(&image);
+    row
+}
+
 // ---------------------------------------------------------------------------
 // OverviewPage (Main unified control center)
 // ---------------------------------------------------------------------------
@@ -572,6 +613,11 @@ impl OverviewPage {
         if let Some(snapshot) = &model.snapshot {
             let audio_group = adw::PreferencesGroup::new();
             audio_group.set_title("Audio y Reproducción");
+
+            // Fila 0: el enlace de audio según BlueZ.
+            if let Some(state) = snapshot.audio {
+                audio_group.add(&bluez_audio_row(state));
+            }
 
             // Fila 1: Control multimedia
             let media_row = adw::ActionRow::new();

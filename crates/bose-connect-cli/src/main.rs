@@ -9,6 +9,8 @@
 //!
 //! Run `bose-connect-app-linux --help` for the full usage string.
 
+mod bluez;
+
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -43,6 +45,7 @@ use clap::{ArgGroup, Parser, ValueHint};
             "prompt_language", "voice_prompts", "pairing", "self_voice",
             "connect_device", "disconnect_device", "remove_device", "send_packet",
             "audio_mode", "set_volume", "send_media_key", "active_device", "device_bd_addr",
+            "audio_state",
         ])
 ))]
 struct Cli {
@@ -269,6 +272,18 @@ struct Cli {
     ])]
     device_bd_addr: bool,
 
+    /// Print how BlueZ sees the device's audio link to this computer,
+    /// without opening a Bose connection.
+    #[arg(long = "audio-state", conflicts_with_all = &[
+        "info", "device_status", "firmware_version", "serial_number", "battery_level",
+        "paired_devices", "device_id", "name", "auto_off", "noise_cancelling",
+        "prompt_language", "voice_prompts", "pairing", "self_voice",
+        "connect_device", "disconnect_device", "remove_device", "send_packet",
+        "set_volume", "send_media_key", "active_device", "device_bd_addr", "audio_mode",
+        "channel",
+    ])]
+    audio_state: bool,
+
     /// Set equalizer bands (QC Ultra), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10.
     #[arg(long = "equalizer", value_name = "BANDS", group = "qc_ultra_setting")]
     equalizer: Option<String>,
@@ -331,6 +346,19 @@ fn main() -> ExitCode {
 }
 
 fn dispatch(cli: Cli) -> Result<()> {
+    // Read BlueZ before opening the Bose connection: that connection
+    // brings the Bluetooth link up by itself, and on a SoundLink Color
+    // II it counts towards the speaker's connection limit.
+    if cli.audio_state {
+        let state = bluez::audio_state(&cli.address)?;
+        println!("Audio: {}", bluez::describe(state));
+        if state.needs_reconnect_hint() {
+            println!("{}", bluez::RECONNECT_HINT);
+        }
+        return Ok(());
+    }
+    let audio = cli.info.then(|| bluez::audio_state(&cli.address));
+
     let device = match cli.channel {
         Some(channel) => BoseDevice::open_channel(&cli.address, channel),
         None => BoseDevice::open(&cli.address),
@@ -343,7 +371,18 @@ fn dispatch(cli: Cli) -> Result<()> {
     // failures. This survives the occasional dropped packet Bose
     // headphones emit during sustained polling.
     if cli.info {
-        return run_info(&mut device);
+        run_info(&mut device)?;
+        match audio {
+            Some(Ok(state)) => {
+                println!("Audio: {}", bluez::describe(state));
+                if state.needs_reconnect_hint() {
+                    println!("{}", bluez::RECONNECT_HINT);
+                }
+            }
+            Some(Err(e)) => println!("Audio: unavailable ({e:#})"),
+            None => {}
+        }
+        return Ok(());
     }
 
     if cli.device_status {

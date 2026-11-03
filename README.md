@@ -130,7 +130,15 @@ Usage: bose-connect-app-linux [options] <address>
     mode: quiet, aware, immersion, or a slot index
   --channel=<channel>
     Use this RFCOMM channel instead of the automatic choice (8, then 2, then 1).
+  --audio-state
+    Print how BlueZ sees the device's audio link to this computer, without
+    opening a Bose connection. `--info` prints it too.
 ```
+
+When a device is connected but this computer has no audio stream to
+it, `--audio-state` (and the GUI) suggest disconnecting and connecting
+again from this computer. On some systems, when the headphones start
+the connection themselves, BlueZ fails to open the audio stream.
 
 ### C / FFI
 

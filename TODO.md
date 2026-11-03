@@ -75,7 +75,7 @@ cover the Rust migration + CI/CD.
           failed: Device or resource busy`) and the stream never opens
           (0 of 6). When the laptop starts it, audio plays (5 of 5).
           Not related to the media-control lock. BlueZ is out of scope.
-    - [ ] CLI and GUI: show BlueZ's audio state over D-Bus
+    - [x] CLI and GUI: show BlueZ's audio state over D-Bus
           (`Device1.Connected`, and whether a `MediaTransport1` exists
           and its state). When the device is connected without a media
           transport, suggest disconnecting and reconnecting from this
@@ -103,6 +103,10 @@ cover the Rust migration + CI/CD.
           out whether it needs a subscription request.
 
 - [ ] **GUI.**
+    - [ ] The BlueZ audio row is refreshed with the device (every
+          60 s). Follow `PropertiesChanged` for live updates.
+    - [ ] Check the "connected without audio" hint on hardware: let
+          the QC Ultra start the connection on this laptop.
     - [ ] Every device answer rebuilds the whole page, which flickers.
           Update the widgets in place.
 

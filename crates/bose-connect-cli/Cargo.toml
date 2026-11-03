@@ -22,3 +22,6 @@ path = "src/main.rs"
 bose-connect = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }
+# BlueZ audio state over D-Bus (`--audio-state`). Already in the
+# lockfile through the GUI's notify-rust.
+zbus = "5"

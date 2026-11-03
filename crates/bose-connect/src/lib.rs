@@ -51,6 +51,7 @@
 #![warn(unreachable_pub)]
 
 pub mod address;
+pub mod audio_state;
 pub mod connection;
 pub mod error;
 pub mod io;
@@ -61,6 +62,7 @@ pub mod util;
 #[cfg(feature = "ffi")]
 pub mod ffi;
 
+pub use crate::audio_state::AudioState;
 pub use crate::connection::Connection;
 pub use crate::error::{BoseError, BoseResult};
 pub use crate::io::BoseIo;
