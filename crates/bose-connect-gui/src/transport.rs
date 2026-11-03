@@ -65,9 +65,9 @@ impl Default for MockSeed {
         }
         Self {
             address: demo::DEVICE.to_string(),
-            name: "Bose NC 700".to_string(),
+            name: "Bose QC35 II".to_string(),
             battery: 85,
-            firmware: "1.3.2".to_string(),
+            firmware: "4.8.1".to_string(),
             serial: "00000000000000000".to_string(),
             device_id: 0x4020,
             paired: vec![
