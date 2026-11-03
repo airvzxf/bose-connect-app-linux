@@ -41,13 +41,28 @@ pub struct DiscoveredDevice {
     pub name: String,
     pub paired: bool,
     pub connected: bool,
-    /// `True` only if the device advertises the Bose Connect
-    /// service UUID (`0000fddd-0000-1000-8000-00805f9b34fb`).
+    /// True when BlueZ's `Modalias` names Bose as the vendor
+    /// (`bluetooth:v009E…`), or the device lists a Bose UUID.
     pub is_bose: bool,
 }
 
 /// Bose Connect service UUID.
 pub const BOSE_UUID: &str = "0000fddd-0000-1000-8000-00805f9b34fb";
+
+/// Bluetooth SIG member UUID of Bose Corporation (`0xfebe`). Of the
+/// QC Ultra, QC35 II and SoundLink Color II, only the QC35 II lists
+/// it, and none lists [`BOSE_UUID`]; all three have a `Modalias` with
+/// vendor `009E` (Bose), product = the device id, and the firmware
+/// version (`bluetooth:v009Ep4066d0167` for a QC Ultra on 1.6.7).
+pub const BOSE_COMPANY_UUID: &str = "0000febe-0000-1000-8000-00805f9b34fb";
+
+/// True when a BlueZ `Modalias` (`bluetooth:vVVVVpPPPPdDDDD`) has
+/// the Bose vendor id `009E`.
+pub fn is_bose_modalias(modalias: &str) -> bool {
+    modalias
+        .get(..15)
+        .is_some_and(|p| p.eq_ignore_ascii_case("bluetooth:v009E"))
+}
 
 /// BlueZ bus name and object root.
 const BLUEZ_BUS_NAME: &str = "org.bluez";
@@ -55,6 +70,7 @@ const BLUEZ_OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
 const OBJECT_MANAGER_OBJECT_PATH: &str = "/";
 const BLUEZ_DEVICE_INTERFACE: &str = "org.bluez.Device1";
 const BLUEZ_ADAPTER_INTERFACE: &str = "org.bluez.Adapter1";
+const BLUEZ_TRANSPORT_INTERFACE: &str = "org.bluez.MediaTransport1";
 
 /// Manager for `org.bluez` device discovery. Holds the system-bus
 /// connection so the GUI can call into BlueZ from the glib main
@@ -263,7 +279,7 @@ fn handle_interfaces_added(
     snapshot: &Arc<Mutex<Vec<DiscoveredDevice>>>,
 ) {
     let path_v = body.try_child_value(0);
-    let path: Option<String> = path_v.as_ref().and_then(|v| v.get()).flatten();
+    let path: Option<String> = path_v.as_ref().and_then(|v| v.str().map(str::to_owned));
     let Some(path) = path else { return };
 
     let iface_v = match body.try_child_value(1) {
@@ -272,13 +288,9 @@ fn handle_interfaces_added(
     };
 
     // `iface_v` is the `a{sa{sv}}` dict of
-    // interface-name → props. Wrap it in a VariantDict and
-    // look up `org.bluez.Device1`.
-    let iface_dict = VariantDict::new(Some(&iface_v));
-    let dev_props_v = iface_dict
-        .lookup_value(BLUEZ_DEVICE_INTERFACE, None)
-        .or_else(|| iface_dict.lookup_value("org.bluez.Device1", None));
-    let Some(dev_props_v) = dev_props_v else {
+    // interface-name → props; only the `a{sv}` props fit a
+    // `VariantDict`.
+    let Some(dev_props_v) = interface_props(&iface_v, BLUEZ_DEVICE_INTERFACE) else {
         return;
     };
 
@@ -304,7 +316,7 @@ fn handle_interfaces_removed(
     snapshot: &Arc<Mutex<Vec<DiscoveredDevice>>>,
 ) {
     let path_v = body.try_child_value(0);
-    let path: Option<String> = path_v.as_ref().and_then(|v| v.get()).flatten();
+    let path: Option<String> = path_v.as_ref().and_then(|v| v.str().map(str::to_owned));
     let Some(path) = path else { return };
 
     let mut snap = snapshot.lock();
@@ -324,6 +336,8 @@ fn walk_managed_objects(
     tx: &mpsc::UnboundedSender<DiscoveryEvent>,
     snapshot: &Arc<Mutex<Vec<DiscoveredDevice>>>,
 ) {
+    // The reply is a tuple holding the `a{oa{sa{sv}}}` dict.
+    let body = &body.try_child_value(0).unwrap_or_else(|| body.clone());
     let n = body.n_children();
     for i in 0..n {
         let entry = match body.try_child_value(i) {
@@ -334,15 +348,13 @@ fn walk_managed_objects(
         // `{oa{sa{sv}}}`; the key is the object path and the
         // value is the `a{sa{sv}}` interface dict.
         let path_v = entry.try_child_value(0);
-        let path: Option<String> = path_v.as_ref().and_then(|v| v.get()).flatten();
+        let path: Option<String> = path_v.as_ref().and_then(|v| v.str().map(str::to_owned));
         let Some(path) = path else { continue };
         let iface_v = match entry.try_child_value(1) {
             Some(v) => v,
             None => continue,
         };
-        let iface_dict = VariantDict::new(Some(&iface_v));
-        let dev_props_v = iface_dict.lookup_value(BLUEZ_DEVICE_INTERFACE, None);
-        let Some(dev_props_v) = dev_props_v else {
+        let Some(dev_props_v) = interface_props(&iface_v, BLUEZ_DEVICE_INTERFACE) else {
             continue;
         };
         let dev_dict = VariantDict::new(Some(&dev_props_v));
@@ -379,7 +391,11 @@ fn decode_device(path: &str, device_dict: &VariantDict) -> Option<DiscoveredDevi
     let paired: bool = dict_lookup(device_dict, "Paired").unwrap_or(false);
     let connected: bool = dict_lookup(device_dict, "Connected").unwrap_or(false);
     let uuids: Vec<String> = dict_lookup(device_dict, "UUIDs").unwrap_or_default();
-    let is_bose = uuids.iter().any(|u| BOSE_UUID.eq_ignore_ascii_case(u));
+    let modalias: String = dict_lookup(device_dict, "Modalias").unwrap_or_default();
+    let is_bose = is_bose_modalias(&modalias)
+        || uuids.iter().any(|u| {
+            BOSE_UUID.eq_ignore_ascii_case(u) || BOSE_COMPANY_UUID.eq_ignore_ascii_case(u)
+        });
 
     Some(DiscoveredDevice {
         path: path.to_string(),
@@ -405,6 +421,7 @@ fn adapter_paths(conn: &gtk::gio::DBusConnection) -> Result<Vec<String>> {
         1_500,
         None::<&gtk::gio::Cancellable>,
     )?;
+    let body = body.try_child_value(0).unwrap_or(body);
     let n = body.n_children();
     let mut out = Vec::new();
     for i in 0..n {
@@ -413,7 +430,7 @@ fn adapter_paths(conn: &gtk::gio::DBusConnection) -> Result<Vec<String>> {
             None => continue,
         };
         let path_v = entry.try_child_value(0);
-        let path: Option<String> = path_v.as_ref().and_then(|v| v.get()).flatten();
+        let path: Option<String> = path_v.as_ref().and_then(|v| v.str().map(str::to_owned));
         let Some(path) = path else { continue };
         if !path.contains("/hci") || path.contains("/dev_") {
             continue;
@@ -422,15 +439,92 @@ fn adapter_paths(conn: &gtk::gio::DBusConnection) -> Result<Vec<String>> {
             Some(v) => v,
             None => continue,
         };
-        let iface_dict = VariantDict::new(Some(&iface_v));
-        if iface_dict
-            .lookup_value(BLUEZ_ADAPTER_INTERFACE, None)
-            .is_some()
-        {
+        if interface_props(&iface_v, BLUEZ_ADAPTER_INTERFACE).is_some() {
             out.push(path);
         }
     }
     Ok(out)
+}
+
+/// How BlueZ sees the audio link to the device at `address`: its
+/// `org.bluez.Device1` and the `org.bluez.MediaTransport1` objects
+/// that point at it. Blocking (one `GetManagedObjects`, 1.5 s
+/// timeout); safe to call off the main thread. `None` when the
+/// system bus or BlueZ is not reachable.
+pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
+    let conn =
+        gtk::gio::bus_get_sync(gtk::gio::BusType::System, None::<&gtk::gio::Cancellable>).ok()?;
+    let body = conn
+        .call_sync(
+            Some(BLUEZ_BUS_NAME),
+            OBJECT_MANAGER_OBJECT_PATH,
+            BLUEZ_OBJECT_MANAGER,
+            "GetManagedObjects",
+            None,
+            None,
+            gtk::gio::DBusCallFlags::NONE,
+            1_500,
+            None::<&gtk::gio::Cancellable>,
+        )
+        .ok()?;
+    // The reply is a tuple holding the `a{oa{sa{sv}}}` dict.
+    let objects = body.try_child_value(0).unwrap_or(body);
+    let mut entries = Vec::new();
+    for i in 0..objects.n_children() {
+        let Some(entry) = objects.try_child_value(i) else {
+            continue;
+        };
+        let path = entry
+            .try_child_value(0)
+            .and_then(|v| v.str().map(str::to_owned));
+        let Some(path) = path else { continue };
+        let Some(ifaces) = entry.try_child_value(1) else {
+            continue;
+        };
+        // `ifaces` is `a{sa{sv}}`; only its `a{sv}` values fit a
+        // `VariantDict`.
+        entries.push((path, ifaces));
+    }
+    let device = entries.iter().find_map(|(path, ifaces)| {
+        let props = VariantDict::new(Some(&interface_props(ifaces, BLUEZ_DEVICE_INTERFACE)?));
+        let addr: String = props.lookup("Address").ok().flatten()?;
+        addr.eq_ignore_ascii_case(address).then(|| {
+            let connected: bool = props.lookup("Connected").ok().flatten().unwrap_or(false);
+            (path.clone(), connected)
+        })
+    });
+    let Some((device_path, connected)) = device else {
+        return Some(bose_connect::AudioState::classify::<&str>(None, &[]));
+    };
+    let states: Vec<String> = entries
+        .iter()
+        .filter_map(|(_, ifaces)| interface_props(ifaces, BLUEZ_TRANSPORT_INTERFACE))
+        .map(|props| VariantDict::new(Some(&props)))
+        .filter(|props| {
+            props
+                .lookup_value("Device", None)
+                .is_some_and(|v| v.str() == Some(device_path.as_str()))
+        })
+        .map(|props| {
+            props
+                .lookup::<String>("State")
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "idle".to_owned())
+        })
+        .collect();
+    Some(bose_connect::AudioState::classify(Some(connected), &states))
+}
+
+/// The `a{sv}` properties of `interface` in an `a{sa{sv}}`
+/// interface dict.
+fn interface_props(ifaces: &gtk::glib::Variant, interface: &str) -> Option<gtk::glib::Variant> {
+    (0..ifaces.n_children()).find_map(|i| {
+        let entry = ifaces.try_child_value(i)?;
+        (entry.try_child_value(0)?.str()? == interface)
+            .then(|| entry.try_child_value(1))
+            .flatten()
+    })
 }
 
 /// Convenience map keyed by path — used by tests that walk
@@ -441,4 +535,17 @@ pub fn indexed_snapshot(devices: &[DiscoveredDevice]) -> HashMap<String, Discove
         .iter()
         .map(|d| (d.path.clone(), d.clone()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_bose_modalias;
+
+    #[test]
+    fn bose_modalias() {
+        assert!(is_bose_modalias("bluetooth:v009Ep4066d0167"));
+        assert!(is_bose_modalias("bluetooth:v009ep400Dd0401"));
+        assert!(!is_bose_modalias("usb:v05ACp0257d0001"));
+        assert!(!is_bose_modalias(""));
+    }
 }

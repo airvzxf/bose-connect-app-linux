@@ -264,6 +264,7 @@ dependencies = [
  "anyhow",
  "bose-connect",
  "clap",
+ "zbus",
 ]
 
 [[package]]

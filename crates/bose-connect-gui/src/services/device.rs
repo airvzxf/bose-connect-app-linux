@@ -48,6 +48,9 @@ pub struct DeviceSnapshot {
     pub volume: Option<u8>,
     pub active_device: Option<BdAddr>,
     pub device_bd_addr: Option<BdAddr>,
+    /// How BlueZ sees the audio link to this computer; `None` when
+    /// unknown (simulated device, or BlueZ not reachable).
+    pub audio: Option<bose_connect::AudioState>,
 }
 
 /// Concrete boxed service.
@@ -130,6 +133,7 @@ impl MockService {
             volume: Some(state.volume),
             active_device: state.active_device,
             device_bd_addr: state.device_bd_addr,
+            audio: None,
         }
     }
 }
@@ -309,6 +313,7 @@ impl RealService {
     /// Every getter a snapshot needs, over one connection.
     fn read_snapshot(&self) -> Result<DeviceSnapshot> {
         let address = self.inner.lock().address.clone().unwrap_or_default();
+        let audio = crate::services::bluetooth::audio_state(&address);
         let address = BdAddr::from_canonical(&address).unwrap_or(BdAddr::ANY);
         self.with_device(|dev| {
             let (device_id, _index) = dev.device_id()?;
@@ -341,6 +346,7 @@ impl RealService {
                 volume: None,
                 active_device,
                 device_bd_addr,
+                audio,
             })
         })
     }

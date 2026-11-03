@@ -362,6 +362,7 @@ fn activate(
             volume: Some(45),
             active_device: Some(addr_this),
             device_bd_addr: Some(device_mac),
+            audio: None,
         };
         model.snapshot = Some(snapshot);
         model.history = vec![85; 24];
