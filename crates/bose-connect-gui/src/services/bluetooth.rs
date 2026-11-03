@@ -59,9 +59,7 @@ pub const BOSE_COMPANY_UUID: &str = "0000febe-0000-1000-8000-00805f9b34fb";
 /// True when a BlueZ `Modalias` (`bluetooth:vVVVVpPPPPdDDDD`) has
 /// the Bose vendor id `009E`.
 pub fn is_bose_modalias(modalias: &str) -> bool {
-    modalias
-        .get(..15)
-        .is_some_and(|p| p.eq_ignore_ascii_case("bluetooth:v009E"))
+    bose_connect::audio_state::product_id_from_modalias(modalias).is_some()
 }
 
 /// BlueZ bus name and object root.
@@ -490,11 +488,20 @@ pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
         let addr: String = props.lookup("Address").ok().flatten()?;
         addr.eq_ignore_ascii_case(address).then(|| {
             let connected: bool = props.lookup("Connected").ok().flatten().unwrap_or(false);
-            (path.clone(), connected)
+            let product = props
+                .lookup::<String>("Modalias")
+                .ok()
+                .flatten()
+                .and_then(|m| bose_connect::audio_state::product_id_from_modalias(&m));
+            (path.clone(), connected, product)
         })
     });
-    let Some((device_path, connected)) = device else {
-        return Some(bose_connect::AudioState::classify::<&str, &str>(None, &[]));
+    let Some((device_path, connected, product)) = device else {
+        return Some(bose_connect::AudioState::classify::<&str, &str>(
+            None,
+            None,
+            &[],
+        ));
     };
     let transports: Vec<(String, String)> = entries
         .iter()
@@ -515,6 +522,7 @@ pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
         .collect();
     Some(bose_connect::AudioState::classify(
         Some(connected),
+        product,
         &transports,
     ))
 }
