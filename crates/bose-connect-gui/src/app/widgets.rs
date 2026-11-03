@@ -1317,8 +1317,8 @@ fn no_devices_status_page(sender: &flume::Sender<AppMsg>) -> gtk::Widget {
     status.upcast::<gtk::Widget>()
 }
 
-/// One row per paired Bose device; `in_use` gets "Disconnect", the
-/// others "Connect" (disabled while a connection is being opened).
+/// One row per paired Bose device; the one in use gets "Disconnect",
+/// the others "Use" (disabled while a connection is being opened).
 fn paired_device_rows(
     group: &adw::PreferencesGroup,
     model: &AppModel,
@@ -1353,13 +1353,22 @@ fn paired_device_rows(
         let in_use = active
             .as_deref()
             .is_some_and(|a| a.eq_ignore_ascii_case(&dev.address));
+        if in_use && !connecting {
+            let used = Label::new(Some("En uso"));
+            used.add_css_class("pill");
+            used.add_css_class("accent");
+            used.set_valign(gtk::Align::Center);
+            row.add_suffix(&used);
+        }
+        // "Use" (control it from here), not "Connect": the pill
+        // already says whether BlueZ has it connected.
         let btn = if in_use && !connecting {
             let b = Button::with_label("Desconectar");
             let s = sender.clone();
             b.connect_clicked(move |_| s.send_app(AppMsg::Disconnect));
             b
         } else {
-            let b = Button::with_label(if in_use { "Conectando…" } else { "Conectar" });
+            let b = Button::with_label(if in_use { "Conectando…" } else { "Usar" });
             b.add_css_class("suggested-action");
             b.set_sensitive(!connecting);
             let s = sender.clone();
