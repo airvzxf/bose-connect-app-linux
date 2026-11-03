@@ -60,7 +60,7 @@ Error codes seen (first payload byte of an ERROR packet):
 | `03` | block does not exist               | GET `xx 00` of an unknown block (QC Ultra)               |
 | `04` | function does not exist            | unknown functions (QC Ultra)                             |
 | `05` | function cannot be read this way   | e.g. `00 04`, `1f 01` (QC Ultra)                         |
-| `06` | value out of range                 | volume (QC35 II, SoundLink Color II), equalizer (QC Ultra), audio-mode slot ≥ 4 (QC45) |
+| `06` | value out of range                 | volume, equalizer; audio-mode slot ≥ 4 (QC45)            |
 | `08` | invalid slot / not available now   | audio-mode slot ≥ 10; `01 05` while the mode is modified (QC Ultra) |
 | `0b` | not a paired source                | connect to the device's own or an unknown address (all three) |
 | `0c` | function locked / busy             | media keys and the equalizer on the QC Ultra, see below; music status with unknown music |
@@ -328,7 +328,7 @@ minutes was then set from a laptop:
 
 Only on product ids `4014`, `4020`, `400c` (`has_noise_cancelling`).
 
-### `01 07` equalizer (QC Ultra, QC45) — `equalizer()`, `set_equalizer_band(band, value)`
+### `01 07` equalizer (QC Ultra, QC45) — `equalizer()`, `set_equalizer_band()`
 
 ```text
 > 01 07 01 00
@@ -705,7 +705,7 @@ Other functions of the block:
 
 `1f 05 02 01 xx` sets "Remember my mode" (verified).
 
-### QC45
+### Audio modes on the QC45
 
 Captured on firmware 4.0.4-4360+de6a887, 2026-10-31. Same requests and
 the same 47-byte `1f 06` payload, with these differences:
