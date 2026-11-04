@@ -67,22 +67,28 @@ pub use crate::connection::Connection;
 pub use crate::error::{BoseError, BoseResult};
 pub use crate::io::BoseIo;
 pub use crate::protocol::{
-    get_active_device, get_audio_mode, get_audio_mode_name, get_audio_modes, get_auto_answer_calls,
-    get_auto_play_pause, get_battery_level, get_battery_prompt, get_device_bd_addr, get_device_id,
-    get_device_info, get_device_status, get_equalizer, get_firmware_version, get_immersive_audio,
-    get_paired_devices, get_remember_audio_mode, get_serial_number, get_shortcut, has_audio_modes,
+    enable_notifications, get_active_device, get_audio_mode, get_audio_mode_name, get_audio_modes,
+    get_auto_answer_calls, get_auto_play_pause, get_battery_level, get_battery_prompt,
+    get_device_bd_addr, get_device_id, get_device_info, get_device_status, get_equalizer,
+    get_firmware_version, get_immersive_audio, get_motion_auto_off, get_noise_cancelling_favorites,
+    get_noise_cancelling_steps, get_paired_devices, get_remember_audio_mode,
+    get_remember_noise_cancelling, get_serial_number, get_shortcut, has_audio_modes,
     has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer, has_immersive_audio,
-    has_legacy_settings, has_noise_cancelling, has_pairing_toggle, has_self_voice, has_shortcut,
-    send_media_key, set_audio_mode, set_auto_answer_calls, set_auto_off, set_auto_play_pause,
-    set_battery_prompt, set_equalizer_band, set_immersive_audio, set_name, set_noise_cancelling,
-    set_pairing, set_prompt_language, set_remember_audio_mode, set_self_voice, set_shortcut,
-    set_voice_prompts, set_volume, DeviceStatusReport, PairedDevices,
+    has_legacy_settings, has_nc_settings, has_noise_cancelling, has_noise_cancelling_steps,
+    has_pairing_toggle, has_self_voice, has_shortcut, read_notification, send_media_key,
+    set_audio_mode, set_auto_answer_calls, set_auto_off, set_auto_play_pause, set_battery_prompt,
+    set_equalizer_band, set_immersive_audio, set_motion_auto_off, set_name, set_noise_cancelling,
+    set_noise_cancelling_favorites, set_noise_cancelling_level, set_pairing, set_prompt_language,
+    set_remember_audio_mode, set_remember_noise_cancelling, set_self_voice, set_shortcut,
+    set_shortcut_event, set_voice_prompts, set_volume, shortcut_event, DeviceStatusReport,
+    PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, EqBand, EqualizerBand,
-    ImmersiveAudio, MediaKey, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, ShortcutAction,
-    BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS, LANGUAGE_CODE_MASK, MAX_AUDIO_MODES, MAX_BT_PACK_LEN,
-    MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
+    ImmersiveAudio, MediaKey, NoiseCancelling, NoiseCancellingFavorites, NoiseCancellingSteps,
+    Notification, Pairing, PromptLanguage, SelfVoice, ShortcutAction, BOSE_CHANNEL,
+    BOSE_FALLBACK_CHANNELS, LANGUAGE_CODE_MASK, MAX_AUDIO_MODES, MAX_BT_PACK_LEN, MAX_NAME_LEN,
+    MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
 };
 
 /// High-level driver: owns a `Connection` and exposes every
@@ -201,6 +207,28 @@ impl BoseDevice {
     /// Change the noise-cancelling level.
     pub fn set_noise_cancelling(&mut self, level: NoiseCancelling) -> BoseResult<()> {
         set_noise_cancelling(&mut self.conn, level)
+    }
+
+    /// Read the NC 700 noise cancelling (`01 05`).
+    pub fn noise_cancelling_steps(&mut self) -> BoseResult<NoiseCancellingSteps> {
+        get_noise_cancelling_steps(&mut self.conn)
+    }
+
+    /// Set the NC 700 noise cancelling to an app level (`0` off, `10`
+    /// strongest).
+    pub fn set_noise_cancelling_level(&mut self, level: u8) -> BoseResult<()> {
+        set_noise_cancelling_level(&mut self.conn, level)
+    }
+
+    /// Subscribe to notifications of function blocks, see
+    /// [`enable_notifications`].
+    pub fn enable_notifications(&mut self, blocks: &[u8]) -> BoseResult<()> {
+        enable_notifications(&mut self.conn, blocks)
+    }
+
+    /// Wait up to a second for one packet the device sends on its own.
+    pub fn read_notification(&mut self) -> BoseResult<Option<Notification>> {
+        read_notification(&mut self.conn)
     }
 
     /// Toggle pairing discoverability.
@@ -344,5 +372,41 @@ impl BoseDevice {
     /// Change the shortcut action (QC Ultra, QC45).
     pub fn set_shortcut(&mut self, action: ShortcutAction) -> BoseResult<()> {
         set_shortcut(&mut self.conn, action)
+    }
+
+    /// Change the shortcut action with the device's own event byte, see
+    /// [`shortcut_event`] (the NC 700 uses `05`).
+    pub fn set_shortcut_event(&mut self, event: u8, action: ShortcutAction) -> BoseResult<()> {
+        set_shortcut_event(&mut self.conn, event, action)
+    }
+
+    /// Whether the NC 700 starts at its last noise-cancelling step.
+    pub fn remember_noise_cancelling(&mut self) -> BoseResult<bool> {
+        get_remember_noise_cancelling(&mut self.conn)
+    }
+
+    /// Turn "remember my last setting" on or off (NC 700).
+    pub fn set_remember_noise_cancelling(&mut self, on: bool) -> BoseResult<()> {
+        set_remember_noise_cancelling(&mut self.conn, on)
+    }
+
+    /// Whether the NC 700 switches off after an hour without motion.
+    pub fn motion_auto_off(&mut self) -> BoseResult<bool> {
+        get_motion_auto_off(&mut self.conn)
+    }
+
+    /// Turn the NC 700 motion auto-off on or off.
+    pub fn set_motion_auto_off(&mut self, on: bool) -> BoseResult<()> {
+        set_motion_auto_off(&mut self.conn, on)
+    }
+
+    /// The NC 700 noise-cancelling favourites.
+    pub fn noise_cancelling_favorites(&mut self) -> BoseResult<NoiseCancellingFavorites> {
+        get_noise_cancelling_favorites(&mut self.conn)
+    }
+
+    /// Set the NC 700 favourites to app levels (`0` off, `10` strongest).
+    pub fn set_noise_cancelling_favorites(&mut self, levels: &[u8]) -> BoseResult<()> {
+        set_noise_cancelling_favorites(&mut self.conn, levels)
     }
 }
