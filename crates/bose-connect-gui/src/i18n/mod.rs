@@ -18,7 +18,7 @@
 
 use std::sync::OnceLock;
 
-use bose_connect::{BdAddr, PromptLanguage};
+use bose_connect::BdAddr;
 use fluent_bundle::concurrent::FluentBundle;
 use fluent_bundle::{FluentArgs, FluentResource};
 use unic_langid::LanguageIdentifier;
@@ -146,25 +146,6 @@ pub fn tr(id: &str, args: &[(&str, FluentValue<'_>)]) -> String {
         tracing::warn!(target: "i18n", "missing message {id}");
         id.to_owned()
     })
-}
-
-/// Display label for a [`PromptLanguage`].
-pub fn language_label(lang: PromptLanguage) -> &'static str {
-    match lang {
-        PromptLanguage::En => "English",
-        PromptLanguage::Fr => "French",
-        PromptLanguage::It => "Italian",
-        PromptLanguage::De => "German",
-        PromptLanguage::Es => "Spanish",
-        PromptLanguage::Pt => "Portuguese",
-        PromptLanguage::Zh => "Chinese",
-        PromptLanguage::Ko => "Korean",
-        PromptLanguage::Ru => "Russian",
-        PromptLanguage::Pl => "Polish",
-        PromptLanguage::Nl => "Dutch",
-        PromptLanguage::Ja => "Japanese",
-        PromptLanguage::Sv => "Swedish",
-    }
 }
 
 /// Display string for a Bluetooth address in canonical form.

@@ -81,8 +81,8 @@ pub use crate::protocol::{
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, EqBand, EqualizerBand,
     ImmersiveAudio, MediaKey, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, ShortcutAction,
-    BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS, MAX_AUDIO_MODES, MAX_BT_PACK_LEN, MAX_NAME_LEN,
-    MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
+    BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS, LANGUAGE_CODE_MASK, MAX_AUDIO_MODES, MAX_BT_PACK_LEN,
+    MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
 };
 
 /// High-level driver: owns a `Connection` and exposes every
