@@ -896,8 +896,8 @@ impl OverviewPage {
             .iter()
             .map(|l| crate::transport::prompt_language_label(*l).to_owned())
             .collect();
-        // Only the low 5 bits are the language: a QC Ultra also sets
-        // bits 7 and 6, which a plain mask used to read as English.
+        // Only the low 5 bits are the language: the devices set
+        // flag bits above them (a QC Ultra reported `e1` and `a6`).
         let byte = model.snapshot.as_ref().map(|s| s.status.language);
         let current = byte.and_then(bose_connect::PromptLanguage::from_status_byte);
         let selected = match (byte, current) {

@@ -158,9 +158,10 @@ impl PromptLanguage {
 
     /// Decode the language of a prompt-language status byte as the
     /// device reports it, whatever its flag bits: only the low 5 bits
-    /// are the language. A SoundLink Color II sets bit 7, a QC Ultra
-    /// bits 7 and 6 (`e1` for English, firmware 1.6.7), and bit 5 is
-    /// the voice-prompts flag, which may be off.
+    /// are the language. A SoundLink Color II sets bit 7; a QC Ultra
+    /// on firmware 1.6.7 reported `e1` (bits 7 and 6) in English and
+    /// `a6` (bit 7) in Spanish. Bit 5 is the voice-prompts flag, which
+    /// may be off.
     pub fn from_status_byte(b: u8) -> Option<Self> {
         Self::from_u8((b & LANGUAGE_CODE_MASK) | VP_ENABLE_BIT)
     }
@@ -571,16 +572,16 @@ mod tests {
             PromptLanguage::from_status_byte(0xe1),
             Some(PromptLanguage::En)
         );
-        // Same flags, Spanish.
-        assert_eq!(
-            PromptLanguage::from_status_byte(0xe6),
-            Some(PromptLanguage::Es)
-        );
-        // SoundLink Color II echo bit (7), and voice prompts off.
+        // QC Ultra, firmware 1.6.7, Spanish; and with bit 6 as well.
         assert_eq!(
             PromptLanguage::from_status_byte(0xa6),
             Some(PromptLanguage::Es)
         );
+        assert_eq!(
+            PromptLanguage::from_status_byte(0xe6),
+            Some(PromptLanguage::Es)
+        );
+        // Voice prompts off.
         assert_eq!(
             PromptLanguage::from_status_byte(0x06),
             Some(PromptLanguage::Es)
