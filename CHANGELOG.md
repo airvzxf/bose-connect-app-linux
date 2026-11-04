@@ -6,6 +6,48 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Added
+
+* GUI: the device menu (top left) and the "My Bose" page list the Bose
+  devices paired with this computer, read from BlueZ (`Modalias`
+  vendor `009E`), say which ones BlueZ has connected, and mark the one
+  in use; "Manage devices…" is always there. With no Bose device
+  paired the window explains how to pair one; with none connected it
+  shows the normal layout, empty, with "connect to a device". A new
+  "Disconnect" frees the device for other clients. Tested on a QC
+  Ultra and a QC35 II.
+* GUI in English by default, with Spanish as the alternative, following
+  the desktop language. One translation layer (Fluent): a new language
+  is one `crates/bose-connect-gui/locales/<language>.ftl` file;
+  `CONTRIBUTING.md` explains how to add one.
+* `PromptLanguage::from_status_byte` and `LANGUAGE_CODE_MASK` decode a
+  prompt-language status byte whatever its flag bits.
+
+### Changed
+
+* GUI: `--real`, `--real-bluetooth` and `--mock` are gone; the app
+  always talks to real devices. At startup it connects to the last
+  device only while BlueZ has it connected (else to a connected Bose
+  device). The simulated device is for tests and screenshots only
+  (`BOSE_CONNECT_GUI_SIMULATOR=1`, `disconnected` or `no-devices`),
+  uses locally administered addresses and never overwrites the last
+  device.
+* GUI: switching devices closes the old RFCOMM connection before
+  opening the new one and clears the old device's data at once.
+* GUI: the prompt language is read-only on the QC Ultra, as in the
+  CLI; elsewhere the write keeps the device's other bits of the byte.
+* GUI: placeholder controls that did nothing (packet injection, a
+  fixed "last response", the scan and "forget" buttons of "My Bose")
+  are removed.
+
+### Fixed
+
+* GUI: a QC Ultra set to Spanish showed its prompt language as
+  "English" (verified on firmware 1.6.7: `< 01 03 03 07 a6 …` now
+  shows Español, as the CLI's `ES`).
+* GUI: a failed connection kept showing the previous device's data.
+* GUI: the simulator's battery drain stopped right after start.
+
 ## [0.4.0][] - 2026-11-03
 
 ### Added
