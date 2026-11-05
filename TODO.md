@@ -30,6 +30,10 @@ history; the captures behind each protocol item are in
 - [ ] GUI: the self-voice row always shows "Medium" and the "Visible
       for pairing" switch always starts off; read both from the
       device like the other settings.
+- [ ] QC35 II (firmware 4.8.1): `--disconnect-device <phone>`
+      disconnects the phone, then the headphones close the control
+      connection and the CLI fails with "Connection reset by peer"
+      before it can verify. Reconnect and verify instead of failing.
 
 ## Protocol questions (need hardware; batch them with the party-mode session)
 
