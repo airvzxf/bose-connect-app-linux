@@ -600,6 +600,31 @@ impl ImmersiveAudio {
     }
 }
 
+/// Party mode of a SoundLink Color II (`04 0b`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum PartyMode {
+    /// Not joined to another speaker.
+    Off = 0x00,
+    /// Joined; both speakers play both channels.
+    Party = 0x01,
+    /// Joined; the speaker that was asked plays the left channel and
+    /// the other one the right channel.
+    Stereo = 0x02,
+}
+
+impl PartyMode {
+    /// Decode the mode byte.
+    pub fn from_u8(b: u8) -> Option<Self> {
+        Some(match b {
+            0x00 => Self::Off,
+            0x01 => Self::Party,
+            0x02 => Self::Stereo,
+            _ => return None,
+        })
+    }
+}
+
 /// Action of the shortcut (`01 09`): touch and hold the volume strip of
 /// the QC Ultra's right earcup, or press and hold the QC45's button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

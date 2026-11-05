@@ -34,6 +34,38 @@ pub fn audio_state(address: &str) -> Result<AudioState> {
     Ok(classify(&objects, address))
 }
 
+/// Address of this computer's Bluetooth adapter (the first
+/// `org.bluez.Adapter1` that BlueZ lists).
+pub fn adapter_address() -> Result<String> {
+    let conn = zbus::blocking::Connection::system().context("cannot reach the D-Bus system bus")?;
+    let reply = conn
+        .call_method(
+            Some("org.bluez"),
+            "/",
+            Some("org.freedesktop.DBus.ObjectManager"),
+            "GetManagedObjects",
+            &(),
+        )
+        .context("cannot query BlueZ (is bluetoothd running?)")?;
+    let objects: ManagedObjects = reply
+        .body()
+        .deserialize()
+        .context("unexpected GetManagedObjects reply")?;
+    let mut adapters: Vec<_> = objects
+        .iter()
+        .filter_map(|(path, ifaces)| {
+            let props = ifaces.get("org.bluez.Adapter1")?;
+            Some((path.to_string(), string(props.get("Address")?)?))
+        })
+        .collect();
+    adapters.sort();
+    adapters
+        .into_iter()
+        .next()
+        .map(|(_, address)| address)
+        .context("BlueZ lists no Bluetooth adapter")
+}
+
 fn classify(objects: &ManagedObjects, address: &str) -> AudioState {
     let device = objects.iter().find_map(|(path, ifaces)| {
         let props = ifaces.get("org.bluez.Device1")?;

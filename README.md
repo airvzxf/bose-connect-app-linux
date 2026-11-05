@@ -141,6 +141,12 @@ Paired devices:
       --remove-device <ADDRESS>      Remove the device at the given Bluetooth address from the pairing list
   -p, --pairing <STATUS>             Toggle pairing discoverability. status: on, off
 
+Party mode (SoundLink Color II):
+      --party-join <SPEAKER>    Join the SoundLink Color II at the given address to this one (party mode). The other speaker must be on and paired with this one. Stop the music for a minute before joining when this computer is the source; see the README
+      --party-source <ADDRESS>  Music source for `--party-join` (default: this computer's Bluetooth adapter). Give the phone's address when the phone plays the music
+      --party-leave <SPEAKER>   Separate the joined speaker at the given address
+      --party-mode <MODE>       Print or switch the party mode. mode: status, party, stereo
+
 Advanced:
       --channel <CHANNEL>  RFCOMM channel to use instead of the automatic choice (8, then 2, then 1)
       --watch <SECONDS>    Print what the device sends on its own (setting changes, volume, battery) for this long
@@ -298,6 +304,43 @@ cancelling, favourites, equalizer, shortcut and the two switches),
 Not supported by the headphones: on-head detection, LED brightness,
 auto play/pause and audio modes. See
 [`docs/protocol.md`](docs/protocol.md) for the captures.
+
+## SoundLink Color II: party and stereo mode
+
+Two SoundLink Color II speakers can play the same music. The speaker
+you talk to receives it and forwards it to the other one; in stereo
+mode it plays the left channel and the other speaker the right one.
+
+```bash
+bose-connect-app-linux SPEAKER_1 --party-join SPEAKER_2   # "Party mode"
+bose-connect-app-linux SPEAKER_1 --party-mode stereo      # status, party, stereo
+bose-connect-app-linux SPEAKER_1 --party-leave SPEAKER_2  # "Speakers unlinked"
+```
+
+`--party-join` names this computer as the music source; with a phone
+as the source, add `--party-source PHONE_ADDRESS`.
+
+These speakers lock up now and then in party mode, also with the
+phone and the Bose app; a locked-up speaker has to be switched off and
+on. With this computer as the source, these steps made it work in the
+tests (details in [`docs/protocol.md`](docs/protocol.md)):
+
+1. Let the speaker connect its audio by itself (switch it on and wait):
+   it then picks 44.1 kHz. When the computer opens the audio link it
+   uses 48 kHz, and both tests at 48 kHz locked up a speaker.
+2. Play nothing for about a minute, then join.
+3. After every `--party-join`, `--party-mode` and `--party-leave`
+   the speaker goes silent until the computer restarts its audio
+   stream:
+
+   ```bash
+   SINK=bluez_output.AA_BB_CC_DD_EE_FF.1   # see `pactl list sinks short`
+   pactl suspend-sink "$SINK" 1 && pactl suspend-sink "$SINK" 0
+   ```
+
+Each command opens one connection, and the speaker switches itself off
+after its 9th connection since power-on; see the speaker's notes in
+`docs/protocol.md`.
 
 ## Disclaimer
 

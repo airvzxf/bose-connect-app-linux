@@ -33,9 +33,10 @@ use crate::io::BoseIo;
 use crate::types::{
     AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, EqBand, EqualizerBand, ImmersiveAudio,
     MediaKey, NoiseCancelling, NoiseCancellingFavorites, NoiseCancellingSteps, Notification,
-    Pairing, PromptLanguage, SelfVoice, ShortcutAction, MAX_AUDIO_MODES, MAX_NAME_PACK_LEN_HELPER,
-    MAX_NUM_DEVICES, NC700_HEADPHONES, NOISE_CANCELLING_0C, NOISE_CANCELLING_14,
-    NOISE_CANCELLING_20, QC45_HEADPHONES, QC_ULTRA_HEADPHONES, SOUNDLINK_COLOR_II, VP_ENABLE_BIT,
+    Pairing, PartyMode, PromptLanguage, SelfVoice, ShortcutAction, MAX_AUDIO_MODES,
+    MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NC700_HEADPHONES, NOISE_CANCELLING_0C,
+    NOISE_CANCELLING_14, NOISE_CANCELLING_20, QC45_HEADPHONES, QC_ULTRA_HEADPHONES,
+    SOUNDLINK_COLOR_II, VP_ENABLE_BIT,
 };
 
 // Re-export the helper that wraps CN_BASE_PACK_LEN + MAX_NAME_LEN - 1
@@ -188,6 +189,19 @@ const DISCONNECT_DEVICE_SEND_PREFIX: [u8; 4] = [0x04, 0x02, 0x05, 6];
 const DISCONNECT_DEVICE_ACK_PREFIX: [u8; 4] = [0x04, 0x02, 0x07, 6];
 
 const REMOVE_DEVICE_SEND_PREFIX: [u8; 4] = [0x04, 0x03, 0x05, 6];
+
+// Party and stereo mode of two SoundLink Color II speakers. No C
+// counterpart; captured from the Bose Connect app on Android and
+// verified from this library on two SoundLink Color II, firmware 4.0.1
+// (2026-11-04). See `docs/protocol.md`.
+/// `04 01 05 0d 90 <peer> <source>`: a Connect with flags `90` and
+/// a second address, the source of the music.
+const JOIN_PARTY_SEND_PREFIX: [u8; 5] = [0x04, 0x01, 0x05, 6 + 6 + 1, 0x90];
+const GET_PARTY_MODE_SEND: [u8; 4] = [0x04, 0x0b, 0x01, 0x00];
+const SET_PARTY_MODE_SEND_PREFIX: [u8; 4] = [0x04, 0x0b, 0x02, 0x01];
+/// The RESULT of a join came 1.5 to 20 s after the request; a failed
+/// join was answered with ERROR `0d` about 20 s after it.
+const JOIN_PARTY_TIMEOUT: Duration = Duration::from_secs(30);
 #[allow(dead_code)]
 const REMOVE_DEVICE_ACK_PREFIX: [u8; 4] = [0x04, 0x03, 0x06, 6];
 
@@ -374,6 +388,13 @@ pub fn has_pairing_toggle(device_id: u16) -> bool {
         device_id,
         NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | SOUNDLINK_COLOR_II | NC700_HEADPHONES
     )
+}
+
+/// Whether the device has party and stereo mode with a second
+/// speaker of the same model ([`join_party`], [`set_party_mode`]):
+/// the SoundLink Color II (`0x400d`), verified on firmware 4.0.1.
+pub fn has_party_mode(device_id: u16) -> bool {
+    device_id == SOUNDLINK_COLOR_II
 }
 
 /// `int send_packet(int sock, const void *send, size_t send_n,
@@ -1241,6 +1262,81 @@ pub fn disconnect_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<(
     send[..4].copy_from_slice(&DISCONNECT_DEVICE_SEND_PREFIX);
     send[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
     write_paired(io, &send, &address.b)
+}
+
+/// Join the speaker `peer` to this one (party mode). No C counterpart.
+///
+/// `source` is the address of the music source, the phone or this
+/// computer. Request `04 01 05 0d 90 <peer> <source>`; the speaker
+/// answers PROCESSING `04 01 07 06 <peer>`, then RESULT
+/// `04 01 06 07 <peer> 01` and the mode notification `04 0b 03 01 01`
+/// (verified on two SoundLink Color II, firmware 4.0.1). Returns on the
+/// RESULT, waiting up to 30 s.
+///
+/// When the other speaker does not answer, the speaker sends ERROR
+/// `04 01 04 07 0d <peer> 01` instead, returned as
+/// [`BoseError::DeviceError`] with code `0x0d`.
+///
+/// To leave party mode, disconnect `peer` with [`disconnect_device`].
+pub fn join_party<I: BoseIo>(io: &mut I, peer: BdAddr, source: BdAddr) -> BoseResult<()> {
+    let mut send = [0u8; JOIN_PARTY_SEND_PREFIX.len() + 2 * BT_ADDR_LEN];
+    send[..5].copy_from_slice(&JOIN_PARTY_SEND_PREFIX);
+    send[5..5 + BT_ADDR_LEN].copy_from_slice(&peer.b);
+    send[5 + BT_ADDR_LEN..].copy_from_slice(&source.b);
+    io.bose_send(&send)?;
+
+    let deadline = Instant::now() + JOIN_PARTY_TIMEOUT;
+    loop {
+        let (header, payload) = read_packet_before(io, deadline)?;
+        if let Some((OP_RESULT, result)) = check_reply(0x04, 0x01, header, payload)? {
+            if result.starts_with(&peer.b) {
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// The party mode of a speaker: `04 0b 01 00` → `04 0b 03 01 xx`.
+/// No C counterpart.
+pub fn get_party_mode<I: BoseIo>(io: &mut I) -> BoseResult<PartyMode> {
+    io.bose_send(&GET_PARTY_MODE_SEND)?;
+    let byte = first_byte(&read_response(io, 0x04, 0x0b)?)?;
+    PartyMode::from_u8(byte).ok_or(BoseError::AckMismatch)
+}
+
+/// Switch two joined speakers between party and stereo mode:
+/// `04 0b 02 01 xx` → `04 0b 03 01 xx`. No C counterpart.
+///
+/// The speaker sometimes sends the STATUS twice, about 0.5 s apart; the
+/// second copy is read here so it does not answer the next request. A
+/// speaker that is not joined echoes the value but keeps mode `00`, so
+/// the mode is read back and compared ([`BoseError::UnconfirmedValue`]).
+/// [`PartyMode::Off`] is not a valid argument: leave with
+/// [`disconnect_device`].
+pub fn set_party_mode<I: BoseIo>(io: &mut I, mode: PartyMode) -> BoseResult<()> {
+    if mode == PartyMode::Off {
+        return Err(BoseError::InvalidArgument(
+            "party mode off: disconnect the other speaker instead".into(),
+        ));
+    }
+    let mut send = [0u8; 5];
+    send[..4].copy_from_slice(&SET_PARTY_MODE_SEND_PREFIX);
+    send[BYTES_POSITION_4] = mode as u8;
+    io.bose_send(&send)?;
+    let echo = first_byte(&read_response(io, 0x04, 0x0b)?)?;
+    if echo != mode as u8 {
+        return Err(unconfirmed(mode as u8, echo));
+    }
+    // Consume the duplicate STATUS if one arrives within the receive
+    // timeout; any other packet read here is an unsolicited one.
+    if let FirstByte::Byte(first) = read_first_byte(io)? {
+        read_packet_from(io, first)?;
+    }
+    let got = get_party_mode(io)?;
+    if got != mode {
+        return Err(unconfirmed(mode as u8, got as u8));
+    }
+    Ok(())
 }
 
 /// `int remove_device(int sock, bdaddr_t address)` in `based.c`.
