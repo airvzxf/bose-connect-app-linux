@@ -84,8 +84,8 @@ ad-hoc fuzzing).
 above cannot apply to them. "Capture" below means a live capture
 against a Bose SoundLink Color, second generation (II), referred to
 as SoundLink Color II from here on; rows marked "(NC 700)" were
-captured by a contributor on an NC 700 Headphones, firmware 1.8.2
-(#109). Their sources are:
+captured by a contributor on the Bose Noise Cancelling Headphones
+700 (NC 700), firmware 1.8.2 (#109). Their sources are:
 
 | Command                          | Request                          | Source                               |
 | -------------------------------- | -------------------------------- | ------------------------------------ |

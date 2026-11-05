@@ -319,7 +319,9 @@ minutes was then set from a laptop:
 
 `set_auto_off` reads the layout first and writes the matching form.
 
-### `01 05` stepped noise cancelling (NC 700) — `noise_cancelling_steps()`, `set_noise_cancelling_level(level)`
+### `01 05` stepped noise cancelling (NC 700)
+
+Library: `noise_cancelling_steps()`, `set_noise_cancelling_level(level)`.
 
 ```text
 > 01 05 01 00
@@ -336,13 +338,17 @@ no reply to the write (firmware 1.8.2), so the value is read back with
 `1`. Only the NC 700 (`4024`) answers; on the QC35 this function does
 not exist, and the NC 700 answers `01 06` with ERROR `04`.
 
-### `01 0e` remember the last noise-cancelling step (NC 700) — `remember_noise_cancelling()`, `set_remember_noise_cancelling(on)`
+### `01 0e` remember the last noise-cancelling step (NC 700)
+
+Library: `remember_noise_cancelling()`, `set_remember_noise_cancelling(on)`.
 
 `01 0e 02 01 xx`, `xx` `01` on, `00` off; reply `01 0e 03 01 xx`. Like
 `01 05` the write gets no reply, so it is read back. The Bose Music app
 calls it "Remember My Last Setting".
 
-### `01 0f` noise-cancelling favourites (NC 700) — `noise_cancelling_favorites()`, `set_noise_cancelling_favorites(levels)`
+### `01 0f` noise-cancelling favourites (NC 700)
+
+Library: `noise_cancelling_favorites()`, `set_noise_cancelling_favorites(levels)`.
 
 ```text
 > 01 0f 01 00
@@ -355,7 +361,9 @@ favourite. The app showed this device's favourites as 10, 5 and 0, which
 are the raw steps 0, 5 and 10. The library keeps the selected index when
 it writes the three values. Out-of-range values are never sent.
 
-### `01 14` motion auto-off (NC 700) — `motion_auto_off()`, `set_motion_auto_off(on)`
+### `01 14` motion auto-off (NC 700)
+
+Library: `motion_auto_off()`, `set_motion_auto_off(on)`.
 
 `01 14 02 01 xx`; the device echoes `01 14 03 01 xx`. When on, the
 headphones switch off after an hour without motion whatever the

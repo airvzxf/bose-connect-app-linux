@@ -300,7 +300,8 @@ cancelling or the volume): the NC 700 sends no key-press packets.
 Also supported: `--info`, `--device-status` (which prints the noise
 cancelling, favourites, equalizer, shortcut and the two switches),
 `--self-voice`, `--auto-off` (5, 20, 40, 60, 180 minutes or never; only
-20 and never were written on hardware), `--voice-prompts`, `--set-volume` (0 to 16) and `--paired-devices`.
+20 and never were written on hardware), `--voice-prompts`,
+`--set-volume` (0 to 16) and `--paired-devices`.
 Not supported by the headphones: on-head detection, LED brightness,
 auto play/pause and audio modes. See
 [`docs/protocol.md`](docs/protocol.md) for the captures.
