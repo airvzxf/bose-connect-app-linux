@@ -545,7 +545,7 @@ the phone); the control connection stayed open. Leaving it does not
 reconnect them, and the speaker then took a few seconds to answer a
 new connection.
 
-### Party and stereo mode (SoundLink Color II) — `join_party()`, `set_party_mode()`, `party_mode()`
+### Party and stereo mode — `join_party()`, `set_party_mode()`
 
 Two SoundLink Color II play the same music: the speaker the client
 talks to receives it from the source (phone or computer) and forwards
@@ -589,8 +589,9 @@ right one ("Stereo mode"; checked with `speaker-test -c 2 -t wav`:
 "Front Left" only from the White, "Front Right" only from the Black);
 `01` goes back to party mode, both speakers playing both channels.
 `04 0b 02 01 03` is answered `04 0b 03 01 03`, but the mode read back
-stays `02` and nothing audible changes: there is no left/right swap. A speaker that is not joined echoes `02` once and
-keeps mode `00`, so the library reads the mode back after a switch.
+stays `02` and nothing audible changes: there is no left/right swap.
+A speaker that is not joined echoes `02` once and keeps mode `00`, so
+the library reads the mode back after a switch.
 
 **Leave** — a Disconnect of the other speaker:
 

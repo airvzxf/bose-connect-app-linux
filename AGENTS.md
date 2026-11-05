@@ -85,15 +85,15 @@ above cannot apply to them. "Capture" below means a live capture
 against a Bose SoundLink Color, second generation (II), referred to
 as SoundLink Color II from here on. Their sources are:
 
-| Command              | Request          | Source                    |
-| -------------------- | ---------------- | ------------------------- |
-| `set_volume`         | `05 05 02 01 xx` | `docs/protocol.md`, capture |
-| `send_media_key`     | `05 03 05 01 xx` | `docs/protocol.md`, capture |
-| `get_active_device`  | `05 01 01 00`    | `docs/protocol.md`, capture |
-| `join_party`         | `04 01 05 0d 90 <peer> <source>` | `docs/protocol.md`, capture (Bose app and this library, two speakers) |
-| `get_party_mode`     | `04 0b 01 00`    | `docs/protocol.md`, capture |
-| `set_party_mode`     | `04 0b 02 01 xx` | `docs/protocol.md`, capture |
-| `get_device_bd_addr` | `00 06 01 00`    | capture only              |
+| Command              | Request                          | Source                      |
+| -------------------- | -------------------------------- | --------------------------- |
+| `set_volume`         | `05 05 02 01 xx`                 | `docs/protocol.md`, capture |
+| `send_media_key`     | `05 03 05 01 xx`                 | `docs/protocol.md`, capture |
+| `get_active_device`  | `05 01 01 00`                    | `docs/protocol.md`, capture |
+| `join_party`         | `04 01 05 0d 90 <peer> <source>` | `docs/protocol.md`, capture |
+| `get_party_mode`     | `04 0b 01 00`                    | `docs/protocol.md`, capture |
+| `set_party_mode`     | `04 0b 02 01 xx`                 | `docs/protocol.md`, capture |
+| `get_device_bd_addr` | `00 06 01 00`                    | capture only                |
 
 For these, a real-hardware capture is the source of truth. Note in
 the doc comment which device and firmware a response layout was
