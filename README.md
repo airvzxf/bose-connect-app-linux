@@ -111,8 +111,9 @@ Device information:
 
 Sound:
   -m, --audio-mode <MODE>          Switch the audio mode (QC Ultra, QC45). mode: its name (quiet, aware, immersion, …) or its slot index
-  -c, --noise-cancelling <LEVEL>   Change the noise-cancelling level. level: high, low, off. On the QC Ultra and QC45, use --audio-mode instead
-      --equalizer <BANDS>          Set equalizer bands (QC Ultra, QC45), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10
+  -c, --noise-cancelling <LEVEL>   Change the noise-cancelling level. level: high, low, off. On the QC Ultra and QC45, use --audio-mode instead. On the NC 700: off, high or 0..=10
+      --equalizer <BANDS>          Set equalizer bands (QC Ultra, QC45, NC 700), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10
+      --nc-favorites <LEVELS>      Set the three noise-cancelling favourites (NC 700), e.g. `10,5,0` (0 is off, 10 the strongest)
       --immersive-audio <SETTING>  Immersive audio (QC Ultra). setting: off, still, motion
   -e, --self-voice <LEVEL>         Change the self-voice level. level: high, medium, low, off
 
@@ -129,8 +130,9 @@ Settings:
       --battery-prompt <SWITCH>   Announce the battery level at power-on (QC Ultra). switch: on, off
       --auto-play-pause <SWITCH>  Pause when the headphones come off and resume when they go on (QC Ultra). switch: on, off
       --auto-answer <SWITCH>      Answer calls by putting the headphones on (QC Ultra). switch: on, off
-      --remember-mode <SWITCH>    Start in the last audio mode used (QC Ultra, QC45). switch: on, off
-      --shortcut <ACTION>         Touch-and-hold shortcut of the right earcup (QC Ultra, QC45). action: battery, immersive, assistant, spotify, off
+      --remember-mode <SWITCH>    Start in the last audio mode used (QC Ultra, QC45) or at the last noise-cancelling step (NC 700). switch: on, off
+      --motion-auto-off <SWITCH>  Switch off after an hour without motion (NC 700). switch: on, off
+      --shortcut <ACTION>         Touch-and-hold shortcut of the right earcup (QC Ultra, QC45, NC 700). action: battery, immersive, assistant, spotify, wake-word (NC 700), off
 
 Paired devices:
   -a, --paired-devices               Print the list of paired devices
@@ -147,6 +149,7 @@ Party mode (SoundLink Color II):
 
 Advanced:
       --channel <CHANNEL>  RFCOMM channel to use instead of the automatic choice (8, then 2, then 1)
+      --watch <SECONDS>    Print what the device sends on its own (setting changes, volume, battery) for this long
       --send-packet <HEX>  Send a raw hex packet (e.g. `0a1b2c3d`) and print the response
 ```
 
@@ -271,6 +274,38 @@ untested there) and `--send-media-key pause` (on firmware 1.6.7 it
 locks media control until the phone reconnects). See
 [`docs/protocol.md`](docs/protocol.md) for the captures.
 
+## NC 700 Headphones
+
+The NC 700 Headphones (device id `0x4024`) use RFCOMM channel 8 and
+the stepped noise cancelling of the Bose Music app. `--noise-cancelling`
+takes the app's number, `0` (off) to `10` (the strongest), or `off` and
+`high`; the headphones count the other way round on the wire and the
+library converts. It answers neither `--audio-mode` nor the QC35's
+low/high levels.
+
+```bash
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --noise-cancelling 5          # off, high or 0..=10
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --nc-favorites 10,5,0         # 0..=10, three values
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --remember-mode on            # last noise-cancelling step
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --motion-auto-off on          # on, off
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --shortcut wake-word          # battery, spotify, wake-word, off
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --equalizer bass=4,treble=-3  # -10..=10
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --watch 60                    # live changes for 60 s
+bose-connect-app-linux AA:BB:CC:DD:EE:FF --pairing on                  # on, off
+```
+
+`--watch` shows a button press only through what it changes (the noise
+cancelling or the volume): the NC 700 sends no key-press packets.
+
+Also supported: `--info`, `--device-status` (which prints the noise
+cancelling, favourites, equalizer, shortcut and the two switches),
+`--self-voice`, `--auto-off` (5, 20, 40, 60, 180 minutes or never; only
+20 and never were written on hardware), `--voice-prompts`,
+`--set-volume` (0 to 16) and `--paired-devices`.
+Not supported by the headphones: on-head detection, LED brightness,
+auto play/pause and audio modes. See
+[`docs/protocol.md`](docs/protocol.md) for the captures.
+
 ## SoundLink Color II: party and stereo mode
 
 Two SoundLink Color II speakers can play the same music. The speaker
@@ -314,7 +349,8 @@ This has only been tested on Bose `QuietComfort 35's` with
 firmware 1.3.2, 1.2.9, 1.06, `QuietComfort 35 II` with firmware
 4.8.1, `SoundLink II's` with firmware 2.1.1, `SoundLink Color II`
 with firmware 4.0.1, `QuietComfort Ultra Headphones` with
-firmware 1.6.7 and `QuietComfort 45` with firmware 4.0.4.
+firmware 1.6.7, `QuietComfort 45` with firmware 4.0.4 and
+`NC 700 Headphones` with firmware 1.8.2.
 I cannot ensure that this program works on any
 other devices.
 

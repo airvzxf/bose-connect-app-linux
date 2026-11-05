@@ -83,17 +83,24 @@ ad-hoc fuzzing).
 `get_device_bd_addr` do **not** exist in `based.c`, so the rule
 above cannot apply to them. "Capture" below means a live capture
 against a Bose SoundLink Color, second generation (II), referred to
-as SoundLink Color II from here on. Their sources are:
+as SoundLink Color II from here on; rows marked "(NC 700)" were
+captured by a contributor on the Bose Noise Cancelling Headphones
+700 (NC 700), firmware 1.8.2 (#109). Their sources are:
 
-| Command              | Request                          | Source                      |
-| -------------------- | -------------------------------- | --------------------------- |
-| `set_volume`         | `05 05 02 01 xx`                 | `docs/protocol.md`, capture |
-| `send_media_key`     | `05 03 05 01 xx`                 | `docs/protocol.md`, capture |
-| `get_active_device`  | `05 01 01 00`                    | `docs/protocol.md`, capture |
-| `join_party`         | `04 01 05 0d 90 <peer> <source>` | `docs/protocol.md`, capture |
-| `get_party_mode`     | `04 0b 01 00`                    | `docs/protocol.md`, capture |
-| `set_party_mode`     | `04 0b 02 01 xx`                 | `docs/protocol.md`, capture |
-| `get_device_bd_addr` | `00 06 01 00`                    | capture only                |
+| Command                          | Request                          | Source                               |
+| -------------------------------- | -------------------------------- | ------------------------------------ |
+| `set_volume`                     | `05 05 02 01 xx`                 | `docs/protocol.md`, capture          |
+| `send_media_key`                 | `05 03 05 01 xx`                 | `docs/protocol.md`, capture          |
+| `get_active_device`              | `05 01 01 00`                    | `docs/protocol.md`, capture          |
+| `join_party`                     | `04 01 05 0d 90 <peer> <source>` | `docs/protocol.md`, capture          |
+| `get_party_mode`                 | `04 0b 01 00`                    | `docs/protocol.md`, capture          |
+| `set_party_mode`                 | `04 0b 02 01 xx`                 | `docs/protocol.md`, capture          |
+| `set_noise_cancelling_level`     | `01 05 02 02 <raw> 01`           | `docs/protocol.md`, capture (NC 700) |
+| `set_noise_cancelling_favorites` | `01 0f 02 <n+1> <sel> <raw>…`    | `docs/protocol.md`, capture (NC 700) |
+| `set_remember_noise_cancelling`  | `01 0e 02 01 xx`                 | `docs/protocol.md`, capture (NC 700) |
+| `set_motion_auto_off`            | `01 14 02 01 xx`                 | `docs/protocol.md`, capture (NC 700) |
+| `enable_notifications`           | `09 02 02 <len> 01 <bits>`       | `docs/protocol.md`, capture (NC 700) |
+| `get_device_bd_addr`             | `00 06 01 00`                    | capture only                         |
 
 For these, a real-hardware capture is the source of truth. Note in
 the doc comment which device and firmware a response layout was

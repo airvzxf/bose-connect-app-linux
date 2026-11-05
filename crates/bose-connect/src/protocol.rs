@@ -32,10 +32,11 @@ use crate::error::{unconfirmed, BoseError, BoseResult};
 use crate::io::BoseIo;
 use crate::types::{
     AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, EqBand, EqualizerBand, ImmersiveAudio,
-    MediaKey, NoiseCancelling, Pairing, PartyMode, PromptLanguage, SelfVoice, ShortcutAction,
-    MAX_AUDIO_MODES, MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NOISE_CANCELLING_0C,
+    MediaKey, NoiseCancelling, NoiseCancellingFavorites, NoiseCancellingSteps, Notification,
+    Pairing, PartyMode, PromptLanguage, SelfVoice, ShortcutAction, MAX_AUDIO_MODES,
+    MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NC700_HEADPHONES, NOISE_CANCELLING_0C,
     NOISE_CANCELLING_14, NOISE_CANCELLING_20, QC45_HEADPHONES, QC_ULTRA_HEADPHONES,
-    SOUNDLINK_COLOR_II, VP_ENABLE_BIT, VP_MASK,
+    SOUNDLINK_COLOR_II, VP_ENABLE_BIT,
 };
 
 // Re-export the helper that wraps CN_BASE_PACK_LEN + MAX_NAME_LEN - 1
@@ -85,13 +86,22 @@ const SET_SHORTCUT_SEND_PREFIX: [u8; 4] = [0x01, 0x09, 0x02, 0x03];
 /// Button id and event of the shortcut: the right earcup's volume
 /// strip, touch and hold.
 const SHORTCUT_BUTTON_EVENT: [u8; 2] = [0x80, 0x09];
+/// Event byte of the NC 700's `01 09` shortcut (`80 05 <action>`).
+const SHORTCUT_EVENT_NC700: u8 = 0x05;
 
 const IMMERSIVE_AUDIO: (u8, u8) = (0x05, 0x0f);
 const AUTO_PLAY_PAUSE: (u8, u8) = (0x01, 0x18);
 const AUTO_ANSWER_CALLS: (u8, u8) = (0x01, 0x1b);
 const REMEMBER_AUDIO_MODE: (u8, u8) = (0x1f, 0x05);
+const REMEMBER_NOISE_CANCELLING: (u8, u8) = (0x01, 0x0e);
+const MOTION_AUTO_OFF: (u8, u8) = (0x01, 0x14);
+const GET_NOISE_CANCELLING_FAVORITES_SEND: [u8; 4] = [0x01, 0x0f, 0x01, 0x00];
 
 const SET_NOISE_CANCELLING_SEND: [u8; 5] = [0x01, 0x06, 0x02, 0x01, 0x00];
+
+const GET_NOISE_CANCELLING_STEPS_SEND: [u8; 4] = [0x01, 0x05, 0x01, 0x00];
+
+const SET_NOISE_CANCELLING_STEPS_SEND_PREFIX: [u8; 4] = [0x01, 0x05, 0x02, 0x02];
 
 const GET_DEVICE_STATUS_SEND: [u8; 4] = [0x01, 0x01, 0x05, 0x00];
 
@@ -106,6 +116,8 @@ const GET_BATTERY_LEVEL_SEND: [u8; 4] = [0x02, 0x02, 0x01, 0x00];
 const GET_PAIRED_DEVICES_SEND: [u8; 4] = [0x04, 0x04, 0x01, 0x00];
 
 const SET_PAIRING_SEND: [u8; 5] = [0x04, 0x08, 0x05, 0x01, 0x00];
+
+const GET_PAIRING_SEND: [u8; 4] = [0x04, 0x08, 0x01, 0x00];
 
 /// The C packet ended with a third payload byte `38` that its length
 /// byte (`02`) does not cover; it is dropped (see [`set_self_voice`]).
@@ -237,6 +249,22 @@ pub fn has_noise_cancelling(device_id: u16) -> bool {
     )
 }
 
+/// `has_noise_cancelling_steps` is true for devices with the stepped
+/// noise cancelling of `01 05` instead of the QC35's `01 06`: the NC 700
+/// Headphones (`0x4024`, firmware 1.8.2), verified on hardware. There
+/// `01 06` is answered with ERROR `04` (function not supported).
+pub fn has_noise_cancelling_steps(device_id: u16) -> bool {
+    matches!(device_id, NC700_HEADPHONES)
+}
+
+/// `has_nc_settings` is true for devices with the NC 700 extras: remembering
+/// the last noise-cancelling step (`01 0e`), the favourites (`01 0f`) and
+/// the motion auto-off (`01 14`). The NC 700 (`0x4024`, firmware 1.8.2),
+/// verified on hardware; the others were not asked.
+pub fn has_nc_settings(device_id: u16) -> bool {
+    matches!(device_id, NC700_HEADPHONES)
+}
+
 /// `has_self_voice` is a new predicate that does not exist in
 /// the original C code. It is used by the CLI to short-circuit
 /// `--self-voice` on devices known not to support the command
@@ -254,7 +282,11 @@ pub fn has_noise_cancelling(device_id: u16) -> bool {
 pub fn has_self_voice(device_id: u16) -> bool {
     matches!(
         device_id,
-        NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | QC_ULTRA_HEADPHONES | QC45_HEADPHONES
+        NOISE_CANCELLING_14
+            | NOISE_CANCELLING_20
+            | QC_ULTRA_HEADPHONES
+            | QC45_HEADPHONES
+            | NC700_HEADPHONES
     )
 }
 
@@ -270,7 +302,10 @@ pub fn has_audio_modes(device_id: u16) -> bool {
 /// the QC Ultra Headphones (`0x4066`) and the QC45 (`0x4039`), both
 /// verified on hardware.
 pub fn has_equalizer(device_id: u16) -> bool {
-    matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
+    matches!(
+        device_id,
+        QC_ULTRA_HEADPHONES | QC45_HEADPHONES | NC700_HEADPHONES
+    )
 }
 
 /// `has_battery_prompt` is true for devices with the battery-level
@@ -308,7 +343,20 @@ pub fn has_auto_answer(device_id: u16) -> bool {
 /// shortcut: the QC Ultra Headphones (`0x4066`) and the QC45
 /// (`0x4039`), both verified on hardware.
 pub fn has_shortcut(device_id: u16) -> bool {
-    matches!(device_id, QC_ULTRA_HEADPHONES | QC45_HEADPHONES)
+    matches!(
+        device_id,
+        QC_ULTRA_HEADPHONES | QC45_HEADPHONES | NC700_HEADPHONES
+    )
+}
+
+/// The event byte of the `01 09` shortcut for a device: `05` on the NC 700
+/// (`80 05 <action>`), `09` on the QC Ultra and the QC45.
+pub fn shortcut_event(device_id: u16) -> u8 {
+    if device_id == NC700_HEADPHONES {
+        SHORTCUT_EVENT_NC700
+    } else {
+        SHORTCUT_BUTTON_EVENT[1]
+    }
 }
 
 /// `has_legacy_settings` is false for devices on which changing the
@@ -332,11 +380,13 @@ pub fn has_legacy_settings(device_id: u16) -> bool {
 /// and entering pairing mode disconnects every connected audio
 /// source (`04 02 06 06 <addr>` for each); the control
 /// connection stays open. Pre-flighting the other devices saves
-/// the ~3 s the C version spends on retries before failing.
+/// the ~3 s the C version spends on retries before failing. The NC 700
+/// (`0x4024`, firmware 1.8.2) does not answer the write; its flag in
+/// `04 08` is read back instead (see [`set_pairing`]).
 pub fn has_pairing_toggle(device_id: u16) -> bool {
     matches!(
         device_id,
-        NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | SOUNDLINK_COLOR_II
+        NOISE_CANCELLING_14 | NOISE_CANCELLING_20 | SOUNDLINK_COLOR_II | NC700_HEADPHONES
     )
 }
 
@@ -650,10 +700,36 @@ pub fn set_pairing<I: BoseIo>(io: &mut I, pairing: Pairing) -> BoseResult<()> {
     let mut send = SET_PAIRING_SEND;
     send[BYTES_POSITION_4] = pairing as u8;
     io.bose_send(&send)?;
-    // Reply `04 08 06 01 xx` (the C acknowledgement).
-    match read_response(io, 0x04, 0x08)?[..] {
-        [echo] if echo == pairing as u8 => Ok(()),
-        _ => Err(BoseError::AckMismatch),
+    // Reply `04 08 06 01 xx` (the C acknowledgement), or the state
+    // `04 08 06 02 <flag> <other>` (QC35 II, firmware 4.8.1), where the
+    // flag is `01` while it is in pairing mode and `00` when it is not.
+    // The NC 700 sends PROCESSING (`04 08 07 00`) or nothing at all for
+    // the write, so the state is read instead.
+    match read_response(io, 0x04, 0x08) {
+        Ok(reply) => match reply[..] {
+            [echo, ..] if echo == pairing as u8 => Ok(()),
+            _ => Err(BoseError::AckMismatch),
+        },
+        Err(e) if is_receive_timeout(&e) => confirm_pairing_flag(io, pairing),
+        Err(e) => Err(e),
+    }
+}
+
+/// Read `04 08` until its first byte is `pairing`, for up to
+/// [`PAIRING_CONFIRM_TIMEOUT`].
+fn confirm_pairing_flag<I: BoseIo>(io: &mut I, pairing: Pairing) -> BoseResult<()> {
+    let deadline = Instant::now() + PAIRING_CONFIRM_TIMEOUT;
+    loop {
+        io.bose_send(&GET_PAIRING_SEND)?;
+        let state = read_response(io, 0x04, 0x08)?;
+        let flag = *state.first().ok_or(BoseError::AckMismatch)?;
+        if flag == pairing as u8 {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(unconfirmed(pairing as u8, flag));
+        }
+        std::thread::sleep(PAIRING_CONFIRM_INTERVAL);
     }
 }
 
@@ -694,6 +770,189 @@ pub fn set_noise_cancelling<I: BoseIo>(io: &mut I, level: NoiseCancelling) -> Bo
     Ok(())
 }
 
+/// Noise cancelling of the NC 700 (`01 05`): reply
+/// `01 05 03 03 0b 0a 01` is 11 steps, raw step 10 (off), enabled flag 1.
+///
+/// The raw step counts the other way round to the Bose Music app, see
+/// [`NoiseCancellingSteps`].
+pub fn get_noise_cancelling_steps<I: BoseIo>(io: &mut I) -> BoseResult<NoiseCancellingSteps> {
+    io.bose_send(&GET_NOISE_CANCELLING_STEPS_SEND)?;
+    parse_noise_cancelling_steps(&read_response(io, 0x01, 0x05)?)
+}
+
+/// Set the NC 700 noise cancelling to an app level (`0` off, `10`
+/// strongest): `01 05 02 02 <raw step> 01`, where the raw step is
+/// `10 - level`.
+///
+/// The device sends no reply to the write (observed on firmware 1.8.2),
+/// so the value is read back and compared.
+pub fn set_noise_cancelling_level<I: BoseIo>(io: &mut I, level: u8) -> BoseResult<()> {
+    let current = get_noise_cancelling_steps(io)?;
+    let raw = NoiseCancellingSteps::raw_for_level(current.steps, level).ok_or_else(|| {
+        BoseError::InvalidArgument(format!(
+            "noise cancelling must be in 0..={}, got {level}",
+            current.steps.saturating_sub(1)
+        ))
+    })?;
+
+    let mut send = [0u8; 6];
+    send[..4].copy_from_slice(&SET_NOISE_CANCELLING_STEPS_SEND_PREFIX);
+    send[4] = raw;
+    send[5] = 0x01;
+    io.bose_send(&send)?;
+
+    let after = get_noise_cancelling_steps(io)?;
+    if after.raw != raw {
+        return Err(unconfirmed(raw, after.raw));
+    }
+    Ok(())
+}
+
+fn parse_noise_cancelling_steps(payload: &[u8]) -> BoseResult<NoiseCancellingSteps> {
+    match *payload {
+        [steps, raw, enabled, ..] if raw < steps => Ok(NoiseCancellingSteps {
+            steps,
+            raw,
+            enabled: enabled & 1 == 1,
+        }),
+        _ => Err(BoseError::AckMismatch),
+    }
+}
+
+/// Whether the NC 700 goes back to its last noise-cancelling step when it
+/// is switched on (`01 0e`).
+pub fn get_remember_noise_cancelling<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, REMEMBER_NOISE_CANCELLING)? != 0)
+}
+
+/// Set "remember my last setting" (NC 700, `01 0e 02 01 xx`).
+///
+/// The device sends no reply to the write (observed on firmware 1.8.2),
+/// so the value is read back and compared.
+pub fn set_remember_noise_cancelling<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    let (block, function) = REMEMBER_NOISE_CANCELLING;
+    io.bose_send(&[block, function, 0x02, 0x01, on as u8])?;
+    let got = get_remember_noise_cancelling(io)?;
+    if got != on {
+        return Err(unconfirmed(on, got));
+    }
+    Ok(())
+}
+
+/// Whether the NC 700 switches off after an hour without motion
+/// (`01 14`), whatever the auto-off timer says.
+pub fn get_motion_auto_off<I: BoseIo>(io: &mut I) -> BoseResult<bool> {
+    Ok(get_byte(io, MOTION_AUTO_OFF)? != 0)
+}
+
+/// Set the motion auto-off (NC 700, `01 14 02 01 xx`).
+pub fn set_motion_auto_off<I: BoseIo>(io: &mut I, on: bool) -> BoseResult<()> {
+    set_byte(io, MOTION_AUTO_OFF, on as u8)
+}
+
+/// The NC 700's three noise-cancelling favourites (`01 0f`): reply
+/// `01 0f 03 04 02 00 05 0a` is the favourite at index 2 selected and the
+/// raw steps `0`, `5` and `10`, which the Bose Music app shows as 10, 5
+/// and 0.
+pub fn get_noise_cancelling_favorites<I: BoseIo>(
+    io: &mut I,
+) -> BoseResult<NoiseCancellingFavorites> {
+    io.bose_send(&GET_NOISE_CANCELLING_FAVORITES_SEND)?;
+    parse_noise_cancelling_favorites(&read_response(io, 0x01, 0x0f)?)
+}
+
+/// Set the NC 700 favourites to app levels (`0` off, `10` strongest),
+/// keeping the selected index: `01 0f 02 <n+1> <selected> <raw>…`. The
+/// device is asked for its step count first, and the new values are read
+/// back.
+pub fn set_noise_cancelling_favorites<I: BoseIo>(io: &mut I, levels: &[u8]) -> BoseResult<()> {
+    let steps = get_noise_cancelling_steps(io)?.steps;
+    let current = get_noise_cancelling_favorites(io)?;
+    if levels.len() != current.raw.len() {
+        return Err(BoseError::InvalidArgument(format!(
+            "expected {} favourites, got {}",
+            current.raw.len(),
+            levels.len()
+        )));
+    }
+    let raws = levels
+        .iter()
+        .map(|&l| {
+            NoiseCancellingSteps::raw_for_level(steps, l).ok_or_else(|| {
+                BoseError::InvalidArgument(format!(
+                    "a favourite must be in 0..={}, got {l}",
+                    steps.saturating_sub(1)
+                ))
+            })
+        })
+        .collect::<BoseResult<Vec<u8>>>()?;
+
+    let mut send = vec![0x01, 0x0f, 0x02, 1 + raws.len() as u8, current.selected];
+    send.extend_from_slice(&raws);
+    io.bose_send(&send)?;
+
+    let after = get_noise_cancelling_favorites(io)?;
+    if after.raw != raws {
+        return Err(unconfirmed(format!("{raws:?}"), format!("{:?}", after.raw)));
+    }
+    Ok(())
+}
+
+fn parse_noise_cancelling_favorites(payload: &[u8]) -> BoseResult<NoiseCancellingFavorites> {
+    match payload {
+        [selected, raw @ ..] if !raw.is_empty() && (*selected as usize) < raw.len() => {
+            Ok(NoiseCancellingFavorites {
+                selected: *selected,
+                raw: raw.to_vec(),
+            })
+        }
+        _ => Err(BoseError::AckMismatch),
+    }
+}
+
+/// Ask the device to send a packet whenever something in these function
+/// blocks changes (`09 02 02 <len> 01 <bit set>`): the Bose Music app does
+/// this for blocks 0, 1, 2, 4, 5, 9, 16 and 18. The bit set is big-endian
+/// with block `n` at bit `n`. Afterwards [`read_notification`] returns what
+/// the device sends, for example a button press as `02 0c`. The
+/// subscription lasts for the connection.
+///
+/// The device's reply, if any, is not needed, so a receive timeout is
+/// fine.
+pub fn enable_notifications<I: BoseIo>(io: &mut I, blocks: &[u8]) -> BoseResult<()> {
+    let Some(&highest) = blocks.iter().max() else {
+        return Ok(());
+    };
+    let mut bits = vec![0u8; usize::from(highest) / 8 + 1];
+    let last = bits.len() - 1;
+    for &block in blocks {
+        bits[last - usize::from(block) / 8] |= 1 << (block % 8);
+    }
+    let mut send = vec![0x09, 0x02, 0x02, 1 + bits.len() as u8, 0x01];
+    send.extend_from_slice(&bits);
+    io.bose_send(&send)?;
+    match read_response(io, 0x09, 0x02) {
+        Ok(_) => Ok(()),
+        Err(e) if is_receive_timeout(&e) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Wait up to the receive timeout (1 s) for one packet the device sends
+/// on its own; `None` if nothing came.
+pub fn read_notification<I: BoseIo>(io: &mut I) -> BoseResult<Option<Notification>> {
+    match read_packet(io) {
+        Ok((header, payload)) => Ok(Some(Notification {
+            block: header[0],
+            function: header[1],
+            operator: header[BYTES_POSITION_2] & 0x0f,
+            payload,
+        })),
+        Err(e) if is_receive_timeout(&e) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// `int set_auto_off(int sock, enum AutoOff minutes)` in `based.c`.
 ///
 /// The payload layout follows what the device reports for `01 04`
@@ -727,7 +986,15 @@ pub fn set_auto_off<I: BoseIo>(io: &mut I, minutes: AutoOff) -> BoseResult<()> {
         _ => return Err(BoseError::AckMismatch),
     }
 
-    let got = get_auto_off(io)?;
+    // The QC35, QC Ultra and QC45 echo the new value; the NC 700 sends
+    // nothing for the write (firmware 1.8.2), so ask for it.
+    let got = match get_auto_off(io) {
+        Err(e) if is_receive_timeout(&e) => {
+            io.bose_send(&GET_AUTO_OFF_SEND)?;
+            get_auto_off(io)?
+        }
+        other => other?,
+    };
     if got != Some(value) {
         return Err(unconfirmed(
             value,
@@ -751,14 +1018,20 @@ pub fn set_prompt_language<I: BoseIo>(io: &mut I, language_byte: u8) -> BoseResu
     send[BYTES_POSITION_4] = language_byte;
     io.bose_send(&send)?;
 
-    let sent_clean = language_byte & VP_MASK;
+    // Compare the language and the prompts bit only: the NC 700 drops the
+    // unknown flag in bit 6 when it stores the byte (`e1` is read back as
+    // `a1`).
+    let sent_clean = language_byte & (LANGUAGE_CODE_MASK | VP_ENABLE_BIT);
     let deadline = Instant::now() + PROMPT_LANGUAGE_CONFIRM_TIMEOUT;
     let mut got = get_prompt_language(io);
     loop {
         match got {
-            Ok(byte) if byte & VP_MASK == sent_clean => return Ok(()),
+            Ok(byte) if byte & (LANGUAGE_CODE_MASK | VP_ENABLE_BIT) == sent_clean => return Ok(()),
             Ok(byte) if Instant::now() >= deadline => {
-                return Err(unconfirmed(sent_clean, byte & VP_MASK))
+                return Err(unconfirmed(
+                    sent_clean,
+                    byte & (LANGUAGE_CODE_MASK | VP_ENABLE_BIT),
+                ))
             }
             Err(e) if !is_receive_timeout(&e) || Instant::now() >= deadline => return Err(e),
             _ => {}
@@ -1239,9 +1512,20 @@ pub fn get_shortcut<I: BoseIo>(io: &mut I) -> BoseResult<ShortcutAction> {
 /// (firmware 4.0.4): the app follows and the button does it. Writing
 /// [`ShortcutAction::Off`] has not been tried from a laptop yet.
 pub fn set_shortcut<I: BoseIo>(io: &mut I, action: ShortcutAction) -> BoseResult<()> {
+    set_shortcut_event(io, SHORTCUT_BUTTON_EVENT[1], action)
+}
+
+/// Like [`set_shortcut`] with the event byte of the device, see
+/// [`shortcut_event`]: `01 09 02 03 80 <event> <action>`.
+pub fn set_shortcut_event<I: BoseIo>(
+    io: &mut I,
+    event: u8,
+    action: ShortcutAction,
+) -> BoseResult<()> {
     let mut send = [0u8; 7];
     send[..4].copy_from_slice(&SET_SHORTCUT_SEND_PREFIX);
-    send[4..6].copy_from_slice(&SHORTCUT_BUTTON_EVENT);
+    send[4] = SHORTCUT_BUTTON_EVENT[0];
+    send[5] = event;
     send[6] = action as u8;
     io.bose_send(&send)?;
     let got = parse_shortcut(&read_response(io, 0x01, 0x09)?)?;
@@ -1253,7 +1537,7 @@ pub fn set_shortcut<I: BoseIo>(io: &mut I, action: ShortcutAction) -> BoseResult
 
 fn parse_shortcut(payload: &[u8]) -> BoseResult<ShortcutAction> {
     match *payload {
-        [0x80, 0x09, action, ..] => ShortcutAction::from_u8(action).ok_or(BoseError::AckMismatch),
+        [0x80, _event, action, ..] => ShortcutAction::from_u8(action).ok_or(BoseError::AckMismatch),
         _ => Err(BoseError::AckMismatch),
     }
 }
@@ -1280,6 +1564,12 @@ fn set_byte<I: BoseIo>(io: &mut I, (block, function): (u8, u8), value: u8) -> Bo
 // `write_paired` and the reply readers (`read_first_byte` and below),
 // which have no C counterpart.
 // ---------------------------------------------------------------------------
+
+/// How long [`set_pairing`] keeps reading the pairing flag back.
+const PAIRING_CONFIRM_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Pause between two reads of the pairing flag.
+const PAIRING_CONFIRM_INTERVAL: Duration = Duration::from_millis(300);
 
 /// How long [`send_media_key`] waits for its RESULT.
 const MEDIA_KEY_RESULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -1340,6 +1630,11 @@ const PAIRED_RESULT_TIMEOUT: Duration = Duration::from_secs(15);
 /// 4. Anything else is read past until [`PAIRED_RESULT_TIMEOUT`]; then
 ///    a timed-out [`BoseError::Io`]. End of stream after the first
 ///    byte is [`BoseError::ShortRead`].
+/// 5. A PROCESSING for this function whose payload starts with `address`
+///    and then no RESULT before [`PAIRED_RESULT_TIMEOUT`]: success. The
+///    NC 700 acknowledges a connect (`04 01 07 06 <address>`) and a
+///    disconnect and never sends a RESULT; the caller has to check the
+///    state it asked for.
 pub(crate) fn write_paired<I: BoseIo>(
     io: &mut I,
     send: &[u8],
@@ -1354,13 +1649,18 @@ pub(crate) fn write_paired<I: BoseIo>(
     };
     let deadline = Instant::now() + PAIRED_RESULT_TIMEOUT;
     let (mut header, mut payload) = read_packet_from(io, first)?;
+    let mut acknowledged = false;
     loop {
-        if let Some((OP_RESULT, result)) = check_reply(block, function, header, payload)? {
-            if result.starts_with(address) {
-                return Ok(());
-            }
+        match check_reply(block, function, header, payload)? {
+            Some((OP_RESULT, result)) if result.starts_with(address) => return Ok(()),
+            Some((OP_PROCESSING, result)) if result.starts_with(address) => acknowledged = true,
+            _ => {}
         }
-        (header, payload) = read_packet_before(io, deadline)?;
+        match read_packet_before(io, deadline) {
+            Ok(packet) => (header, payload) = packet,
+            Err(e) if acknowledged && is_receive_timeout(&e) => return Ok(()),
+            Err(e) => return Err(e),
+        }
     }
 }
 

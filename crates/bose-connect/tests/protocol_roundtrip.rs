@@ -335,6 +335,24 @@ fn set_voice_prompts_round_trip() {
     result.unwrap();
 }
 
+/// QC35 II, firmware 4.8.1 (2026-11-04): the write is answered with the
+/// state, `04 08 06 02 <flag> 01`, not a one-byte echo.
+#[test]
+fn qc35_set_pairing_accepts_the_two_byte_state() {
+    let result = with_mock_device(
+        |client| set_pairing(client, Pairing::On),
+        |server| {
+            let mut buf = [0u8; 5];
+            server.read_exact(&mut buf).unwrap();
+            assert_eq!(buf, [0x04, 0x08, 0x05, 0x01, 0x01]);
+            server
+                .write_all(&[0x04, 0x08, 0x06, 0x02, 0x01, 0x01])
+                .unwrap();
+        },
+    );
+    result.unwrap();
+}
+
 #[test]
 fn ack_mismatch_surfaces_as_error() {
     let result: Result<(), BoseError> = with_mock_device(

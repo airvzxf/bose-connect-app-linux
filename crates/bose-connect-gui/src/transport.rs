@@ -290,7 +290,8 @@ pub fn paired_devices_snapshot(state: &MockState) -> PairedDevices {
         .count()
         .min(2);
     let connected = match connected {
-        0 | 1 => DevicesConnected::One,
+        0 => DevicesConnected::Zero,
+        1 => DevicesConnected::One,
         _ => DevicesConnected::Two,
     };
     PairedDevices {

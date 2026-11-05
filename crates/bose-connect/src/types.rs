@@ -37,6 +37,71 @@ impl NoiseCancelling {
     }
 }
 
+/// Noise cancelling of the NC 700 Headphones (`01 05`): a number of
+/// steps instead of the QC35's off/low/high.
+///
+/// The device counts the other way round to the Bose Music app: the raw
+/// step `0` is the strongest cancelling and the last step (`10` of 11)
+/// is off. [`NoiseCancellingSteps::level`] gives the app's number, where
+/// `0` is off and `10` is the strongest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NoiseCancellingSteps {
+    /// Number of steps the device offers (11 on the NC 700).
+    pub steps: u8,
+    /// Current raw step, `0..steps`; `0` is the strongest cancelling.
+    pub raw: u8,
+    /// The enable flag the device reports. The Bose Music app sends it
+    /// as `1` for every step.
+    pub enabled: bool,
+}
+
+impl NoiseCancellingSteps {
+    /// The level as the Bose Music app shows it: `0` is off and
+    /// `steps - 1` is the strongest.
+    pub fn level(&self) -> u8 {
+        self.steps.saturating_sub(1).saturating_sub(self.raw)
+    }
+
+    /// The raw step for an app level, or `None` if it is out of range.
+    pub fn raw_for_level(steps: u8, level: u8) -> Option<u8> {
+        (steps > 0 && level < steps).then(|| steps - 1 - level)
+    }
+}
+
+/// A packet the device sent on its own, for example a button press
+/// (`02 0c`) after [`crate::protocol::enable_notifications`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Notification {
+    /// Function block.
+    pub block: u8,
+    /// Function inside the block.
+    pub function: u8,
+    /// Operator (`3` status, `4` error, `6` result, `7` processing).
+    pub operator: u8,
+    /// The payload.
+    pub payload: Vec<u8>,
+}
+
+/// The NC 700's noise-cancelling favourites (`01 0f`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NoiseCancellingFavorites {
+    /// Index of the favourite the device is on (`0..raw.len()`).
+    pub selected: u8,
+    /// The raw step of each favourite; see [`NoiseCancellingSteps`].
+    pub raw: Vec<u8>,
+}
+
+impl NoiseCancellingFavorites {
+    /// The favourites as the Bose Music app shows them, given the step
+    /// count of the device.
+    pub fn levels(&self, steps: u8) -> Vec<u8> {
+        self.raw
+            .iter()
+            .map(|&r| steps.saturating_sub(1).saturating_sub(r))
+            .collect()
+    }
+}
+
 /// Auto-off timer in minutes. `Never` is a sentinel for "disabled";
 /// the device returns `0` to mean "no auto-off".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -317,11 +382,15 @@ impl DeviceStatus {
 }
 
 /// Number of devices currently connected to the headphone's A2DP
-/// sink. The Bose protocol encodes "two devices" as the surprising
-/// value `0x03`; one device is `0x01`.
+/// sink. The byte has one bit per listed device, so "two devices" is
+/// `0x03`; one device is `0x01`, or `0x02` when only the second listed
+/// device is connected; `0x00` is none (a QC35 II, firmware 4.8.1, after
+/// its only audio source was disconnected).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum DevicesConnected {
+    /// No device has an audio link.
+    Zero = 0x00,
     /// One device connected.
     One = 0x01,
     /// Two devices connected.
@@ -335,16 +404,21 @@ impl DevicesConnected {
     /// out-of-range value (callers should treat as an error).
     pub fn from_u8(b: u8) -> Option<Self> {
         Some(match b {
-            0x01 => Self::One,
+            // `02` is the second listed device alone: the NC 700 sets one
+            // bit per listed device (`03` when the phone and the laptop
+            // are both connected, `02` after the phone was disconnected).
+            0x00 => Self::Zero,
+            0x01 | 0x02 => Self::One,
             0x03 => Self::Two,
             _ => return None,
         })
     }
 
-    /// Numeric count for printing (`1` or `2`). Returns `None` for
+    /// Numeric count for printing (`0`, `1` or `2`). Returns `None` for
     /// [`Self::Unknown`].
     pub fn count(self) -> Option<u8> {
         Some(match self {
+            Self::Zero => 0,
             Self::One => 1,
             Self::Two => 2,
             Self::Unknown => return None,
@@ -459,6 +533,8 @@ pub(crate) const SOUNDLINK_COLOR_II: u16 = 0x400d;
 pub(crate) const QC_ULTRA_HEADPHONES: u16 = 0x4066;
 /// Device ID 0x4039 — Bose QuietComfort 45 headphones.
 pub(crate) const QC45_HEADPHONES: u16 = 0x4039;
+/// Device ID 0x4024 — Bose NC 700 Headphones (`goodyear`).
+pub(crate) const NC700_HEADPHONES: u16 = 0x4024;
 
 /// `CN_BASE_PACK_LEN + MAX_NAME_LEN - 1` — the worst-case length of
 /// a `SET_NAME` packet (4-byte prefix plus 31 name bytes). Re-exported
@@ -565,6 +641,8 @@ pub enum ShortcutAction {
     BatteryLevel = 0x03,
     /// Spotify Tap.
     Spotify = 0x10,
+    /// Turn the voice assistant's wake word on or off (NC 700).
+    ToggleWakeWord = 0x07,
     /// Cycle the immersive-audio setting.
     ImmersiveAudio = 0x13,
     /// Shortcut turned off. When the app turns it back on, the device
@@ -579,6 +657,7 @@ impl ShortcutAction {
             0x01 => Self::VoiceAssistant,
             0x03 => Self::BatteryLevel,
             0x10 => Self::Spotify,
+            0x07 => Self::ToggleWakeWord,
             0x13 => Self::ImmersiveAudio,
             0x0e => Self::Off,
             _ => return None,

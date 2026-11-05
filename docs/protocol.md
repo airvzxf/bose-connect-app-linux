@@ -18,6 +18,7 @@ Firmware-update notes (not part of the control protocol) stay in
 * [Block 02: battery](#block-02-battery)
 * [Block 04: paired devices](#block-04-paired-devices)
 * [Block 05: media and volume](#block-05-media-and-volume)
+* [Block 09: notifications](#block-09-notifications)
 * [Block 1f: audio modes (QC Ultra, QC45)](#block-1f-audio-modes-qc-ultra-qc45)
 * [Other blocks (QC Ultra)](#other-blocks-qc-ultra)
 * [Device notes](#device-notes)
@@ -317,6 +318,56 @@ minutes was then set from a laptop:
 ```
 
 `set_auto_off` reads the layout first and writes the matching form.
+
+### `01 05` stepped noise cancelling (NC 700)
+
+Library: `noise_cancelling_steps()`, `set_noise_cancelling_level(level)`.
+
+```text
+> 01 05 01 00
+< 01 05 03 03 0b 0a 01          11 steps, raw step 10, enabled flag 1
+> 01 05 02 02 00 01            raw step 0, flag 1
+```
+
+The payload is `steps`, `raw step`, `enabled`. **The raw step counts the
+other way round to the Bose Music app:** raw `0` is the strongest
+cancelling (the app's 10) and raw `10` is off (the app's 0). The
+library takes the app's number and writes `10 - level`. The device sends
+no reply to the write (firmware 1.8.2), so the value is read back with
+`01 05 01 00`. The enabled flag is `1` in every capture and is left at
+`1`. Only the NC 700 (`4024`) answers; on the QC35 this function does
+not exist, and the NC 700 answers `01 06` with ERROR `04`.
+
+### `01 0e` remember the last noise-cancelling step (NC 700)
+
+Library: `remember_noise_cancelling()`, `set_remember_noise_cancelling(on)`.
+
+`01 0e 02 01 xx`, `xx` `01` on, `00` off; reply `01 0e 03 01 xx`. Like
+`01 05` the write gets no reply, so it is read back. The Bose Music app
+calls it "Remember My Last Setting".
+
+### `01 0f` noise-cancelling favourites (NC 700)
+
+Library: `noise_cancelling_favorites()`, `set_noise_cancelling_favorites(levels)`.
+
+```text
+> 01 0f 01 00
+< 01 0f 03 04 02 00 05 0a       index 2 selected; raw steps 0, 5, 10
+> 01 0f 02 04 02 01 06 09       same index; raw steps 1, 6, 9
+```
+
+The payload is the selected index followed by one raw step per
+favourite. The app showed this device's favourites as 10, 5 and 0, which
+are the raw steps 0, 5 and 10. The library keeps the selected index when
+it writes the three values. Out-of-range values are never sent.
+
+### `01 14` motion auto-off (NC 700)
+
+Library: `motion_auto_off()`, `set_motion_auto_off(on)`.
+
+`01 14 02 01 xx`; the device echoes `01 14 03 01 xx`. When on, the
+headphones switch off after an hour without motion whatever the
+auto-off timer says (the app's "Motion Detection").
 
 ### `01 06` noise cancelling — `set_noise_cancelling(level)`
 
@@ -754,6 +805,34 @@ SoundLink Color II capture:
 < 05 05 04 01 06
 ```
 
+## Block 09: notifications
+
+### `09 02` subscribe by function block — `enable_notifications(blocks)`, `read_notification()`
+
+```text
+> 09 02 02 04 01 05 02 37      mask 01 (enable), blocks 0, 1, 2, 4, 5, 9, 16, 18
+> 09 02 02 02 01 04            mask 01, block 2 only
+```
+
+The payload is a mask byte (`00` overwrite, `01` enable, `02` disable)
+and a big-endian bit set with block `n` at bit `n`; the Bose Music app
+sends the first line. The subscription lasts for the connection. From
+then on the device sends status packets (operator `3`) by itself.
+Captured on the NC 700 (firmware 1.8.2) with the CLI's `--watch`:
+
+* `01 05 03 03 0b <raw> 01`, then `01 0f 03 04 <index> <raw>…`: the
+  noise-cancelling step changed, from the button or from the app.
+* `05 05 03 02 10 <level>`: the volume changed (scale 16).
+* A burst of about 40 packets when the playing source changes: name
+  `01 02`, paired list `04 04`, device info `04 05` for each paired
+  device, the active source `05 01` and now-playing `05 06`.
+
+**There are no key-press packets on the NC 700.** `02 0c` (the app's
+`StatusButton`) describes a button's configuration, and the NC 700
+answers it with ERROR `04`; `02 01` answers ERROR `05`. The shortcut
+button (tap and hold) produced no packet while a subscription was open.
+A press can only be seen through what it changes.
+
 ## Block 1f: audio modes (QC Ultra, QC45)
 
 Captured on a QC Ultra, firmware 1.6.7. The QC45 differences are below.
@@ -934,3 +1013,78 @@ Media keys work; volume scale 100 with 99 the highest accepted level;
 the volume reply comes twice; the paired-device replies differ from
 the C acknowledgements (see block 04). Keeps at most two connections.
 Pairing mode works (see block 04).
+
+### NC 700 Headphones
+
+Product `4024`, firmware 1.8.2-11524+e0f7590 (2026-11-04). Control
+channel RFCOMM 8. The Bose Music app also talks BMAP to it over BLE;
+that is not implemented here.
+
+Every setting below was read from a laptop and compared with the Bose
+Music app's screens. Each write was read back from the device and the
+setting then put back. Noise cancelling, the favourites, the shortcut,
+the equalizer, the volume and self voice were also checked by ear or in
+the Bose Music app after a write from the laptop. The remember-last-setting
+and motion auto-off switches, the voice prompts and the auto-off were
+confirmed by read-back only.
+
+* **Settings:** noise cancelling in steps (`01 05`), remember last
+  setting (`01 0e`), favourites (`01 0f`), motion auto-off (`01 14`),
+  equalizer (`01 07`, bass, mid and treble in `-10..=10`, same layout as
+  the QC Ultra), self voice (`01 0b`, same reply `01 02 0f`), auto-off
+  (`01 04`, 1-byte layout: 20 minutes and never were written; the app
+  lists 5, 20, 40, 60, 180 minutes and never), voice prompts (`01 03`),
+  volume (`05 05`, scale 16: `05 05 03 02 10 0a` is level 10 of 16;
+  levels 9 and 10 were written), shortcut (`01 09`) and the paired list
+  (`04 04`, read only).
+* **Shortcut:** the reply is `01 09 03 0b 80 05 07 00 01 20 88 00 00 00 80`:
+  button `80`, **event `05`** (the QC Ultra and QC45 use `09`) and the
+  action `07`, the wake-word toggle. The action numbers are the same as
+  on the QC models: `03` battery level, `10` Spotify, `0e` off, `01`
+  voice assistant. `01 09 02 03 80 05 xx` was verified for battery,
+  Spotify and the wake word.
+* **The device does not answer some writes:** `01 04` (auto-off), `01 05`,
+  `01 0e` and `01 0f` get no reply to a write, so the library reads the
+  value back. `01 14` was echoed in the capture.
+* **Voice prompts:** the payload is 5 bytes (`e1 00 01 81 5e`). Writing
+  `01 03 02 01 xx` changes the language byte; the device stores it
+  without the unknown flag in bit 6 (`e1` is read back as `a1`), so the
+  confirmation compares the language and prompts bits only.
+* **Not supported (ERROR `04` or `03`):** `01 06` (noise-cancelling
+  levels of the QC35), `01 10` (on-head detection), `01 13` (LED
+  brightness), `01 18` (auto play/pause), and block `1f` (audio modes).
+* **Prompt language:** `--prompt-language fr` and back to `en` were
+  written and read back (`a1` to `a2` to `a1`). The last two bytes of the
+  reply, `81 5e`, look like a bit set of the supported languages, one bit
+  per language code: English, French, Italian, German, Spanish, Chinese
+  and Japanese.
+* **Paired devices:** the list byte of `04 04` has one bit per listed
+  device: `03` is both connected, `02` is only the second one (the phone
+  was disconnected). A connect (`04 01 05 07 00 <address>`) is
+  acknowledged with `04 01 07 06 <address>` (PROCESSING) and nothing
+  else for at least 8 s. A disconnect (`04 02 05 06 <address>`) gets no
+  reply at all. Both take effect, so the library accepts a PROCESSING
+  without a RESULT and the CLI then checks the connection state. A phone
+  usually reconnects by itself within seconds of a disconnect. The
+  phone's Bose app holds the control channel when it is open: with the
+  app running, the laptop gets "busy" or "connection refused".
+* **Pairing mode (`04 08`):** `04 08 05 01 01` turns it on (the headphones
+  say "ready to connect") and `04 08 05 01 00` turns it off. The write is
+  answered with PROCESSING (`04 08 07 00`) or not at all, so the library
+  reads `04 08 01 00` back: the reply is `04 08 06 02 <flag> <other>`, and
+  the **first byte is the pairing flag**, `01` while pairing and `00`
+  otherwise. The second byte changed between `00`, `01` and `03` and is
+  not decoded. Mode stayed on for over a minute until it was turned off,
+  and the off packet cleared the flag within 3 s. On the first try the
+  headphones reset the control connection and dropped the laptop's
+  Bluetooth link, which had to be reconnected with `bluetoothctl
+  connect`; later runs did not.
+* **Multipoint (`01 0a`):** reads `03`. The app's decoder takes bit 0 as
+  enabled, bit 1 as supported and bit 2 as "disable supported", so
+  multipoint is on and cannot be switched off on this model; nothing was
+  written.
+* **Remove a paired device (`04 03 05 06 <address>`):** removed a Pixel 7a
+  from a list of three. The device sent no RESULT and no PROCESSING for the
+  address (the call waited its full 15 s), but the list read back with two
+  devices. The CLI therefore checks the list after a timeout instead of
+  retrying.

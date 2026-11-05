@@ -131,7 +131,8 @@ struct Cli {
     audio_mode: Option<String>,
 
     /// Change the noise-cancelling level. level: high, low, off. On
-    /// the QC Ultra and QC45, use --audio-mode instead.
+    /// the QC Ultra and QC45, use --audio-mode instead. On the NC 700,
+    /// level: off, high or 0..=10 (0 is off, as in the Bose Music app).
     #[arg(
         help_heading = "Sound",
         short = 'c',
@@ -268,7 +269,8 @@ struct Cli {
     )]
     auto_answer: Option<String>,
 
-    /// Start in the last audio mode used (QC Ultra, QC45). switch: on, off.
+    /// Start in the last audio mode used (QC Ultra, QC45) or at the last
+    /// noise-cancelling step (NC 700). switch: on, off.
     #[arg(
         help_heading = "Settings",
         long = "remember-mode",
@@ -277,8 +279,37 @@ struct Cli {
     )]
     remember_mode: Option<String>,
 
-    /// Touch-and-hold shortcut of the right earcup (QC Ultra, QC45). action: battery, immersive,
-    /// assistant, spotify, off.
+    /// Switch off after an hour without motion (NC 700). switch: on, off.
+    #[arg(
+        help_heading = "Settings",
+        long = "motion-auto-off",
+        value_name = "SWITCH",
+        group = "command"
+    )]
+    motion_auto_off: Option<String>,
+
+    /// Set the three noise-cancelling favourites (NC 700), e.g. `10,5,0`
+    /// (0 is off, 10 is the strongest).
+    #[arg(
+        help_heading = "Sound",
+        long = "nc-favorites",
+        value_name = "LEVELS",
+        group = "command"
+    )]
+    nc_favorites: Option<String>,
+
+    /// Print what the device sends on its own (button presses, battery,
+    /// setting changes) for this many seconds.
+    #[arg(
+        help_heading = "Advanced",
+        long = "watch",
+        value_name = "SECONDS",
+        group = "command"
+    )]
+    watch: Option<u64>,
+
+    /// Touch-and-hold shortcut of the right earcup (QC Ultra, QC45, NC 700). action: battery,
+    /// immersive, assistant, spotify, wake-word (NC 700), off.
     #[arg(
         help_heading = "Settings",
         long = "shortcut",
@@ -460,19 +491,23 @@ fn dispatch(cli: Cli) -> Result<()> {
         let parsed = parse_auto_off(minutes)?;
         device.set_auto_off(parsed)?;
     } else if let Some(level) = cli.noise_cancelling.as_deref() {
-        let parsed = parse_noise_cancelling(level)?;
         // Re-fetch the device id so we can refuse early on devices
         // that have no NC hardware. The C code's behaviour.
         let (device_id, _) = device.device_id()?;
-        if bose_connect::has_audio_modes(device_id) {
-            bail!(
-                "this device uses audio modes instead of noise-cancelling levels; use --audio-mode"
-            );
+        if bose_connect::has_noise_cancelling_steps(device_id) {
+            device.set_noise_cancelling_level(parse_noise_cancelling_level(level)?)?;
+        } else {
+            let parsed = parse_noise_cancelling(level)?;
+            if bose_connect::has_audio_modes(device_id) {
+                bail!(
+                    "this device uses audio modes instead of noise-cancelling levels; use --audio-mode"
+                );
+            }
+            if !bose_connect::has_noise_cancelling(device_id) {
+                bail!("this device does not have noise cancelling");
+            }
+            device.set_noise_cancelling(parsed)?;
         }
-        if !bose_connect::has_noise_cancelling(device_id) {
-            bail!("this device does not have noise cancelling");
-        }
-        device.set_noise_cancelling(parsed)?;
     } else if let Some(lang) = cli.prompt_language.as_deref() {
         let parsed = language_from_arg(lang)
             .ok_or_else(|| anyhow::anyhow!("invalid prompt language argument: {lang}"))?;
@@ -582,9 +617,25 @@ fn dispatch(cli: Cli) -> Result<()> {
     } else if let Some(switch) = cli.auto_answer.as_deref() {
         device.set_auto_answer_calls(parse_switch("auto-answer", switch)?)?;
     } else if let Some(switch) = cli.remember_mode.as_deref() {
-        device.set_remember_audio_mode(parse_switch("remember-mode", switch)?)?;
+        let on = parse_switch("remember-mode", switch)?;
+        let (device_id, _) = device.device_id()?;
+        if bose_connect::has_nc_settings(device_id) {
+            device.set_remember_noise_cancelling(on)?;
+        } else {
+            device.set_remember_audio_mode(on)?;
+        }
+    } else if let Some(switch) = cli.motion_auto_off.as_deref() {
+        require_nc_settings(&mut device, "motion-auto-off")?;
+        device.set_motion_auto_off(parse_switch("motion-auto-off", switch)?)?;
+    } else if let Some(seconds) = cli.watch {
+        do_watch(&mut device, seconds)?;
+    } else if let Some(levels) = cli.nc_favorites.as_deref() {
+        require_nc_settings(&mut device, "nc-favorites")?;
+        device.set_noise_cancelling_favorites(&parse_nc_favorites(levels)?)?;
     } else if let Some(action) = cli.shortcut.as_deref() {
-        device.set_shortcut(parse_shortcut(action)?)?;
+        let action = parse_shortcut(action)?;
+        let (device_id, _) = device.device_id()?;
+        device.set_shortcut_event(bose_connect::shortcut_event(device_id), action)?;
     } else {
         // No command flag. The C code prints the usage on bare
         // invocation; mirror that.
@@ -596,6 +647,48 @@ fn dispatch(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The function blocks the Bose Music app subscribes to.
+const WATCH_BLOCKS: [u8; 8] = [0, 1, 2, 4, 5, 9, 16, 18];
+
+/// Subscribe to notifications and print every packet the device sends
+/// for `seconds`, with the time since the start.
+fn do_watch(device: &mut BoseDevice, seconds: u64) -> Result<()> {
+    device.enable_notifications(&WATCH_BLOCKS)?;
+    println!("Watching for {seconds} s; press buttons or change settings.");
+    let start = std::time::Instant::now();
+    let end = start + std::time::Duration::from_secs(seconds);
+    while std::time::Instant::now() < end {
+        if let Some(n) = device.read_notification()? {
+            let hex: Vec<String> = n.payload.iter().map(|b| format!("{b:02x}")).collect();
+            println!(
+                "+{:>5.1}s  {:02x} {:02x}  op {}  [{}]  {}",
+                start.elapsed().as_secs_f32(),
+                n.block,
+                n.function,
+                n.operator,
+                hex.join(" "),
+                notification_label(n.block, n.function)
+            );
+        }
+    }
+    Ok(())
+}
+
+/// A name for the notifications seen so far; empty for the others.
+fn notification_label(block: u8, function: u8) -> &'static str {
+    match (block, function) {
+        (0x02, 0x02) => "battery",
+        (0x02, 0x0c) => "button",
+        (0x01, 0x05) => "noise cancelling",
+        (0x01, 0x0f) => "noise cancelling favourites",
+        (0x01, 0x09) => "shortcut",
+        (0x01, 0x07) => "equalizer",
+        (0x05, 0x05) => "volume",
+        (0x04, 0x04) => "paired devices",
+        _ => "",
+    }
 }
 
 fn run_info(device: &mut BoseDevice) -> Result<()> {
@@ -759,9 +852,35 @@ fn print_settings(device: &mut BoseDevice, device_id: u16) -> Result<()> {
             ShortcutAction::ImmersiveAudio => "immersive",
             ShortcutAction::VoiceAssistant => "assistant",
             ShortcutAction::Spotify => "spotify",
+            ShortcutAction::ToggleWakeWord => "wake-word",
             ShortcutAction::Off => "off",
         };
         println!("\tShortcut: {shortcut}");
+    }
+    if bose_connect::has_noise_cancelling_steps(device_id) {
+        let nc = device.noise_cancelling_steps()?;
+        println!(
+            "\tNoise Cancelling: {}/{}",
+            nc.level(),
+            nc.steps.saturating_sub(1)
+        );
+        println!("\tNoise Cancelling Favorites: {}", {
+            let favorites = device.noise_cancelling_favorites()?;
+            favorites
+                .levels(nc.steps)
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        });
+    }
+    if bose_connect::has_nc_settings(device_id) {
+        let on_off = |on: bool| if on { "on" } else { "off" };
+        println!(
+            "\tRemember Last Noise Cancelling: {}",
+            on_off(device.remember_noise_cancelling()?)
+        );
+        println!("\tMotion Auto-Off: {}", on_off(device.motion_auto_off()?));
     }
     Ok(())
 }
@@ -935,6 +1054,14 @@ where
             Ok(()) => {
                 eprintln!("[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: protocol OK");
             }
+            // The NC 700 sends no final result for a remove: the state
+            // check below is the test, and waiting again would only
+            // repeat the 15 s.
+            Err(BoseError::Io(ref io)) if io.kind() == std::io::ErrorKind::TimedOut => {
+                eprintln!(
+                    "[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: no final result; checking the device"
+                );
+            }
             Err(e) => {
                 // An ERROR packet is the device's answer; asking again
                 // gets the same one.
@@ -954,6 +1081,18 @@ where
         // Protocol said OK — verify the device's internal state
         // actually changed.
         let after = snapshot_paired_addresses(device)?;
+        if op == "connect" && !wait_until_connected(device, address) {
+            if attempt < MAX_ATTEMPTS {
+                eprintln!(
+                    "[paired-op:{op}] attempt {attempt}/{MAX_ATTEMPTS}: protocol OK but the device is not connected; retrying"
+                );
+                std::thread::sleep(RETRY_BACKOFF);
+                continue;
+            }
+            return Err(anyhow::anyhow!(
+                "connect {canonical}: the device acknowledged the request but is not connected"
+            ));
+        }
         let op_result = verify_paired_change(op, &before, &after, &address);
         match op_result {
             Ok(()) => {
@@ -978,6 +1117,20 @@ where
         }
     }
     unreachable!("loop returns or continues")
+}
+
+/// Poll the headphones' own view of `address` for a few seconds until it
+/// reads as connected (the NC 700 never sends a final result for a connect).
+fn wait_until_connected(device: &mut BoseDevice, address: BdAddr) -> bool {
+    for _ in 0..5 {
+        if let Ok(info) = device.device_info(address) {
+            if info.status != DeviceStatus::Disconnected {
+                return true;
+            }
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    false
 }
 
 fn snapshot_paired_addresses(
@@ -1059,6 +1212,42 @@ fn parse_noise_cancelling(s: &str) -> Result<NoiseCancelling> {
     })
 }
 
+/// The NC 700 level as the Bose Music app shows it: `0` (off) to `10`
+/// (strongest). `off` and `high` are the two ends.
+fn parse_noise_cancelling_level(s: &str) -> Result<u8> {
+    match s {
+        "off" => Ok(0),
+        "high" => Ok(10),
+        _ => match s.parse::<u8>() {
+            Ok(level) if level <= 10 => Ok(level),
+            _ => {
+                bail!("invalid noise cancelling argument: {s} (off, high or 0..=10 on this device)")
+            }
+        },
+    }
+}
+
+/// `10,5,0`: the NC 700 favourites as the Bose Music app shows them.
+fn parse_nc_favorites(s: &str) -> Result<Vec<u8>> {
+    s.split(',')
+        .map(|part| {
+            part.trim()
+                .parse::<u8>()
+                .map_err(|_| anyhow::anyhow!("invalid noise cancelling favourite: {part:?}"))
+        })
+        .collect()
+}
+
+/// Refuse `setting` on devices that are not the NC 700 rather than
+/// writing a function they were never asked about.
+fn require_nc_settings(device: &mut BoseDevice, setting: &str) -> Result<()> {
+    let (device_id, _) = device.device_id()?;
+    if !bose_connect::has_nc_settings(device_id) {
+        bail!("--{setting} is only known to work on the NC 700 Headphones");
+    }
+    Ok(())
+}
+
 fn parse_voice_prompts(s: &str) -> Result<bool> {
     Ok(match s {
         "on" => true,
@@ -1112,9 +1301,10 @@ fn parse_shortcut(s: &str) -> Result<ShortcutAction> {
         "immersive" => ShortcutAction::ImmersiveAudio,
         "assistant" => ShortcutAction::VoiceAssistant,
         "spotify" => ShortcutAction::Spotify,
+        "wake-word" => ShortcutAction::ToggleWakeWord,
         "off" => ShortcutAction::Off,
         _ => bail!(
-            "invalid shortcut argument: {s} (expected battery, immersive, assistant, spotify or off)"
+            "invalid shortcut argument: {s} (expected battery, immersive, assistant, spotify, wake-word or off)"
         ),
     })
 }
