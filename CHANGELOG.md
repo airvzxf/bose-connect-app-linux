@@ -6,6 +6,35 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Added
+
+* GUI: party and stereo mode for two SoundLink Color II, in a "Party
+  mode" group on the speaker's page: "Join with…" (the other speaker,
+  from this computer's and the speaker's paired devices, and the
+  music source: this computer or a phone connected to the speaker), a
+  Party/Stereo switch and "Separate". With this computer as the
+  source it pauses the media players (MPRIS), waits for a minute
+  without audio before joining, and restarts the audio stream after a
+  mode change while music plays; with a phone as the source it first
+  drops this computer's audio profiles so the speaker keeps the
+  control connection. The controls stay disabled until the speaker
+  answers, and a failed command is shown in the group. A row shows the
+  sample rate of the audio link, with a "Use 44.1 kHz" button that
+  writes a WirePlumber drop-in and restarts WirePlumber, and a warning
+  that the speakers lock up now and then. Tested on two speakers,
+  firmware 4.0.1, with both sources.
+* `BoseDevice::paired_device` (`get_paired_device`, `PairedDevice`):
+  the same `04 05` request as `device_info`, also returning the
+  product id of a paired Bose device.
+
+### Fixed
+
+* GUI: a reply that comes late no longer closes the connection; three
+  in a row do. A SoundLink Color II sometimes answers after more than
+  a second, and in party mode with a phone as the source it accepts no
+  new connection, so the GUI lost the speaker until party mode ended.
+* GUI: errors are also written to the terminal log.
+
 ## [0.5.0][] - 2026-11-05
 
 ### Added

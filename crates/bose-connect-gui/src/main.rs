@@ -185,6 +185,8 @@ fn main() -> anyhow::Result<()> {
                 battery: 10,
                 ..Default::default()
             })
+        } else if scenario == MockScenario::Speaker {
+            Some(bose_connect_gui::transport::MockSeed::speaker())
         } else {
             None
         };
@@ -858,6 +860,11 @@ fn before_call(model: &mut AppModel, msg: &AppMsg) -> bool {
             model.connection = ConnectionState::Connecting(address.clone());
             true
         }
+        AppMsg::JoinParty { .. } | AppMsg::LeaveParty(_) | AppMsg::SetPartyMode(_) => {
+            model.party_busy = true;
+            model.party_error = None;
+            true
+        }
         _ => false,
     }
 }
@@ -869,6 +876,8 @@ struct Shown {
     snapshot: Option<DeviceSnapshot>,
     connection: ConnectionState,
     devices: Option<Vec<PairedBose>>,
+    party_busy: bool,
+    party_error: Option<String>,
 }
 
 impl Shown {
@@ -878,6 +887,8 @@ impl Shown {
             snapshot: model.snapshot.clone(),
             connection: model.connection.clone(),
             devices: model.host_devices.clone(),
+            party_busy: model.party_busy,
+            party_error: model.party_error.clone(),
         }
     }
 }
@@ -920,6 +931,13 @@ enum Outcome {
     Snapshot(anyhow::Result<Box<DeviceSnapshot>>),
     Unit(anyhow::Result<()>),
     Devices(anyhow::Result<Vec<PairedBose>>),
+    /// A party-mode change, and the restart of this computer's audio
+    /// stream that follows a successful one.
+    Party {
+        result: anyhow::Result<Box<DeviceSnapshot>>,
+        restart: Option<anyhow::Result<bool>>,
+    },
+    Text(anyhow::Result<String>),
 }
 
 impl Outcome {
@@ -927,7 +945,10 @@ impl Outcome {
         match self {
             Outcome::Snapshot(r) => r.map(|b| *b),
             Outcome::Unit(r) => r.and_then(|()| anyhow::bail!("no snapshot returned")),
-            Outcome::Devices(_) | Outcome::None => anyhow::bail!("no device call was made"),
+            Outcome::Party { result, .. } => result.map(|b| *b),
+            Outcome::Devices(_) | Outcome::Text(_) | Outcome::None => {
+                anyhow::bail!("no device call was made")
+            }
         }
     }
 
@@ -935,7 +956,10 @@ impl Outcome {
         match self {
             Outcome::Snapshot(r) => r.map(|_| ()),
             Outcome::Unit(r) => r,
-            Outcome::Devices(_) | Outcome::None => anyhow::bail!("no device call was made"),
+            Outcome::Party { result, .. } => result.map(|_| ()),
+            Outcome::Devices(_) | Outcome::Text(_) | Outcome::None => {
+                anyhow::bail!("no device call was made")
+            }
         }
     }
 }
@@ -969,6 +993,13 @@ fn call_service(service: &Arc<dyn DeviceService>, msg: &AppMsg, quiet_mode: bool
         M::PairedConnect(addr) => snap(service.connect_device(*addr)),
         M::PairedDisconnect(addr) => snap(service.disconnect_device(*addr)),
         M::PairedRemove(addr) => snap(service.remove_device(*addr)),
+        M::JoinParty { peer, source } => party(service, service.join_party(*peer, *source)),
+        M::LeaveParty(peer) => party(service, service.leave_party(*peer)),
+        M::SetPartyMode(mode) => party(service, service.set_party_mode(*mode)),
+        M::Use44100 => Outcome::Text(
+            bose_connect_gui::services::audio::use_44100_for_bluetooth()
+                .map(|path| path.display().to_string()),
+        ),
         M::ApplyProfile(profile) => {
             // Apply each setting in turn, in the original C CLI's
             // order; a failed one does not stop the others.
@@ -992,6 +1023,40 @@ fn call_service(service: &Arc<dyn DeviceService>, msg: &AppMsg, quiet_mode: bool
             snap(service.set_auto_off(bose_connect::AutoOff::Never))
         }
         _ => Outcome::None,
+    }
+}
+
+/// After a party-mode change the speaker stays silent until this
+/// computer restarts its audio stream; give it a moment first (it
+/// announces the new mode).
+fn party(service: &Arc<dyn DeviceService>, result: anyhow::Result<DeviceSnapshot>) -> Outcome {
+    let restart = result.is_ok().then(|| {
+        std::thread::sleep(PARTY_RESTART_DELAY);
+        service.restart_audio_stream()
+    });
+    Outcome::Party {
+        result: result.map(Box::new),
+        restart,
+    }
+}
+
+/// Wait between a party-mode change and the audio-stream restart.
+const PARTY_RESTART_DELAY: Duration = Duration::from_secs(2);
+
+/// Log the audio-stream restart that follows a party-mode change.
+fn log_restart(model: &mut AppModel, outcome: &Outcome) {
+    if let Outcome::Party {
+        restart: Some(restart),
+        ..
+    } = outcome
+    {
+        match restart {
+            Ok(true) => model.log_info("restarted the audio stream from this computer"),
+            Ok(false) => {}
+            Err(e) => model.log_error(format!(
+                "restart the audio stream: {e}; pause and play the music"
+            )),
+        }
     }
 }
 
@@ -1142,6 +1207,65 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
                 model.connection = ConnectionState::Connected;
             }
             Err(e) => model.log_error(format!("remove device: {e}")),
+        },
+        M::JoinParty { peer, .. } => {
+            model.party_busy = false;
+            log_restart(model, &outcome);
+            let formatted = bose_connect_gui::i18n::format_address(peer);
+            match outcome.snapshot() {
+                Ok(snap) => {
+                    model.log_success(format!("joined {formatted}: party mode"));
+                    model.snapshot = Some(snap);
+                    if !model.simulator {
+                        model.persisted.party_peer = Some(formatted);
+                        model.persisted.save();
+                    }
+                }
+                Err(e) => {
+                    model.party_error = Some(e.to_string());
+                    model.log_error(format!("join {formatted}: {e}"));
+                }
+            }
+        }
+        M::LeaveParty(peer) => {
+            model.party_busy = false;
+            log_restart(model, &outcome);
+            let formatted = bose_connect_gui::i18n::format_address(peer);
+            match outcome.snapshot() {
+                Ok(snap) => {
+                    model.log_success(format!("separated {formatted}"));
+                    model.snapshot = Some(snap);
+                    if !model.simulator {
+                        model.persisted.party_peer = None;
+                        model.persisted.save();
+                    }
+                }
+                Err(e) => {
+                    model.party_error = Some(e.to_string());
+                    model.log_error(format!("separate {formatted}: {e}"));
+                }
+            }
+        }
+        M::SetPartyMode(mode) => {
+            model.party_busy = false;
+            log_restart(model, &outcome);
+            match outcome.snapshot() {
+                Ok(snap) => {
+                    model.log_success(format!("party mode: {mode:?}"));
+                    model.snapshot = Some(snap);
+                }
+                Err(e) => {
+                    model.party_error = Some(e.to_string());
+                    model.log_error(format!("party mode {mode:?}: {e}"));
+                }
+            }
+        }
+        M::Use44100 => match outcome {
+            Outcome::Text(Ok(path)) => model.log_success(format!(
+                "wrote {path}; Bluetooth audio links opened from now on use 44.1 kHz"
+            )),
+            Outcome::Text(Err(e)) => model.log_error(format!("44.1 kHz: {e}")),
+            _ => {}
         },
         M::ApplyProfile(profile) => {
             model.log_info(format!("applying profile {}", profile.label()));

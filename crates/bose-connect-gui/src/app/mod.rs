@@ -8,6 +8,7 @@
 //! Re-exported here for callers that want to import once.
 
 pub mod model;
+pub mod party;
 pub mod view;
 pub mod widgets;
 

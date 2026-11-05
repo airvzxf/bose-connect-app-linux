@@ -24,6 +24,10 @@ pub struct PersistedState {
     /// same view. Stored as the stable string key of the enum.
     #[serde(default)]
     pub last_page: Option<String>,
+    /// The speaker last joined in party mode, so "Separate" knows
+    /// which one to unlink (the speaker does not report it).
+    #[serde(default)]
+    pub party_peer: Option<String>,
 }
 
 impl PersistedState {

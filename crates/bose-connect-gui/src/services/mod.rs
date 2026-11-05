@@ -1,6 +1,7 @@
 //! Service layer for the GUI.
 
 pub mod assets;
+pub mod audio;
 pub mod bluetooth;
 pub mod device;
 pub mod media_player;

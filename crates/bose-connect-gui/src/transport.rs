@@ -58,6 +58,20 @@ pub mod demo {
     pub const SPEAKER: &str = "02:00:00:00:00:05";
 }
 
+impl MockSeed {
+    /// A simulated SoundLink Color II instead of the headset, with
+    /// the same address, for the party-mode screens.
+    pub fn speaker() -> Self {
+        Self {
+            name: "Bose SoundLink Color II".to_string(),
+            firmware: "4.0.1".to_string(),
+            device_id: 0x400d,
+            volume: None,
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for MockSeed {
     fn default() -> Self {
         let mut history = Vec::with_capacity(32);
@@ -117,6 +131,8 @@ pub struct MockState {
     pub volume: u8,
     pub active_device: Option<BdAddr>,
     pub device_bd_addr: Option<BdAddr>,
+    /// Party mode (simulated SoundLink Color II only).
+    pub party_mode: bose_connect::PartyMode,
 }
 
 impl From<MockSeed> for MockState {
@@ -149,6 +165,7 @@ impl From<MockSeed> for MockState {
             volume: seed.volume.unwrap_or(45),
             active_device: seed.active_device,
             device_bd_addr: seed.device_bd_addr,
+            party_mode: bose_connect::PartyMode::Off,
         }
     }
 }

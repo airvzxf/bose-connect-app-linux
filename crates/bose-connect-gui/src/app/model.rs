@@ -108,6 +108,11 @@ pub struct AppModel {
     pub connection: ConnectionState,
     /// In-flight async ops; the reducer uses this to gate optimistic UI.
     pub in_flight: Vec<String>,
+    /// A party-mode command is waiting for the speaker's answer: the
+    /// party controls stay disabled until it arrives.
+    pub party_busy: bool,
+    /// Why the last party-mode command failed, until the next one.
+    pub party_error: Option<String>,
     /// Activity log; newest first.
     pub log: Vec<LogEntry>,
     /// Whether the user has enabled Quiet Mode for the running session.
@@ -132,6 +137,8 @@ impl AppModel {
             snapshot: None,
             connection: ConnectionState::NotStarted,
             in_flight: Vec::new(),
+            party_busy: false,
+            party_error: None,
             log: vec![LogEntry {
                 timestamp: Utc::now(),
                 level: LogLevel::Info,
@@ -170,10 +177,12 @@ impl AppModel {
     }
 
     pub fn log_error<S: Into<String>>(&mut self, s: S) {
+        let message = s.into();
+        tracing::warn!(target: "app", "{message}");
         self.log.push(LogEntry {
             timestamp: Utc::now(),
             level: LogLevel::Error,
-            message: s.into(),
+            message,
         });
         if self.log.len() > 200 {
             self.log.remove(0);
@@ -214,6 +223,7 @@ impl AppModel {
                 noise_cancelling: true,
                 self_voice: true,
                 pairing_toggle: true,
+                party_mode: false,
             },
         }
     }
@@ -265,6 +275,19 @@ pub enum AppMsg {
     SetName(String),
     SetVolume(u8),
     SendMediaKey(bose_connect::MediaKey),
+
+    /// Party mode (SoundLink Color II): join the speaker `peer`, with
+    /// `source` as the music source (`None`: this computer).
+    JoinParty {
+        peer: bose_connect::BdAddr,
+        source: Option<bose_connect::BdAddr>,
+    },
+    /// Separate the joined speaker.
+    LeaveParty(bose_connect::BdAddr),
+    /// Switch two joined speakers between party and stereo mode.
+    SetPartyMode(bose_connect::PartyMode),
+    /// Make PipeWire open Bluetooth audio links at 44.1 kHz.
+    Use44100,
 
     /// Profile selection.
     ApplyProfile(ProfileName),
