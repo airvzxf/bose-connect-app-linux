@@ -56,6 +56,11 @@
     <binary>bose-connect-gui</binary>
   </provides>
   <releases>
+    <release version="0.6.0" date="2026-11-05" urgency="medium">
+      <description>
+        <p>Party and stereo mode for two SoundLink Color II speakers: join them with this computer or a phone as the music source, switch between party and stereo, and separate them. From this computer the app joins once the audio has been quiet for a minute, restarts the audio stream after a mode change, and can make PipeWire use 44.1 kHz. A late reply from a device no longer drops the connection.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-11-05" urgency="medium">
       <description>
         <p>The library and the command line add party and stereo mode for two SoundLink Color II speakers and support for the NC 700 Headphones (stepped noise cancelling, favourites, motion auto-off and more). Fixes reading the paired-device list when no device has an audio link and the QC35 II's pairing-mode reply.</p>
