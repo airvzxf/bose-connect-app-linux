@@ -494,7 +494,7 @@ The list is ordered by most recent use: on a SoundLink Color II the
 laptop came first while it was the active source, the phone after it
 was (2026-11-02).
 
-### `04 05` device info (C) — `device_info(address)`
+### `04 05` device info (C) — `device_info()`, `paired_device()`
 
 ```text
 > 04 05 01 06 <addr>
@@ -512,10 +512,12 @@ devices in its list:
 < 04 05 03 1d 0062018c0cb7 01 02 03 "motorola edge 50 neo"
 ```
 
-For the other speaker the 3 bytes start with its product id `40 0d`.
-The meaning of the last byte (`01`) and of the 2 bytes of other
-devices is unknown, and so are the high status bits (`c4` here, `54`
-in an earlier capture of the same speaker).
+For the other speaker the 3 bytes start with its product id `40 0d`;
+`paired_device()` returns it, and the GUI offers only paired devices
+with party mode as the other speaker (a phone or a computer would be
+asked to act as a speaker). The meaning of the last byte (`01`) and of
+the 2 bytes of other devices is unknown, and so are the high status
+bits (`c4` here, `54` in an earlier capture of the same speaker).
 
 ### `04 01` connect a source — `connect_device(address)`
 
@@ -678,6 +680,35 @@ sharing music".
   Start, for example `pactl suspend-sink <sink> 1` and `0`). Then both
   speakers play again. The stream was restarted 19 times; at one
   of them (2026-11-04 21:41:13) the White locked up.
+
+With a phone as the music source, the computer must drop its own
+audio profiles first (`org.bluez.Device1.DisconnectProfile` for A2DP
+`110b`, AVRCP `110c` and `110e`, HFP `111e`; the speaker announces
+that the computer disconnected) and keep only the control connection:
+with an audio link of its own, the White dropped the computer's whole
+link at the join to make room for the Black. The music keeps playing
+through every mode change; no restart is needed.
+
+From the GUI (2026-11-05, same speakers and firmware, BlueZ 5.87,
+PipeWire 1.6.10, WirePlumber 0.5.18):
+
+* Joins: 3 with this computer as the source (one of them over a link
+  the computer opened at 44.1 kHz, below) and 2 with the phone, all
+  accepted; stereo, party and leave worked once with each source. The
+  only lockup is the one in the next point.
+* Restarting an idle stream is not needed and not safe: restarting it
+  right after a join, with no music playing, was followed a second
+  later by the Black locking up. The GUI restarts the stream only when
+  it is playing.
+* The White sometimes answers a request after more than a second,
+  joined or not (8 times in two hours of requests every minute, never
+  twice in a row). The control connection is fine; closing it is not:
+  joined with the phone as the source, the White then accepts no new
+  connection ("Host is down") until party mode ends.
+* `monitor.bluez.properties = { bluez5.default.rate = 44100 }` in a
+  WirePlumber drop-in makes the links this computer opens use SBC at
+  44.1 kHz (`Configuration` byte 0 `21` instead of `11`); restarting
+  WirePlumber reconnects the open links at the new rate.
 
 The speakers also lock up now and then when the phone is the source;
 a locked-up speaker has to be switched off and on.

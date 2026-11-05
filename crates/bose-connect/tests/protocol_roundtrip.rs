@@ -23,9 +23,9 @@ use std::time::Duration;
 
 use bose_connect::protocol::{
     get_audio_mode, get_audio_mode_name, get_audio_modes, get_battery_level, get_device_id,
-    get_device_info, get_device_status, get_firmware_version, get_serial_number, get_shortcut,
-    set_audio_mode, set_auto_off, set_name, set_pairing, set_prompt_language, set_self_voice,
-    set_voice_prompts,
+    get_device_info, get_device_status, get_firmware_version, get_paired_device, get_serial_number,
+    get_shortcut, set_audio_mode, set_auto_off, set_name, set_pairing, set_prompt_language,
+    set_self_voice, set_voice_prompts, PairedDevice,
 };
 use bose_connect::{
     AutoOff, BdAddr, BoseError, DeviceStatus, NoiseCancelling, Pairing, PromptLanguage, SelfVoice,
@@ -566,9 +566,29 @@ fn device_error_packet_surfaces_as_error() {
 
 /// Run `get_device_info` against one captured reply payload.
 fn device_info_from(address: BdAddr, payload: &[u8]) -> bose_connect::types::Device {
+    let device = paired_device_from(address, payload).device;
+    let reply = payload.to_vec();
+    let same = with_mock_device(
+        move |client| get_device_info(client, address).unwrap(),
+        move |server| {
+            let mut request = [0x04, 0x05, 0x01, 0x06, 0, 0, 0, 0, 0, 0];
+            request[4..].copy_from_slice(&address.b);
+            expect_request(server, request);
+            server
+                .write_all(&[0x04, 0x05, 0x03, reply.len() as u8])
+                .unwrap();
+            server.write_all(&reply).unwrap();
+        },
+    );
+    assert_eq!(same, device);
+    device
+}
+
+/// Run `get_paired_device` against one captured reply payload.
+fn paired_device_from(address: BdAddr, payload: &[u8]) -> PairedDevice {
     let reply = payload.to_vec();
     with_mock_device(
-        move |client| get_device_info(client, address).unwrap(),
+        move |client| get_paired_device(client, address).unwrap(),
         move |server| {
             let mut request = [0x04, 0x05, 0x01, 0x06, 0, 0, 0, 0, 0, 0];
             request[4..].copy_from_slice(&address.b);
@@ -598,6 +618,11 @@ fn slc2_device_info_of_a_bose_speaker() {
     let device = device_info_from(address, &payload);
     assert_eq!(name_of(&device), "Bose SLC II Black \u{1f43a}");
     assert_eq!(device.status, DeviceStatus::Disconnected);
+    assert_eq!(
+        paired_device_from(address, &payload).product_id,
+        Some(0x400d),
+        "the product id of a SoundLink Color II"
+    );
 }
 
 /// Same capture: other devices have 2 bytes before the name.
@@ -622,6 +647,7 @@ fn slc2_device_info_of_a_laptop_and_a_phone() {
     let device = device_info_from(phone, &payload);
     assert_eq!(name_of(&device), "motorola edge 50 neo");
     assert_eq!(device.status, DeviceStatus::Connected);
+    assert_eq!(paired_device_from(phone, &payload).product_id, None);
 }
 
 /// SoundLink Color II, firmware 4.0.1 (2026-11-02): pairing mode is

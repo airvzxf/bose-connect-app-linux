@@ -1112,6 +1112,25 @@ pub struct PairedDevices {
 /// in `based.c`. Returns the [`Device`] struct populated by the
 /// protocol.
 pub fn get_device_info<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<Device> {
+    get_paired_device(io, address).map(|paired| paired.device)
+}
+
+/// A paired device as [`get_paired_device`] returns it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairedDevice {
+    /// Address, connection state and name, as [`get_device_info`]
+    /// returns them.
+    pub device: Device,
+    /// The product id of a Bose device (`0x400d` for a SoundLink
+    /// Color II); `None` for other devices (a phone, a computer).
+    pub product_id: Option<u16>,
+}
+
+/// Same request as [`get_device_info`], also returning the product id
+/// of a Bose device. Verified on a SoundLink Color II, firmware 4.0.1:
+/// for the other SoundLink Color II the reply carries `40 0d` after the
+/// status byte; for a phone it carries two bytes and no Bose bit.
+pub fn get_paired_device<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<PairedDevice> {
     let mut send = [0u8; BYTES_POSITION_10];
     send[..4].copy_from_slice(&GET_DEVICE_INFO_SEND_PREFIX);
     send[BYTES_POSITION_4..BYTES_POSITION_4 + BT_ADDR_LEN].copy_from_slice(&address.b);
@@ -1159,7 +1178,8 @@ pub fn get_device_info<I: BoseIo>(io: &mut I, address: BdAddr) -> BoseResult<Dev
         name_len: name.len(),
     };
     device.name[..name.len()].copy_from_slice(name);
-    Ok(device)
+    let product_id = (extra == 3).then(|| u16::from_be_bytes([rest[1], rest[2]]));
+    Ok(PairedDevice { device, product_id })
 }
 
 /// Current audio mode index (QC Ultra, QC45). Resolve it to a name with

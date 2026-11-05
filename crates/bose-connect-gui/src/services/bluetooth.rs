@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use gtk::glib::prelude::FromVariant;
+use gtk::glib::prelude::{FromVariant, ToVariant};
 use gtk::glib::VariantDict;
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
@@ -66,6 +66,7 @@ const BLUEZ_OBJECT_MANAGER: &str = "org.freedesktop.DBus.ObjectManager";
 const OBJECT_MANAGER_OBJECT_PATH: &str = "/";
 const BLUEZ_DEVICE_INTERFACE: &str = "org.bluez.Device1";
 const BLUEZ_TRANSPORT_INTERFACE: &str = "org.bluez.MediaTransport1";
+const BLUEZ_ADAPTER_INTERFACE: &str = "org.bluez.Adapter1";
 
 /// Manager for `org.bluez` device discovery. Holds the system-bus
 /// connection so the GUI can call into BlueZ from the glib main
@@ -508,6 +509,91 @@ pub fn audio_state(address: &str) -> Option<bose_connect::AudioState> {
         product,
         &transports,
     ))
+}
+
+/// Audio profiles this computer drops before a party-mode join with
+/// another music source: A2DP sink, AVRCP target and controller, HFP.
+const AUDIO_PROFILE_UUIDS: [&str; 4] = [
+    "0000110b-0000-1000-8000-00805f9b34fb",
+    "0000110c-0000-1000-8000-00805f9b34fb",
+    "0000110e-0000-1000-8000-00805f9b34fb",
+    "0000111e-0000-1000-8000-00805f9b34fb",
+];
+
+/// Disconnect this computer's audio profiles from the device at
+/// `address` (`org.bluez.Device1.DisconnectProfile`), keeping the
+/// Bluetooth link the open control connection uses. Returns how many
+/// profiles BlueZ disconnected. Blocking.
+pub fn disconnect_audio_profiles(address: &str) -> Result<usize> {
+    let entries = managed_objects().ok_or_else(|| anyhow::anyhow!("BlueZ is not reachable"))?;
+    let path = entries
+        .iter()
+        .find_map(|(path, ifaces)| {
+            let props = VariantDict::new(Some(&interface_props(ifaces, BLUEZ_DEVICE_INTERFACE)?));
+            let addr: String = props.lookup("Address").ok().flatten()?;
+            addr.eq_ignore_ascii_case(address).then(|| path.clone())
+        })
+        .ok_or_else(|| anyhow::anyhow!("BlueZ does not know {address}"))?;
+    let conn = gtk::gio::bus_get_sync(gtk::gio::BusType::System, None::<&gtk::gio::Cancellable>)?;
+    let mut disconnected = 0;
+    for uuid in AUDIO_PROFILE_UUIDS {
+        let result = conn.call_sync(
+            Some(BLUEZ_BUS_NAME),
+            &path,
+            BLUEZ_DEVICE_INTERFACE,
+            "DisconnectProfile",
+            Some(&(uuid,).to_variant()),
+            None,
+            gtk::gio::DBusCallFlags::NONE,
+            5_000,
+            None::<&gtk::gio::Cancellable>,
+        );
+        match result {
+            Ok(_) => disconnected += 1,
+            // "Not connected" and the like: nothing to drop.
+            Err(e) => tracing::debug!(target: "bluez", "DisconnectProfile {uuid}: {e}"),
+        }
+    }
+    Ok(disconnected)
+}
+
+/// Address of this computer's Bluetooth adapter (the first
+/// `org.bluez.Adapter1` by object path), as `AA:BB:CC:DD:EE:FF`.
+/// Blocking; `None` when BlueZ is not reachable or lists no adapter.
+pub fn adapter_address() -> Option<String> {
+    let mut adapters: Vec<(String, String)> = managed_objects()?
+        .iter()
+        .filter_map(|(path, ifaces)| {
+            let props = VariantDict::new(Some(&interface_props(ifaces, BLUEZ_ADAPTER_INTERFACE)?));
+            let address: String = props.lookup("Address").ok().flatten()?;
+            Some((path.clone(), address.to_ascii_uppercase()))
+        })
+        .collect();
+    adapters.sort();
+    adapters.into_iter().next().map(|(_, address)| address)
+}
+
+/// Sample rate of the SBC audio link from this computer to the
+/// device at `address`, read from the `Configuration` of its
+/// `org.bluez.MediaTransport1`. Blocking; `None` when there is no
+/// SBC transport (or BlueZ is not reachable).
+pub fn audio_sample_rate(address: &str) -> Option<u32> {
+    let entries = managed_objects()?;
+    let device_path = entries.iter().find_map(|(path, ifaces)| {
+        let props = VariantDict::new(Some(&interface_props(ifaces, BLUEZ_DEVICE_INTERFACE)?));
+        let addr: String = props.lookup("Address").ok().flatten()?;
+        addr.eq_ignore_ascii_case(address).then(|| path.clone())
+    })?;
+    entries.iter().find_map(|(_, ifaces)| {
+        let props = VariantDict::new(Some(&interface_props(ifaces, BLUEZ_TRANSPORT_INTERFACE)?));
+        let device = props.lookup_value("Device", None)?;
+        if device.str() != Some(device_path.as_str()) {
+            return None;
+        }
+        let codec: u8 = props.lookup("Codec").ok().flatten()?;
+        let config: Vec<u8> = props.lookup("Configuration").ok().flatten()?;
+        crate::services::audio::sbc_sample_rate(codec, &config)
+    })
 }
 
 /// The `a{sv}` properties of `interface` in an `a{sa{sv}}`

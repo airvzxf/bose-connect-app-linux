@@ -789,6 +789,11 @@ impl OverviewPage {
             page.append(&audio_group);
         }
 
+        // 2b. Party mode (SoundLink Color II)
+        if let Some(group) = crate::app::party::party_group(model, sender) {
+            page.append(&group);
+        }
+
         let cap = model.capabilities();
 
         // 3. Control del Auricular (Headset controls)

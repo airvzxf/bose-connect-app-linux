@@ -11,7 +11,7 @@ protocol as the official app, so the device can be controlled from
 Linux: battery, name, auto-off, voice prompts, noise cancelling or
 audio modes, equalizer, paired sources, volume and media keys.
 
-![The desktop app controlling a QuietComfort Ultra](docs/images/gui-overview.png)
+![The desktop app with two SoundLink Color II speakers in party mode](docs/images/gui-overview.png)
 
 The project is written in Rust. It started as a fork of
 [Denton-L/based-connect][denton-l], a C program under the GPL-3.0.
@@ -321,18 +321,41 @@ bose-connect-app-linux SPEAKER_1 --party-leave SPEAKER_2  # "Speakers unlinked"
 `--party-join` names this computer as the music source; with a phone
 as the source, add `--party-source PHONE_ADDRESS`.
 
+The desktop app has the same in a "Party mode" group on the speaker's
+page: "Join with…" (the other speaker, and the music source: this
+computer or a phone connected to the speaker), a Party/Stereo switch
+and "Separate". It takes the steps below by itself: it pauses the
+media players and waits for a minute without audio before joining,
+restarts the audio stream after a mode change while music plays, and
+shows the sample rate of the audio link with a button that makes
+PipeWire use 44.1 kHz. With a phone as the source it first drops this
+computer's audio link to the speaker, keeping only the control
+connection, or the speaker would drop this computer at the join.
+
 These speakers lock up now and then in party mode, also with the
 phone and the Bose app; a locked-up speaker has to be switched off and
-on. With this computer as the source, these steps made it work in the
+on. The music can also crackle for a few seconds after a mode change.
+With this computer as the source, these steps made it work in the
 tests (details in [`docs/protocol.md`](docs/protocol.md)):
 
-1. Let the speaker connect its audio by itself (switch it on and wait):
-   it then picks 44.1 kHz. When the computer opens the audio link it
-   uses 48 kHz, and both tests at 48 kHz locked up a speaker.
+1. The audio link must use 44.1 kHz. The speaker picks it when it
+   connects its audio by itself (switch it on and wait); when the
+   computer opens the link, PipeWire uses 48 kHz, and both tests at
+   48 kHz locked up a speaker. To make PipeWire use 44.1 kHz for the
+   Bluetooth links it opens (the desktop app's "Use 44.1 kHz" button
+   does this):
+
+   ```bash
+   mkdir -p ~/.config/wireplumber/wireplumber.conf.d
+   printf 'monitor.bluez.properties = {\n  bluez5.default.rate = 44100\n}\n' \
+     > ~/.config/wireplumber/wireplumber.conf.d/60-bose-connect-44100.conf
+   systemctl --user restart wireplumber
+   ```
+
 2. Play nothing for about a minute, then join.
-3. After every `--party-join`, `--party-mode` and `--party-leave`
-   the speaker goes silent until the computer restarts its audio
-   stream:
+3. After every `--party-mode` and `--party-leave` the speaker goes
+   silent until the computer restarts its audio stream (only while
+   music plays; leave an idle stream alone):
 
    ```bash
    SINK=bluez_output.AA_BB_CC_DD_EE_FF.1   # see `pactl list sinks short`

@@ -71,18 +71,18 @@ pub use crate::protocol::{
     get_auto_answer_calls, get_auto_play_pause, get_battery_level, get_battery_prompt,
     get_device_bd_addr, get_device_id, get_device_info, get_device_status, get_equalizer,
     get_firmware_version, get_immersive_audio, get_motion_auto_off, get_noise_cancelling_favorites,
-    get_noise_cancelling_steps, get_paired_devices, get_party_mode, get_remember_audio_mode,
-    get_remember_noise_cancelling, get_serial_number, get_shortcut, has_audio_modes,
-    has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer, has_immersive_audio,
-    has_legacy_settings, has_nc_settings, has_noise_cancelling, has_noise_cancelling_steps,
-    has_pairing_toggle, has_party_mode, has_self_voice, has_shortcut, join_party,
-    read_notification, send_media_key, set_audio_mode, set_auto_answer_calls, set_auto_off,
-    set_auto_play_pause, set_battery_prompt, set_equalizer_band, set_immersive_audio,
+    get_noise_cancelling_steps, get_paired_device, get_paired_devices, get_party_mode,
+    get_remember_audio_mode, get_remember_noise_cancelling, get_serial_number, get_shortcut,
+    has_audio_modes, has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer,
+    has_immersive_audio, has_legacy_settings, has_nc_settings, has_noise_cancelling,
+    has_noise_cancelling_steps, has_pairing_toggle, has_party_mode, has_self_voice, has_shortcut,
+    join_party, read_notification, send_media_key, set_audio_mode, set_auto_answer_calls,
+    set_auto_off, set_auto_play_pause, set_battery_prompt, set_equalizer_band, set_immersive_audio,
     set_motion_auto_off, set_name, set_noise_cancelling, set_noise_cancelling_favorites,
     set_noise_cancelling_level, set_pairing, set_party_mode, set_prompt_language,
     set_remember_audio_mode, set_remember_noise_cancelling, set_self_voice, set_shortcut,
     set_shortcut_event, set_voice_prompts, set_volume, shortcut_event, DeviceStatusReport,
-    PairedDevices,
+    PairedDevice, PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, EqBand, EqualizerBand,
@@ -171,6 +171,12 @@ impl BoseDevice {
     /// Fetch info for a single paired device.
     pub fn device_info(&mut self, address: BdAddr) -> BoseResult<DeviceInfo> {
         get_device_info(&mut self.conn, address)
+    }
+
+    /// Same as [`BoseDevice::device_info`], also returning the product
+    /// id when the paired device is a Bose device.
+    pub fn paired_device(&mut self, address: BdAddr) -> BoseResult<PairedDevice> {
+        get_paired_device(&mut self.conn, address)
     }
 
     /// Change the device name. `name` must be at most

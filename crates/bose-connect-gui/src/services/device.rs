@@ -10,6 +10,7 @@
 //! internally hops onto a dedicated thread for the actual socket
 //! I/O, so it never blocks the GTK main loop.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,7 +20,8 @@ use parking_lot::Mutex;
 use bose_connect::types::Device as DeviceInfo;
 use bose_connect::{
     AutoOff as AutoOffWire, BdAddr, BoseDevice, BoseError, BoseResult, DeviceStatus,
-    DeviceStatusReport, NoiseCancelling, PairedDevices, PromptLanguage, SelfVoice,
+    DeviceStatusReport, NoiseCancelling, PairedDevice, PairedDevices, PartyMode, PromptLanguage,
+    SelfVoice,
 };
 
 use crate::services::bluetooth::PairedBose;
@@ -31,6 +33,8 @@ pub struct Capability {
     pub noise_cancelling: bool,
     pub self_voice: bool,
     pub pairing_toggle: bool,
+    /// Party and stereo mode with a second speaker (SoundLink Color II).
+    pub party_mode: bool,
 }
 
 /// Snapshot of the device's identity and current state.
@@ -45,6 +49,9 @@ pub struct DeviceSnapshot {
     pub status: DeviceStatusReport,
     pub paired: PairedDevices,
     pub devices: Vec<DeviceInfo>,
+    /// The product id of each paired Bose device in `devices`;
+    /// phones and computers have none.
+    pub products: HashMap<BdAddr, u16>,
     pub capabilities: Capability,
     pub volume: Option<u8>,
     pub active_device: Option<BdAddr>,
@@ -52,6 +59,12 @@ pub struct DeviceSnapshot {
     /// How BlueZ sees the audio link to this computer; `None` when
     /// unknown (simulated device, or BlueZ not reachable).
     pub audio: Option<bose_connect::AudioState>,
+    /// Party mode; `None` on devices without it, or when the device
+    /// did not answer.
+    pub party_mode: Option<PartyMode>,
+    /// Sample rate of the SBC audio link from this computer, when
+    /// there is one.
+    pub audio_rate: Option<u32>,
 }
 
 /// Concrete boxed service.
@@ -85,12 +98,20 @@ pub trait DeviceService: Send + Sync + 'static {
     fn set_volume(&self, level: u8) -> Result<DeviceSnapshot>;
     fn send_media_key(&self, key: bose_connect::MediaKey) -> Result<()>;
 
+    /// Join the speaker `peer` to this one (party mode). `source` is
+    /// the music source; `None` means this computer.
+    fn join_party(&self, peer: BdAddr, source: Option<BdAddr>) -> Result<DeviceSnapshot>;
+    /// Separate the speaker `peer` from this one.
+    fn leave_party(&self, peer: BdAddr) -> Result<DeviceSnapshot>;
+    /// Switch two joined speakers between party and stereo mode.
+    fn set_party_mode(&self, mode: PartyMode) -> Result<DeviceSnapshot>;
+    /// Restart this computer's audio stream to the device, which a
+    /// SoundLink Color II needs after every party-mode change. `false`
+    /// when this computer is not sending it audio.
+    fn restart_audio_stream(&self) -> Result<bool>;
+
     fn capabilities(&self, device_id: u16) -> Capability {
-        Capability {
-            noise_cancelling: bose_connect::has_noise_cancelling(device_id),
-            self_voice: bose_connect::has_self_voice(device_id),
-            pairing_toggle: bose_connect::has_pairing_toggle(device_id),
-        }
+        capability_for(device_id)
     }
 }
 
@@ -109,6 +130,9 @@ pub enum MockScenario {
     Disconnected,
     /// No Bose device is paired.
     NoDevices,
+    /// The simulated device is a SoundLink Color II, and a second
+    /// one is paired and connected (party mode).
+    Speaker,
 }
 
 impl MockScenario {
@@ -118,6 +142,7 @@ impl MockScenario {
             "1" | "connected" => Some(Self::Connected),
             "disconnected" => Some(Self::Disconnected),
             "no-devices" => Some(Self::NoDevices),
+            "speaker" => Some(Self::Speaker),
             _ => None,
         }
     }
@@ -152,11 +177,15 @@ impl MockService {
             .iter()
             .map(|(addr, name, st)| transport::make_device_info(*addr, name, *st))
             .collect();
-        let capabilities = Capability {
-            noise_cancelling: bose_connect::has_noise_cancelling(state.device_id),
-            self_voice: bose_connect::has_self_voice(state.device_id),
-            pairing_toggle: bose_connect::has_pairing_toggle(state.device_id),
-        };
+        let products = state
+            .paired
+            .iter()
+            .filter_map(|(addr, _, _)| {
+                (BdAddr::from_canonical(transport::demo::SPEAKER) == Some(*addr))
+                    .then_some((*addr, 0x400d))
+            })
+            .collect();
+        let capabilities = capability_for(state.device_id);
         DeviceSnapshot {
             address: state.address,
             name: state.name.clone(),
@@ -167,11 +196,14 @@ impl MockService {
             status,
             paired,
             devices,
+            products,
             capabilities,
             volume: Some(state.volume),
             active_device: state.active_device,
             device_bd_addr: state.device_bd_addr,
             audio: None,
+            party_mode: bose_connect::has_party_mode(state.device_id).then_some(state.party_mode),
+            audio_rate: None,
         }
     }
 }
@@ -195,7 +227,11 @@ impl DeviceService for MockService {
     }
 
     fn known_devices(&self) -> Result<Vec<PairedBose>> {
-        let connected = self.scenario == MockScenario::Connected;
+        let connected = matches!(
+            self.scenario,
+            MockScenario::Connected | MockScenario::Speaker
+        );
+        let peer_on = self.scenario == MockScenario::Speaker;
         Ok(match self.scenario {
             MockScenario::NoDevices => Vec::new(),
             _ => vec![
@@ -208,7 +244,7 @@ impl DeviceService for MockService {
                 PairedBose {
                     address: transport::demo::SPEAKER.to_owned(),
                     name: "Bose SoundLink Color II".to_owned(),
-                    connected: false,
+                    connected: peer_on,
                     product_id: 0x400d,
                 },
             ],
@@ -306,6 +342,37 @@ impl DeviceService for MockService {
     fn send_media_key(&self, _key: bose_connect::MediaKey) -> Result<()> {
         Ok(())
     }
+
+    fn join_party(&self, peer: BdAddr, _source: Option<BdAddr>) -> Result<DeviceSnapshot> {
+        let mut state = self.handle.write();
+        if !bose_connect::has_party_mode(state.device_id) {
+            bail!("this device does not support party mode");
+        }
+        if peer == state.address {
+            bail!("a speaker cannot join itself");
+        }
+        state.party_mode = PartyMode::Party;
+        Ok(Self::snapshot_from(&state))
+    }
+
+    fn leave_party(&self, _peer: BdAddr) -> Result<DeviceSnapshot> {
+        let mut state = self.handle.write();
+        state.party_mode = PartyMode::Off;
+        Ok(Self::snapshot_from(&state))
+    }
+
+    fn set_party_mode(&self, mode: PartyMode) -> Result<DeviceSnapshot> {
+        let mut state = self.handle.write();
+        if state.party_mode == PartyMode::Off || mode == PartyMode::Off {
+            bail!("join a speaker first");
+        }
+        state.party_mode = mode;
+        Ok(Self::snapshot_from(&state))
+    }
+
+    fn restart_audio_stream(&self) -> Result<bool> {
+        Ok(false)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -336,6 +403,8 @@ pub struct RealService {
 struct RealInner {
     address: Option<String>,
     device: Option<BoseDevice>,
+    /// Requests in a row that got no reply in time.
+    timeouts: u32,
 }
 
 impl Default for RealService {
@@ -366,11 +435,24 @@ impl RealService {
         }
         let device = inner.device.as_mut().expect("opened above");
         let result = f(device);
-        if let Err(e) = &result {
-            if is_transport_error(e) {
+        match &result {
+            Ok(_) => inner.timeouts = 0,
+            Err(e) if is_transport_error(e) => {
                 tracing::warn!(target: "device", "closing the connection after: {e}");
                 inner.device = None;
+                inner.timeouts = 0;
             }
+            Err(e) if is_timeout_error(e) => {
+                inner.timeouts += 1;
+                if inner.timeouts >= TIMEOUTS_BEFORE_CLOSING {
+                    tracing::warn!(target: "device", "closing the connection after {} late replies: {e}", inner.timeouts);
+                    inner.device = None;
+                    inner.timeouts = 0;
+                } else {
+                    tracing::warn!(target: "device", "no reply in time ({}/{TIMEOUTS_BEFORE_CLOSING}), keeping the connection: {e}", inner.timeouts);
+                }
+            }
+            Err(_) => {}
         }
         Ok(result?)
     }
@@ -379,6 +461,7 @@ impl RealService {
     fn read_snapshot(&self) -> Result<DeviceSnapshot> {
         let address = self.inner.lock().address.clone().unwrap_or_default();
         let audio = crate::services::bluetooth::audio_state(&address);
+        let audio_rate = crate::services::bluetooth::audio_sample_rate(&address);
         let address = BdAddr::from_canonical(&address).unwrap_or(BdAddr::ANY);
         self.with_device(|dev| {
             let (device_id, _index) = dev.device_id()?;
@@ -388,14 +471,24 @@ impl RealService {
             let battery = dev.battery_level()?;
             let paired = dev.paired_devices()?;
             let mut devices = Vec::with_capacity(paired.num_devices);
+            let mut products = HashMap::new();
             for &addr in &paired.addresses[..paired.num_devices] {
-                devices.push(device_info_with_retry(dev, addr)?);
+                let info = device_info_with_retry(dev, addr)?;
+                if let Some(product_id) = info.product_id {
+                    products.insert(addr, product_id);
+                }
+                devices.push(info.device);
             }
             // Not every product answers these two (an ERROR packet,
             // or no source connected); the snapshot shows them as
             // unknown instead of failing.
             let active_device = optional(dev.active_device())?;
             let device_bd_addr = optional(dev.device_bd_addr())?;
+            let party_mode = if bose_connect::has_party_mode(device_id) {
+                optional(dev.party_mode())?
+            } else {
+                None
+            };
             Ok(DeviceSnapshot {
                 address,
                 name: status.name.clone(),
@@ -406,12 +499,15 @@ impl RealService {
                 status,
                 paired,
                 devices,
+                products,
                 capabilities: capability_for(device_id),
                 // The protocol has no volume getter.
                 volume: None,
                 active_device,
                 device_bd_addr,
                 audio,
+                party_mode,
+                audio_rate,
             })
         })
     }
@@ -427,13 +523,33 @@ impl RealService {
 }
 
 /// Errors after which the socket can no longer be trusted.
+/// Requests in a row without a reply in time before the connection is
+/// taken for gone and closed (see [`is_transport_error`]).
+const TIMEOUTS_BEFORE_CLOSING: u32 = 3;
+
+/// True when the connection is gone. A reply that did not arrive in
+/// time is not, at first: the device was busy (a SoundLink Color II answered
+/// late while another device connected to it), and the next request
+/// discards whatever arrives late. Closing the connection then would
+/// be worse than the late reply: in party mode with a phone as the
+/// source, a SoundLink Color II accepts no new connection.
 fn is_transport_error(e: &BoseError) -> bool {
+    match e {
+        BoseError::Io(io) => !is_timeout(io),
+        BoseError::Closed | BoseError::ShortRead { .. } | BoseError::ShortWrite { .. } => true,
+        _ => false,
+    }
+}
+
+/// A reply that did not arrive within the receive timeout.
+fn is_timeout_error(e: &BoseError) -> bool {
+    matches!(e, BoseError::Io(io) if is_timeout(io))
+}
+
+fn is_timeout(e: &std::io::Error) -> bool {
     matches!(
-        e,
-        BoseError::Io(_)
-            | BoseError::Closed
-            | BoseError::ShortRead { .. }
-            | BoseError::ShortWrite { .. }
+        e.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
     )
 }
 
@@ -442,7 +558,7 @@ fn is_transport_error(e: &BoseError) -> bool {
 fn optional<T>(result: BoseResult<T>) -> BoseResult<Option<T>> {
     match result {
         Ok(v) => Ok(Some(v)),
-        Err(e) if is_transport_error(&e) => Err(e),
+        Err(e) if is_transport_error(&e) || is_timeout_error(&e) => Err(e),
         Err(e) => {
             tracing::debug!(target: "device", "optional getter failed: {e}");
             Ok(None)
@@ -450,10 +566,10 @@ fn optional<T>(result: BoseResult<T>) -> BoseResult<Option<T>> {
     }
 }
 
-fn device_info_with_retry(dev: &mut BoseDevice, addr: BdAddr) -> BoseResult<DeviceInfo> {
+fn device_info_with_retry(dev: &mut BoseDevice, addr: BdAddr) -> BoseResult<PairedDevice> {
     let mut attempt = 1;
     loop {
-        match dev.device_info(addr) {
+        match dev.paired_device(addr) {
             Ok(info) => return Ok(info),
             Err(e) if attempt < DEVICE_INFO_RETRIES && !is_transport_error(&e) => {
                 tracing::debug!(target: "device", "device_info attempt {attempt} failed: {e}");
@@ -470,6 +586,7 @@ fn capability_for(device_id: u16) -> Capability {
         noise_cancelling: bose_connect::has_noise_cancelling(device_id),
         self_voice: bose_connect::has_self_voice(device_id),
         pairing_toggle: bose_connect::has_pairing_toggle(device_id),
+        party_mode: bose_connect::has_party_mode(device_id),
     }
 }
 
@@ -579,6 +696,102 @@ impl DeviceService for RealService {
             dev.send_media_key(key)
         })
     }
+
+    fn join_party(&self, peer: BdAddr, source: Option<BdAddr>) -> Result<DeviceSnapshot> {
+        let source = match source {
+            Some(source) => {
+                // With another source, the speaker dropped this
+                // computer's whole link (control connection included)
+                // at the join while this computer had an audio link
+                // too; without the audio profiles the link survives.
+                let address = self.inner.lock().address.clone().unwrap_or_default();
+                match crate::services::bluetooth::disconnect_audio_profiles(&address) {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        tracing::info!(target: "party", "dropped {n} audio profiles before the join");
+                        std::thread::sleep(PROFILE_DROP_SETTLE);
+                    }
+                    Err(e) => tracing::warn!(target: "party", "drop the audio profiles: {e}"),
+                }
+                source
+            }
+            None => crate::services::bluetooth::adapter_address()
+                .as_deref()
+                .and_then(BdAddr::from_canonical)
+                .ok_or_else(|| anyhow!("cannot read this computer's Bluetooth address"))?,
+        };
+        self.set_and_read(|dev| {
+            require_party_mode(dev)?;
+            let own = retry_late(|| dev.device_bd_addr())?;
+            if peer == source || own == peer {
+                // A speaker asked to connect to itself or to the
+                // source drops another link.
+                return Err(BoseError::InvalidArgument(
+                    "the other speaker's address is this speaker's or the source's".into(),
+                ));
+            }
+            dev.join_party(peer, source)
+        })
+    }
+
+    fn leave_party(&self, peer: BdAddr) -> Result<DeviceSnapshot> {
+        self.set_and_read(|dev| {
+            require_party_mode(dev)?;
+            dev.leave_party(peer)
+        })
+    }
+
+    fn set_party_mode(&self, mode: PartyMode) -> Result<DeviceSnapshot> {
+        self.set_and_read(|dev| {
+            require_party_mode(dev)?;
+            dev.set_party_mode(mode)
+        })
+    }
+
+    fn restart_audio_stream(&self) -> Result<bool> {
+        let address = self
+            .inner
+            .lock()
+            .address
+            .clone()
+            .ok_or_else(|| anyhow!("no device address; connect first"))?;
+        crate::services::audio::restart_stream(&address)
+    }
+}
+
+/// Wait after dropping this computer's audio profiles, before a join.
+const PROFILE_DROP_SETTLE: Duration = Duration::from_secs(2);
+
+/// Same guard as the CLI: party-mode commands only on the speakers
+/// that have them.
+/// Run a getter again when its reply came late (a busy SoundLink
+/// Color II in party mode): a getter changes nothing on the device, so
+/// it can be sent twice, unlike a setter.
+fn retry_late<T>(mut get: impl FnMut() -> BoseResult<T>) -> BoseResult<T> {
+    let mut attempt = 1;
+    loop {
+        match get() {
+            Err(e) if is_timeout_error(&e) && attempt < LATE_GETTER_ATTEMPTS => {
+                tracing::debug!(target: "device", "late reply, asking again: {e}");
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// How many times [`retry_late`] sends a getter.
+const LATE_GETTER_ATTEMPTS: u32 = 3;
+
+fn require_party_mode(dev: &mut BoseDevice) -> BoseResult<()> {
+    let (device_id, _) = retry_late(|| dev.device_id())?;
+    if bose_connect::has_party_mode(device_id) {
+        Ok(())
+    } else {
+        Err(BoseError::InvalidArgument(
+            "this device does not support party mode (SoundLink Color II only)".into(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -587,6 +800,52 @@ mod tests {
     use bose_connect::VP_ENABLE_BIT;
 
     use std::sync::mpsc;
+
+    #[test]
+    fn a_late_getter_is_asked_again() {
+        use std::io::Error;
+        let mut calls = 0;
+        let got = retry_late(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(BoseError::Io(Error::from_raw_os_error(11)))
+            } else {
+                Ok(7u8)
+            }
+        });
+        assert_eq!(got.unwrap(), 7);
+        // A refusal is not asked again.
+        let mut calls = 0;
+        let got: BoseResult<u8> = retry_late(|| {
+            calls += 1;
+            Err(BoseError::AckMismatch)
+        });
+        assert!(got.is_err());
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn a_late_reply_keeps_the_connection() {
+        use std::io::{Error, ErrorKind};
+        // A receive timeout on Linux: EAGAIN (11).
+        let late = BoseError::Io(Error::from_raw_os_error(11));
+        assert!(!is_transport_error(&late));
+        assert!(!is_transport_error(&BoseError::Io(
+            ErrorKind::TimedOut.into()
+        )));
+        // A link that is gone.
+        assert!(is_transport_error(&BoseError::Io(
+            ErrorKind::ConnectionReset.into()
+        )));
+        // EHOSTDOWN (112).
+        assert!(is_transport_error(&BoseError::Io(
+            Error::from_raw_os_error(112)
+        )));
+        assert!(is_transport_error(&BoseError::Closed));
+        // A late reply still fails the snapshot instead of showing
+        // the setting as unsupported.
+        assert!(optional::<u8>(Err(BoseError::Io(Error::from_raw_os_error(11)))).is_err());
+    }
 
     /// Run `f` on another thread and fail instead of hanging if it
     /// does not return.
@@ -699,9 +958,6 @@ mod tests {
             expected: 4,
             actual: 0
         }));
-        assert!(is_transport_error(&BoseError::Io(std::io::Error::from(
-            std::io::ErrorKind::TimedOut
-        ))));
         assert!(!is_transport_error(&BoseError::AckMismatch));
         assert!(!is_transport_error(&BoseError::InvalidArgument("x".into())));
     }
