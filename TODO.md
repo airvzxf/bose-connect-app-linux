@@ -7,10 +7,12 @@ history; the captures behind each protocol item are in
 ## Priority 1: party and stereo mode (#8)
 
 - [ ] Answer #8 once the GUI's party mode is released.
-- [ ] Once, the GUI opened its control connection while this computer
-      started streaming to the SoundLink Color II: the speaker did not
-      answer the first request and locked up 20 s later. Repeat it
-      before telling users to avoid it.
+- [ ] Twice the GUI opened its control connection less than a minute
+      after the SoundLink Color II connected its audio to this computer
+      (once while the stream started, once with it idle): the speaker
+      did not answer the first request and locked up 20 s later. Two
+      minutes after the audio connected, the GUI connected fine. Find
+      out whether a delay avoids it before telling users.
 - [ ] A left/right swap: `04 0b 02 01 03` is accepted but changes
       nothing. Untested: join with the other speaker as the primary.
 
