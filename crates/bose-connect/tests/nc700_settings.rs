@@ -444,6 +444,23 @@ fn paired_list_reads_when_only_the_second_device_is_connected() {
     assert_eq!(second_only.num_devices, 2);
 }
 
+#[test]
+fn paired_list_reads_when_no_device_has_an_audio_link() {
+    // QC35 II, firmware 4.8.1 (2026-11-04): after its only audio source, the
+    // phone, was disconnected, the laptop asking over RFCOMM got `cc = 00`.
+    let none = run_against_device(
+        |d| {
+            expect_request(d, "04 04 01 00");
+            answer(d, "04 04 03 0d 00 aa bb cc dd ee 01 aa bb cc dd ee 02");
+        },
+        get_paired_devices,
+    )
+    .expect("paired list");
+    assert_eq!(none.connected, DevicesConnected::Zero);
+    assert_eq!(none.connected.count(), Some(0));
+    assert_eq!(none.num_devices, 2);
+}
+
 // ---- pairing mode (04 08) ----
 
 #[test]

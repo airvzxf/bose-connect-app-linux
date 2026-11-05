@@ -384,10 +384,13 @@ impl DeviceStatus {
 /// Number of devices currently connected to the headphone's A2DP
 /// sink. The byte has one bit per listed device, so "two devices" is
 /// `0x03`; one device is `0x01`, or `0x02` when only the second listed
-/// device is connected.
+/// device is connected; `0x00` is none (a QC35 II, firmware 4.8.1, after
+/// its only audio source was disconnected).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum DevicesConnected {
+    /// No device has an audio link.
+    Zero = 0x00,
     /// One device connected.
     One = 0x01,
     /// Two devices connected.
@@ -404,16 +407,18 @@ impl DevicesConnected {
             // `02` is the second listed device alone: the NC 700 sets one
             // bit per listed device (`03` when the phone and the laptop
             // are both connected, `02` after the phone was disconnected).
+            0x00 => Self::Zero,
             0x01 | 0x02 => Self::One,
             0x03 => Self::Two,
             _ => return None,
         })
     }
 
-    /// Numeric count for printing (`1` or `2`). Returns `None` for
+    /// Numeric count for printing (`0`, `1` or `2`). Returns `None` for
     /// [`Self::Unknown`].
     pub fn count(self) -> Option<u8> {
         Some(match self {
+            Self::Zero => 0,
             Self::One => 1,
             Self::Two => 2,
             Self::Unknown => return None,

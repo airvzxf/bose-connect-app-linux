@@ -74,8 +74,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 * `--paired-devices` failed with an ACK mismatch when only the second
-  listed device was connected (`cc = 02`); the byte has one bit per
-  list position.
+  listed device was connected (`cc = 02`) or none had an audio link
+  (`cc = 00`, a QC35 II after its phone was disconnected); the byte has
+  one bit per list position. `DevicesConnected::Zero` is new.
+* `--pairing on|off` changed the QC35 II's pairing mode but reported an
+  ACK mismatch: firmware 4.8.1 answers with the state
+  `04 08 06 02 <flag> 01`, not a one-byte echo.
 * GUI: a QC Ultra set to Spanish showed its prompt language as
   "English" (verified on firmware 1.6.7: `< 01 03 03 07 a6 …` now
   shows Español, as the CLI's `ES`).

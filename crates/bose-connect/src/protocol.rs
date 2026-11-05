@@ -700,13 +700,14 @@ pub fn set_pairing<I: BoseIo>(io: &mut I, pairing: Pairing) -> BoseResult<()> {
     let mut send = SET_PAIRING_SEND;
     send[BYTES_POSITION_4] = pairing as u8;
     io.bose_send(&send)?;
-    // Reply `04 08 06 01 xx` (the C acknowledgement). The NC 700 sends
-    // PROCESSING (`04 08 07 00`) or nothing at all for the write, so the
-    // state is read instead: `04 08 06 02 <flag> <other>`, where the flag
-    // is `01` while it is in pairing mode and `00` when it is not.
+    // Reply `04 08 06 01 xx` (the C acknowledgement), or the state
+    // `04 08 06 02 <flag> <other>` (QC35 II, firmware 4.8.1), where the
+    // flag is `01` while it is in pairing mode and `00` when it is not.
+    // The NC 700 sends PROCESSING (`04 08 07 00`) or nothing at all for
+    // the write, so the state is read instead.
     match read_response(io, 0x04, 0x08) {
         Ok(reply) => match reply[..] {
-            [echo] if echo == pairing as u8 => Ok(()),
+            [echo, ..] if echo == pairing as u8 => Ok(()),
             _ => Err(BoseError::AckMismatch),
         },
         Err(e) if is_receive_timeout(&e) => confirm_pairing_flag(io, pairing),
