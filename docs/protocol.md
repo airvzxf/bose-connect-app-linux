@@ -430,8 +430,14 @@ from a laptop were heard as such.
 ```text
 > 04 04 01 00
 < 04 04 03 ll cc <ll bytes: one 6-byte address per device>
-# number of devices = ll / 6. cc: 01 one device connected, 03 two
+# number of devices = ll / 6. cc: one bit per list position, set
+# while that device has an audio link (bit 0 the first, bit 1 the second)
 ```
+
+Verified on a SoundLink Color II, firmware 4.0.1 (2026-11-04), with the
+laptop connected for control only (no audio link):
+`[laptop, phone, Black]` gave `cc = 02` and `[phone, Black, laptop]`
+gave `03`.
 
 The list is ordered by most recent use: on a SoundLink Color II the
 laptop came first while it was the active source, the phone after it
@@ -538,6 +544,92 @@ Entering pairing mode disconnected both audio sources (the laptop and
 the phone); the control connection stayed open. Leaving it does not
 reconnect them, and the speaker then took a few seconds to answer a
 new connection.
+
+### Party and stereo mode — `join_party()`, `set_party_mode()`
+
+Two SoundLink Color II play the same music: the speaker the client
+talks to receives it from the source (phone or computer) and forwards
+it to the other one. Verified on two SoundLink Color II, firmware
+4.0.1 (2026-11-04), from this library and from the Bose Connect app
+on Android; "White" is the speaker the client talks to, "Black" the
+other one.
+
+**Join** — a Connect (`04 01`) with flags `90` and the address of the
+music source after the other speaker's:
+
+```text
+> 04 01 05 0d 90 <Black> <source>
+< 04 01 07 06 <Black>                     # PROCESSING
+< 01 03 03 05 26 00 04 cf de              # voice prompts off (a6 → 26)
+< 04 01 06 07 <Black> 01                  # RESULT, 1.5 to 20 s later
+< 04 0b 03 01 01                          # party mode
+< 04 01 06 07 <Black> 05                  # second RESULT
+```
+
+The speakers announce "Party mode". When the other speaker does not
+answer, about 20 s after PROCESSING:
+
+```text
+< 04 01 04 07 0d <Black> 01               # ERROR 0d
+< 01 03 03 05 a6 00 04 cf de              # voice prompts back on
+< 04 02 06 06 <Black>                     # twice
+```
+
+**Mode** — `04 0b`:
+
+```text
+> 04 0b 01 00
+< 04 0b 03 01 xx          # 00 not joined, 01 party, 02 stereo
+> 04 0b 02 01 02
+< 04 0b 03 01 02          # often twice, about 0.5 s apart
+```
+
+In stereo mode the White plays the left channel and the Black the
+right one ("Stereo mode"; checked with `speaker-test -c 2 -t wav`:
+"Front Left" only from the White, "Front Right" only from the Black);
+`01` goes back to party mode, both speakers playing both channels.
+`04 0b 02 01 03` is answered `04 0b 03 01 03`, but the mode read back
+stays `02` and nothing audible changes: there is no left/right swap.
+A speaker that is not joined echoes `02` once and keeps mode `00`, so
+the library reads the mode back after a switch.
+
+**Leave** — a Disconnect of the other speaker:
+
+```text
+> 04 02 05 06 <Black>
+< 04 02 07 00
+< 04 02 07 06 <Black>
+< 04 02 06 06 <Black>
+< 01 03 03 05 a6 00 04 cf de              # voice prompts back on
+< 04 02 06 06 <Black>
+```
+
+The speakers announce "Speakers unlinked"; the Black stops and waits
+for a connection, the White keeps playing. Disconnecting the music
+source also ends party mode. While joined, the White accepts no third
+connection, and the Bose app shows voice prompts as "blocked while
+sharing music".
+
+**With this computer as the music source** (BlueZ 5.87, PipeWire
+1.6.10), these held in the tests:
+
+* The audio link must use SBC at 44.1 kHz. Both runs at 48 kHz locked
+  up a speaker, one of them after a minute of silence; BlueZ picks
+  48 kHz when the computer opens the audio link, the speaker picks
+  44.1 kHz when it reconnects by itself after power-on.
+* The computer must send no audio for about a minute before the join.
+  Joining while music played, or 20 or 40 s after it stopped, locked
+  up one of the speakers (the join ends in ERROR `0d`, or a speaker
+  switches off and has to be powered on again); after 60 s or more,
+  9 joins out of 9 worked.
+* After every mode change (party, stereo, leave) the White goes silent
+  until the computer restarts its audio stream (AVDTP Suspend, then
+  Start, for example `pactl suspend-sink <sink> 1` and `0`). Then both
+  speakers play again. The stream was restarted 19 times; at one
+  of them (2026-11-04 21:41:13) the White locked up.
+
+The speakers also lock up now and then when the phone is the source;
+a locked-up speaker has to be switched off and on.
 
 ## Block 05: media and volume
 

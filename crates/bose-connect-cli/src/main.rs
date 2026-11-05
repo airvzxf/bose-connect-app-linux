@@ -18,7 +18,7 @@ use anyhow::{bail, Context, Result};
 use bose_connect::protocol::language_from_arg;
 use bose_connect::{
     BdAddr, BoseDevice, BoseError, DeviceStatus, DevicesConnected, EqBand, ImmersiveAudio,
-    MediaKey, NoiseCancelling, PromptLanguage, SelfVoice, ShortcutAction, VP_ENABLE_BIT,
+    MediaKey, NoiseCancelling, PartyMode, PromptLanguage, SelfVoice, ShortcutAction, VP_ENABLE_BIT,
 };
 use clap::builder::styling::{AnsiColor, Styles};
 use clap::{ArgGroup, Parser, ValueHint};
@@ -323,6 +323,47 @@ struct Cli {
     )]
     remove_device: Option<String>,
 
+    /// Join the SoundLink Color II at the given address to this one
+    /// (party mode). The other speaker must be on and paired with this
+    /// one. Stop the music for a minute before joining when this
+    /// computer is the source; see the README.
+    #[arg(
+        help_heading = "Party mode (SoundLink Color II)",
+        long = "party-join",
+        value_name = "SPEAKER",
+        group = "command"
+    )]
+    party_join: Option<String>,
+
+    /// Music source for `--party-join` (default: this computer's
+    /// Bluetooth adapter). Give the phone's address when the phone
+    /// plays the music.
+    #[arg(
+        help_heading = "Party mode (SoundLink Color II)",
+        long = "party-source",
+        value_name = "ADDRESS",
+        requires = "party_join"
+    )]
+    party_source: Option<String>,
+
+    /// Separate the joined speaker at the given address.
+    #[arg(
+        help_heading = "Party mode (SoundLink Color II)",
+        long = "party-leave",
+        value_name = "SPEAKER",
+        group = "command"
+    )]
+    party_leave: Option<String>,
+
+    /// Print or switch the party mode. mode: status, party, stereo.
+    #[arg(
+        help_heading = "Party mode (SoundLink Color II)",
+        long = "party-mode",
+        value_name = "MODE",
+        group = "command"
+    )]
+    party_mode: Option<String>,
+
     /// Toggle pairing discoverability. status: on, off.
     #[arg(
         help_heading = "Paired devices",
@@ -476,6 +517,29 @@ fn dispatch(cli: Cli) -> Result<()> {
     } else if let Some(addr) = cli.remove_device.as_deref() {
         let addr = parse_address(addr)?;
         do_paired_op_verify(&mut device, "remove", addr, |d, a| d.remove_device(a))?;
+    } else if let Some(peer) = cli.party_join.as_deref() {
+        let peer = parse_address(peer)?;
+        let source = match cli.party_source.as_deref() {
+            Some(addr) => parse_address(addr)?,
+            None => parse_address(&bluez::adapter_address()?)?,
+        };
+        require_party_mode(&mut device)?;
+        device.join_party(peer, source)?;
+        println!("Joined {}; party mode", format_address(&peer));
+    } else if let Some(peer) = cli.party_leave.as_deref() {
+        let peer = parse_address(peer)?;
+        require_party_mode(&mut device)?;
+        device.leave_party(peer)?;
+        println!("Separated {}", format_address(&peer));
+    } else if let Some(mode) = cli.party_mode.as_deref() {
+        require_party_mode(&mut device)?;
+        match mode {
+            "status" => {}
+            "party" => device.set_party_mode(PartyMode::Party)?,
+            "stereo" => device.set_party_mode(PartyMode::Stereo)?,
+            other => bail!("invalid party mode: {other} (status, party, stereo)"),
+        }
+        println!("Party mode: {}", party_mode_name(device.party_mode()?));
     } else if let Some(mode) = cli.audio_mode.as_deref() {
         do_set_audio_mode(&mut device, mode)?;
     } else if let Some(hex) = cli.send_packet.as_deref() {
@@ -1073,6 +1137,23 @@ fn parse_media_key(s: &str) -> Result<bose_connect::MediaKey> {
         .ok_or_else(|| anyhow::anyhow!("invalid media key argument: {s}"))
 }
 
+/// Refuse party-mode commands on devices without them.
+fn require_party_mode(device: &mut BoseDevice) -> Result<()> {
+    let (device_id, _) = device.device_id()?;
+    if !bose_connect::has_party_mode(device_id) {
+        bail!("this device does not support party mode (SoundLink Color II only)");
+    }
+    Ok(())
+}
+
+fn party_mode_name(mode: PartyMode) -> &'static str {
+    match mode {
+        PartyMode::Off => "off",
+        PartyMode::Party => "party",
+        PartyMode::Stereo => "stereo (this speaker left, the other right)",
+    }
+}
+
 fn parse_address(s: &str) -> Result<BdAddr> {
     BdAddr::from_canonical(s).ok_or_else(|| anyhow::anyhow!("invalid bluetooth address: {s}"))
 }
@@ -1137,13 +1218,14 @@ mod tests {
         let mut cmd = Cli::command();
         cmd.build();
         let in_group = commands().len();
-        // Every argument except the address, --channel, --help and --version.
+        // Every argument except the address, the modifiers --channel and
+        // --party-source, --help and --version.
         let all = cmd
             .get_arguments()
             .filter(|a| {
                 !matches!(
                     a.get_id().as_str(),
-                    "address" | "channel" | "help" | "version"
+                    "address" | "channel" | "party_source" | "help" | "version"
                 )
             })
             .count();

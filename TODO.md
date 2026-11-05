@@ -6,11 +6,17 @@ history; the captures behind each protocol item are in
 
 ## Priority 1: party and stereo mode (#8)
 
-- [ ] On two SoundLink Color II speakers: find the commands that
-      join, leave and swap the speakers, add them to the library,
-      expose them in the CLI and the GUI, and verify each one on the
-      hardware. Answer #8 only when it works for end users. No Linux
-      tool is known to offer this yet.
+- [ ] GUI: join, leave and party/stereo for two SoundLink Color II
+      (the library and the CLI have them). With this computer as the
+      source: pause the audio and count down a minute before joining,
+      restart the audio stream after every mode change, and warn that
+      the speakers can lock up. Answer #8 only when this is released.
+- [ ] Make PipeWire use 44.1 kHz for a SoundLink Color II when the
+      computer opens the audio link (it picks 48 kHz, which locked up
+      the speakers in party mode). The `--audio-state` reconnect hint
+      leads to exactly that link.
+- [ ] A left/right swap: `04 0b 02 01 03` is accepted but changes
+      nothing. Untested: join with the other speaker as the primary.
 
 ## Priority 2: other features
 
@@ -27,8 +33,6 @@ history; the captures behind each protocol item are in
 
 ## Protocol questions (need hardware; batch them with the party-mode session)
 
-- [ ] Paired-list byte `cc` (`01`, `03`): a count, or one bit per
-      list position? Every capture had the connected devices first.
 - [ ] QC Ultra prompt-language byte: bit 6 was set in English (`e1`)
       but not in Spanish (`a6`), firmware 1.6.7. Find what it means
       before writing the language from the laptop.

@@ -70,19 +70,21 @@ pub use crate::protocol::{
     get_active_device, get_audio_mode, get_audio_mode_name, get_audio_modes, get_auto_answer_calls,
     get_auto_play_pause, get_battery_level, get_battery_prompt, get_device_bd_addr, get_device_id,
     get_device_info, get_device_status, get_equalizer, get_firmware_version, get_immersive_audio,
-    get_paired_devices, get_remember_audio_mode, get_serial_number, get_shortcut, has_audio_modes,
-    has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer, has_immersive_audio,
-    has_legacy_settings, has_noise_cancelling, has_pairing_toggle, has_self_voice, has_shortcut,
-    send_media_key, set_audio_mode, set_auto_answer_calls, set_auto_off, set_auto_play_pause,
-    set_battery_prompt, set_equalizer_band, set_immersive_audio, set_name, set_noise_cancelling,
-    set_pairing, set_prompt_language, set_remember_audio_mode, set_self_voice, set_shortcut,
+    get_paired_devices, get_party_mode, get_remember_audio_mode, get_serial_number, get_shortcut,
+    has_audio_modes, has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer,
+    has_immersive_audio, has_legacy_settings, has_noise_cancelling, has_pairing_toggle,
+    has_party_mode, has_self_voice, has_shortcut, join_party, send_media_key, set_audio_mode,
+    set_auto_answer_calls, set_auto_off, set_auto_play_pause, set_battery_prompt,
+    set_equalizer_band, set_immersive_audio, set_name, set_noise_cancelling, set_pairing,
+    set_party_mode, set_prompt_language, set_remember_audio_mode, set_self_voice, set_shortcut,
     set_voice_prompts, set_volume, DeviceStatusReport, PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, EqBand, EqualizerBand,
-    ImmersiveAudio, MediaKey, NoiseCancelling, Pairing, PromptLanguage, SelfVoice, ShortcutAction,
-    BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS, LANGUAGE_CODE_MASK, MAX_AUDIO_MODES, MAX_BT_PACK_LEN,
-    MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
+    ImmersiveAudio, MediaKey, NoiseCancelling, Pairing, PartyMode, PromptLanguage, SelfVoice,
+    ShortcutAction, BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS, LANGUAGE_CODE_MASK, MAX_AUDIO_MODES,
+    MAX_BT_PACK_LEN, MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT,
+    VP_MASK,
 };
 
 /// High-level driver: owns a `Connection` and exposes every
@@ -265,6 +267,28 @@ impl BoseDevice {
     /// Disconnect a paired device.
     pub fn disconnect_device(&mut self, address: BdAddr) -> BoseResult<()> {
         protocol::disconnect_device(&mut self.conn, address)
+    }
+
+    /// Join the speaker `peer` to this one (party mode), with `source`
+    /// as the music source (SoundLink Color II).
+    pub fn join_party(&mut self, peer: BdAddr, source: BdAddr) -> BoseResult<()> {
+        join_party(&mut self.conn, peer, source)
+    }
+
+    /// Separate the speaker `peer` from this one, ending party or
+    /// stereo mode. The same request as [`BoseDevice::disconnect_device`].
+    pub fn leave_party(&mut self, peer: BdAddr) -> BoseResult<()> {
+        protocol::disconnect_device(&mut self.conn, peer)
+    }
+
+    /// Party mode: off, party or stereo (SoundLink Color II).
+    pub fn party_mode(&mut self) -> BoseResult<PartyMode> {
+        get_party_mode(&mut self.conn)
+    }
+
+    /// Switch two joined speakers between party and stereo mode.
+    pub fn set_party_mode(&mut self, mode: PartyMode) -> BoseResult<()> {
+        set_party_mode(&mut self.conn, mode)
     }
 
     /// Remove a paired device from the pairing list.

@@ -8,6 +8,15 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+* Party and stereo mode for two SoundLink Color II speakers:
+  `BoseDevice::join_party`, `leave_party`, `party_mode` and
+  `set_party_mode` (`PartyMode`, `has_party_mode`), and the CLI flags
+  `--party-join`, `--party-source`, `--party-leave` and `--party-mode`.
+  Verified on two speakers, firmware 4.0.1; `docs/protocol.md` records
+  the captures and what made it work with the computer as the music
+  source (44.1 kHz, a minute of silence before joining, an audio-stream
+  restart after every mode change).
+
 * GUI: the device menu (top left) and the "My Bose" page list the Bose
   devices paired with this computer, read from BlueZ (`Modalias`
   vendor `009E`), say which ones BlueZ has connected, and mark the one
