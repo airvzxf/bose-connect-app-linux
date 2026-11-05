@@ -8,6 +8,19 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+* NC 700 Headphones (`0x4024`, RFCOMM channel 8), contributed by
+  @ciarancoffey (#109) and verified on firmware 1.8.2: stepped noise
+  cancelling `01 05` (`-c off|high|0..10`, the Bose Music app's scale;
+  the device counts the other way round), favourites `01 0f`
+  (`--nc-favorites`), remember last setting `01 0e` (`--remember-mode`),
+  motion auto-off `01 14` (`--motion-auto-off`), the shortcut with
+  event byte `05` and a `wake-word` action
+  (`ShortcutAction::ToggleWakeWord`), and the existing equalizer, self
+  voice, auto-off, voice prompts, volume, prompt language, pairing and
+  paired-device commands.
+* `--watch <SECONDS>` (`enable_notifications`, `read_notification`):
+  subscribe to the device's own notifications (`09 02`) and print them.
+
 * Party and stereo mode for two SoundLink Color II speakers:
   `BoseDevice::join_party`, `leave_party`, `party_mode` and
   `set_party_mode` (`PartyMode`, `has_party_mode`), and the CLI flags
@@ -34,6 +47,15 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+* Connect and disconnect (`write_paired`) succeed when the device
+  acknowledges the address with PROCESSING and sends no RESULT within
+  15 s (the NC 700 never sends one); the CLI then checks the connection
+  state or the paired list instead of retrying.
+* `set_pairing` and `set_auto_off` read the value back when the device
+  does not answer the write.
+* The prompt-language check compares the language and prompts bits
+  only, not bit 6 (the NC 700 drops it when it stores the byte).
+* `ShortcutAction` has a new variant; exhaustive matches need an arm.
 * GUI: `--real`, `--real-bluetooth` and `--mock` are gone; the app
   always talks to real devices. At startup it connects to the last
   device only while BlueZ has it connected (else to a connected Bose
@@ -51,6 +73,9 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+* `--paired-devices` failed with an ACK mismatch when only the second
+  listed device was connected (`cc = 02`); the byte has one bit per
+  list position.
 * GUI: a QC Ultra set to Spanish showed its prompt language as
   "English" (verified on firmware 1.6.7: `< 01 03 03 07 a6 …` now
   shows Español, as the CLI's `ES`).
