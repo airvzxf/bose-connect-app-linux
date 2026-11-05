@@ -17,11 +17,8 @@ use gtk::{glib, Box as GtkBox, Button, Image, Label, Orientation, StringList};
 
 use crate::app::model::{AppModel, AppMsg};
 use crate::app::widgets::{format_address, segmented_control, SenderExt};
-use crate::services::audio::{PARTY_SAMPLE_RATE, QUIET_BEFORE_JOIN};
+use crate::services::audio::{audio_quiet, watch_audio, PARTY_SAMPLE_RATE, QUIET_BEFORE_JOIN};
 use crate::t;
-
-/// How often the countdown asks BlueZ whether audio is flowing.
-const AUDIO_POLL_SECS: u32 = 2;
 
 /// A speaker that can be joined to the one in use.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +159,10 @@ pub fn party_group(model: &AppModel, sender: &flume::Sender<AppMsg>) -> Option<g
     let snapshot = model.snapshot.as_ref()?;
     if !bose_connect::has_party_mode(snapshot.device_id) {
         return None;
+    }
+    if !model.simulator {
+        // The join needs to know how long the audio has been quiet.
+        watch_audio(&format_address(snapshot.address));
     }
     let group = adw::PreferencesGroup::new();
     group.set_title(&t!("group-party"));
@@ -392,21 +393,35 @@ fn open_join_dialog(
     });
 }
 
-/// Pause the media players, wait until this computer has sent no
-/// audio to the speaker for [`QUIET_BEFORE_JOIN`], then join.
+/// Join with this computer as the source once its audio link has
+/// been quiet for [`QUIET_BEFORE_JOIN`]: at once when it already has
+/// been, else after a countdown that "Join now" cuts short.
 fn open_countdown_dialog(
     parent: &Button,
     peer: BdAddr,
     address: &str,
     sender: &flume::Sender<AppMsg>,
 ) {
-    let root = parent.root().and_then(|r| r.downcast::<gtk::Window>().ok());
     let total = QUIET_BEFORE_JOIN.as_secs() as u32;
+    let quiet_secs = move |address: &str| {
+        audio_quiet(address)
+            .and_then(|(_, quiet)| quiet)
+            .map_or(0, |q| q.as_secs().min(u64::from(total)) as u32)
+    };
+    if quiet_secs(address) >= total {
+        tracing::info!(target: "party", "the audio link has been quiet for a minute: joining");
+        sender.send_app(AppMsg::JoinParty { peer, source: None });
+        return;
+    }
+
+    let root = parent.root().and_then(|r| r.downcast::<gtk::Window>().ok());
     let dialog = adw::AlertDialog::new(
         Some(&t!("party-wait-title")),
         Some(&t!("party-wait-checking")),
     );
     dialog.add_response("cancel", &t!("dialog-cancel"));
+    dialog.add_response("join", &t!("party-wait-join-now"));
+    dialog.set_response_appearance("join", adw::ResponseAppearance::Destructive);
     dialog.set_close_response("cancel");
     let level = gtk::LevelBar::for_interval(0.0, f64::from(total));
     level.set_value(0.0);
@@ -421,10 +436,16 @@ fn open_countdown_dialog(
     let finished = Rc::new(Cell::new(false));
     {
         let finished = finished.clone();
+        let sender = sender.clone();
         dialog
             .clone()
-            .choose(root.as_ref(), None::<&gtk::gio::Cancellable>, move |_| {
-                // Cancel, Escape, or the close after the join.
+            .choose(root.as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
+                // Cancel, Escape, "Join now", or the close after the
+                // countdown (which has already joined).
+                if r == "join" && !finished.get() {
+                    tracing::info!(target: "party", "joining before a minute of quiet, as asked");
+                    sender.send_app(AppMsg::JoinParty { peer, source: None });
+                }
                 finished.set(true);
             });
     }
@@ -438,56 +459,29 @@ fn open_countdown_dialog(
         tracing::info!(target: "party", "paused {paused} media players before the join");
     });
 
-    let state: Rc<Cell<Option<AudioState>>> = Rc::new(Cell::new(None));
-    let polling = Rc::new(Cell::new(false));
-    let quiet = Rc::new(Cell::new(0u32));
-    let ticks = Rc::new(Cell::new(0u32));
     let address = address.to_owned();
     let sender = sender.clone();
     glib::timeout_add_seconds_local(1, move || {
         if finished.get() {
             return glib::ControlFlow::Break;
         }
-        let tick = ticks.get();
-        ticks.set(tick + 1);
-        if tick % AUDIO_POLL_SECS == 0 && !polling.get() {
-            polling.set(true);
-            let state = state.clone();
-            let polling = polling.clone();
-            let address = address.clone();
-            glib::MainContext::default().spawn_local(async move {
-                let now = gtk::gio::spawn_blocking(move || {
-                    crate::services::bluetooth::audio_state(&address)
-                })
-                .await
-                .ok()
-                .flatten();
-                state.set(now);
-                polling.set(false);
-            });
-        }
-        match state.get() {
-            Some(AudioState::Idle) => quiet.set(quiet.get() + 1),
-            Some(AudioState::Playing) => {
-                quiet.set(0);
-                dialog.set_body(&t!("party-wait-playing"));
+        let state = audio_quiet(&address).and_then(|(state, _)| state);
+        let quiet = quiet_secs(&address);
+        level.set_value(f64::from(quiet));
+        match state {
+            Some(AudioState::Idle) => {
+                let left = total.saturating_sub(quiet);
+                dialog.set_body(&t!("party-wait-counting", seconds = left));
+                if left == 0 {
+                    finished.set(true);
+                    sender.send_app(AppMsg::JoinParty { peer, source: None });
+                    dialog.force_close();
+                    return glib::ControlFlow::Break;
+                }
             }
+            Some(AudioState::Playing) => dialog.set_body(&t!("party-wait-playing")),
             None => {}
-            Some(_) => {
-                quiet.set(0);
-                dialog.set_body(&t!("party-wait-no-link"));
-            }
-        }
-        level.set_value(f64::from(quiet.get().min(total)));
-        if state.get() == Some(AudioState::Idle) {
-            let left = total.saturating_sub(quiet.get());
-            dialog.set_body(&t!("party-wait-counting", seconds = left));
-            if left == 0 {
-                finished.set(true);
-                sender.send_app(AppMsg::JoinParty { peer, source: None });
-                dialog.force_close();
-                return glib::ControlFlow::Break;
-            }
+            Some(_) => dialog.set_body(&t!("party-wait-no-link")),
         }
         glib::ControlFlow::Continue
     });

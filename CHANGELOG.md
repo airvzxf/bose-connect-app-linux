@@ -6,6 +6,14 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Changed
+
+* GUI: joining with this computer as the source no longer always waits
+  a minute. The GUI watches the audio link to the speaker every two
+  seconds; when it has already been quiet for a minute the join starts
+  at once, otherwise the countdown shows the time left and a "Join
+  now" button skips it.
+
 ### Added
 
 * GUI: party and stereo mode for two SoundLink Color II, in a "Party
