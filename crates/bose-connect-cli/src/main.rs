@@ -142,7 +142,7 @@ struct Cli {
     )]
     noise_cancelling: Option<String>,
 
-    /// Set equalizer bands (QC Ultra, QC45), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10.
+    /// Set equalizer bands (QC Ultra, QC45, NC 700), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10.
     #[arg(
         help_heading = "Sound",
         long = "equalizer",
