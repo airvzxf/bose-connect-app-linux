@@ -6,7 +6,6 @@ history; the captures behind each protocol item are in
 
 ## Priority 1: party and stereo mode (#8)
 
-- [ ] Answer #8 once the GUI's party mode is released.
 - [ ] Twice the GUI opened its control connection less than a minute
       after the SoundLink Color II connected its audio to this computer
       (once while the stream started, once with it idle): the speaker
@@ -16,7 +15,37 @@ history; the captures behind each protocol item are in
 - [ ] A left/right swap: `04 0b 02 01 03` is accepted but changes
       nothing. Untested: join with the other speaker as the primary.
 
-## Priority 2: other features
+## Priority 2: GUI bugs
+
+- [ ] A device that switches itself off (a SoundLink Color II after its
+      auto-off time) still shows as connected, also after "Refresh"
+      and on "My Bose devices"; the window does not tell whether it is
+      on. Notice the closed connection (the next request fails with
+      "Connection reset by peer") and BlueZ's `Connected` change, and
+      show the device as disconnected.
+- [ ] Switching between the device page and "My Bose devices" (the
+      menu entry, then the back arrow at the top left) takes from about
+      15 s to a minute, with no sign that anything is happening.
+      Measure where the time goes (probably a device call that blocks
+      the message pump), make the switch immediate, and show a
+      spinner while the device answers.
+
+## Priority 3: installers for more distributions
+
+- [ ] The Debian and AUR recipes in `packaging/` have never been
+      built: both install the `.desktop`, metainfo and bash-completion
+      files from paths that do not exist (they live under
+      `packaging/linux/`). Fix the paths and build each package once.
+- [ ] Make the app installable on more distributions. Nothing is
+      published yet: `packaging/aur/PKGBUILD` (Arch, and derivatives
+      such as CachyOS and Manjaro) is not on the AUR, and
+      `packaging/debian/cargo-deb.toml` (Debian, Ubuntu) is not built
+      by `release.yml`. Publish the AUR package, attach the `.deb` to
+      each release, and look at Fedora (RPM), Flatpak and AppImage;
+      the GUI needs GTK 4.22 and libadwaita 1.9, which older releases
+      of some distributions do not ship.
+
+## Priority 4: other features
 
 - [ ] Music status and playback from the speaker: read `05 02`
       (playing or paused, title, artist) in the GUI and the CLI, make
@@ -28,7 +57,6 @@ history; the captures behind each protocol item are in
 - [ ] GUI: the battery bar under the level ("last 32 readings") is
       hard to read and only changes on a refresh. Make it clear and
       live, or remove it.
-
 - [ ] GUI: keep every control disabled until the device answers, as
       the party-mode controls do, and show a failed command instead of
       only putting the widget back.
@@ -63,12 +91,8 @@ history; the captures behind each protocol item are in
       success (SoundLink Color II remove-device). Check whether a
       late reply follows; only test with a source you can pair again.
 
-## Packaging and portability
+## Portability
 
-- [ ] Debian and AUR recipes in `packaging/` have never been built:
-      both install the `.desktop`, metainfo and bash-completion files
-      from paths that do not exist (they live under
-      `packaging/linux/`). Fix the paths and build each package once.
 - [ ] Docker image for the Rust build (`libbluetooth-dev` is the
       only system dependency of the CLI).
 - [ ] macOS and Windows: only `connection.rs` (the BlueZ RFCOMM
