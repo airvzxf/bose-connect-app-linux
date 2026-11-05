@@ -111,11 +111,11 @@ Device information:
 
 Sound:
   -m, --audio-mode <MODE>          Switch the audio mode (QC Ultra, QC45). mode: its name (quiet, aware, immersion, …) or its slot index
-  -c, --noise-cancelling <LEVEL>   Change the noise-cancelling level. level: high, low, off. On the QC Ultra and QC45, use --audio-mode instead. On the NC 700: off, high or 0..=10
+  -c, --noise-cancelling <LEVEL>   Change the noise-cancelling level. level: high, low, off. On the QC Ultra and QC45, use --audio-mode instead. On the NC 700, level: off, high or 0..=10 (0 is off, as in the Bose Music app)
       --equalizer <BANDS>          Set equalizer bands (QC Ultra, QC45, NC 700), e.g. `bass=4,mid=0,treble=-3`. Each in -10..=10
-      --nc-favorites <LEVELS>      Set the three noise-cancelling favourites (NC 700), e.g. `10,5,0` (0 is off, 10 the strongest)
       --immersive-audio <SETTING>  Immersive audio (QC Ultra). setting: off, still, motion
   -e, --self-voice <LEVEL>         Change the self-voice level. level: high, medium, low, off
+      --nc-favorites <LEVELS>      Set the three noise-cancelling favourites (NC 700), e.g. `10,5,0` (0 is off, 10 is the strongest)
 
 Playback:
       --set-volume <LEVEL>    Set the volume. The range is device-specific (e.g. 0..=25 on a QC35 II)
@@ -134,6 +134,11 @@ Settings:
       --motion-auto-off <SWITCH>  Switch off after an hour without motion (NC 700). switch: on, off
       --shortcut <ACTION>         Touch-and-hold shortcut of the right earcup (QC Ultra, QC45, NC 700). action: battery, immersive, assistant, spotify, wake-word (NC 700), off
 
+Advanced:
+      --watch <SECONDS>    Print what the device sends on its own (button presses, battery, setting changes) for this many seconds
+      --channel <CHANNEL>  RFCOMM channel to use instead of the automatic choice (8, then 2, then 1)
+      --send-packet <HEX>  Send a raw hex packet (e.g. `0a1b2c3d`) and print the response
+
 Paired devices:
   -a, --paired-devices               Print the list of paired devices
       --connect-device <ADDRESS>     Connect to the device at the given Bluetooth address
@@ -146,11 +151,6 @@ Party mode (SoundLink Color II):
       --party-source <ADDRESS>  Music source for `--party-join` (default: this computer's Bluetooth adapter). Give the phone's address when the phone plays the music
       --party-leave <SPEAKER>   Separate the joined speaker at the given address
       --party-mode <MODE>       Print or switch the party mode. mode: status, party, stereo
-
-Advanced:
-      --channel <CHANNEL>  RFCOMM channel to use instead of the automatic choice (8, then 2, then 1)
-      --watch <SECONDS>    Print what the device sends on its own (setting changes, volume, battery) for this long
-      --send-packet <HEX>  Send a raw hex packet (e.g. `0a1b2c3d`) and print the response
 ```
 
 When a device is connected but this computer has no audio stream to

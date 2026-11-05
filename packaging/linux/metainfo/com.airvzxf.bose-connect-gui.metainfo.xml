@@ -56,6 +56,11 @@
     <binary>bose-connect-gui</binary>
   </provides>
   <releases>
+    <release version="0.5.0" date="2026-11-05" urgency="medium">
+      <description>
+        <p>The library and the command line add party and stereo mode for two SoundLink Color II speakers and support for the NC 700 Headphones (stepped noise cancelling, favourites, motion auto-off and more). Fixes reading the paired-device list when no device has an audio link and the QC35 II's pairing-mode reply.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-11-03" urgency="medium">
       <description>
         <p>The GUI now controls a real device over one persistent connection, redraws only when the device state changes, and shows whether this computer has a working audio stream to the device, with a hint to reconnect when it does not. Adds QuietComfort 45 support (audio modes, equalizer, shortcut, self-voice), pairing mode on the SoundLink Color II, and a grouped command-line help.</p>
