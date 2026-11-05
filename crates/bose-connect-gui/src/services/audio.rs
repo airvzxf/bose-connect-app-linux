@@ -14,7 +14,10 @@
 
 use std::path::PathBuf;
 use std::process::Command;
-use std::time::Duration;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+use bose_connect::AudioState;
 
 use anyhow::{bail, Context, Result};
 
@@ -61,6 +64,93 @@ pub fn bluez_sink(address: &str, pactl_sinks: &str) -> Option<(String, String)> 
             .starts_with(&prefix)
             .then(|| (name.to_owned(), state.to_owned()))
     })
+}
+
+/// How long the audio link to one device has been idle, from the
+/// states BlueZ reports one after another.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct IdleTracker {
+    /// The last state read; `None` before the first read or when
+    /// BlueZ was not reachable.
+    pub state: Option<AudioState>,
+    since: Option<Instant>,
+}
+
+impl IdleTracker {
+    /// Record the state read at `now`.
+    pub fn update(&mut self, state: Option<AudioState>, now: Instant) {
+        if state == Some(AudioState::Idle) {
+            self.since.get_or_insert(now);
+        } else {
+            self.since = None;
+        }
+        self.state = state;
+    }
+
+    /// How long the link has been idle at `now`; `None` when it is
+    /// not idle. Counted from the first idle read, so up to one poll
+    /// interval short.
+    pub fn quiet_for(&self, now: Instant) -> Option<Duration> {
+        self.since.map(|since| now.saturating_duration_since(since))
+    }
+}
+
+/// How often [`watch_audio`] reads the state of the audio link.
+const IDLE_POLL: Duration = Duration::from_secs(2);
+
+struct Watch {
+    address: Option<String>,
+    tracker: IdleTracker,
+}
+
+fn watch() -> &'static Mutex<Watch> {
+    static WATCH: OnceLock<Mutex<Watch>> = OnceLock::new();
+    WATCH.get_or_init(|| {
+        std::thread::Builder::new()
+            .name("audio-idle".into())
+            .spawn(poll_audio_state)
+            .ok();
+        Mutex::new(Watch {
+            address: None,
+            tracker: IdleTracker::default(),
+        })
+    })
+}
+
+fn poll_audio_state() {
+    loop {
+        std::thread::sleep(IDLE_POLL);
+        let address = watch().lock().ok().and_then(|w| w.address.clone());
+        let Some(address) = address else { continue };
+        let state = crate::services::bluetooth::audio_state(&address);
+        if let Ok(mut w) = watch().lock() {
+            // The page may have moved to another device meanwhile.
+            if w.address.as_deref() == Some(address.as_str()) {
+                w.tracker.update(state, Instant::now());
+            }
+        }
+    }
+}
+
+/// Keep reading, every two seconds, the state of the audio link from
+/// this computer to the device at `address`, so a join knows how long
+/// it has been quiet. Watching another device starts again from
+/// zero. Cheap to call again with the same address.
+pub fn watch_audio(address: &str) {
+    if let Ok(mut w) = watch().lock() {
+        if w.address.as_deref() != Some(address) {
+            w.address = Some(address.to_owned());
+            w.tracker = IdleTracker::default();
+        }
+    }
+}
+
+/// The state of the watched link and how long it has been idle, when
+/// [`watch_audio`] watches `address`.
+pub fn audio_quiet(address: &str) -> Option<(Option<AudioState>, Option<Duration>)> {
+    let w = watch().lock().ok()?;
+    (w.address.as_deref() == Some(address))
+        .then(|| (w.tracker.state, w.tracker.quiet_for(Instant::now())))
 }
 
 /// Restart the audio stream to the device at `address` when it is
@@ -229,6 +319,29 @@ mod tests {
         );
         assert_eq!(bluez_sink("02:00:00:00:00:06", sinks), None);
         assert_eq!(bluez_sink("02:00:00:00:00:05", ""), None);
+    }
+
+    #[test]
+    fn counts_the_quiet_time_from_the_first_idle_read() {
+        let t0 = Instant::now();
+        let at = |s| t0 + Duration::from_secs(s);
+        let mut idle = IdleTracker::default();
+        assert_eq!(idle.quiet_for(t0), None, "nothing read yet");
+        idle.update(Some(AudioState::Playing), at(0));
+        assert_eq!(idle.quiet_for(at(1)), None);
+        idle.update(Some(AudioState::Idle), at(2));
+        idle.update(Some(AudioState::Idle), at(4));
+        assert_eq!(idle.quiet_for(at(62)), Some(Duration::from_secs(60)));
+        // Playing again starts from zero.
+        idle.update(Some(AudioState::Playing), at(63));
+        assert_eq!(idle.quiet_for(at(64)), None);
+        idle.update(Some(AudioState::Idle), at(65));
+        assert_eq!(idle.quiet_for(at(70)), Some(Duration::from_secs(5)));
+        // No answer from BlueZ, or no link: not known to be quiet.
+        idle.update(None, at(71));
+        assert_eq!(idle.quiet_for(at(72)), None);
+        idle.update(Some(AudioState::Disconnected), at(73));
+        assert_eq!(idle.quiet_for(at(74)), None);
     }
 
     #[test]

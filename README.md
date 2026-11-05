@@ -325,7 +325,8 @@ The desktop app has the same in a "Party mode" group on the speaker's
 page: "Join with…" (the other speaker, and the music source: this
 computer or a phone connected to the speaker), a Party/Stereo switch
 and "Separate". It takes the steps below by itself: it pauses the
-media players and waits for a minute without audio before joining,
+media players and joins once the audio link has been quiet for a
+minute (at once if it already was; "Join now" skips the wait),
 restarts the audio stream after a mode change while music plays, and
 shows the sample rate of the audio link with a button that makes
 PipeWire use 44.1 kHz. With a phone as the source it first drops this
