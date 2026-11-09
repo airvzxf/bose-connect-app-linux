@@ -9,49 +9,21 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use bose_connect::AudioState;
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
+use zbus::{OwnedObjectPath, OwnedVariant};
 
-type Properties = HashMap<String, OwnedValue>;
+type Properties = HashMap<String, OwnedVariant>;
 type ManagedObjects = HashMap<OwnedObjectPath, HashMap<String, Properties>>;
 
 /// Ask BlueZ for the audio state of the device at `address`
 /// (`AA:BB:CC:DD:EE:FF`, any case). Does not touch the device.
 pub fn audio_state(address: &str) -> Result<AudioState> {
-    let conn = zbus::blocking::Connection::system().context("cannot reach the D-Bus system bus")?;
-    let reply = conn
-        .call_method(
-            Some("org.bluez"),
-            "/",
-            Some("org.freedesktop.DBus.ObjectManager"),
-            "GetManagedObjects",
-            &(),
-        )
-        .context("cannot query BlueZ (is bluetoothd running?)")?;
-    let objects: ManagedObjects = reply
-        .body()
-        .deserialize()
-        .context("unexpected GetManagedObjects reply")?;
-    Ok(classify(&objects, address))
+    Ok(classify(&managed_objects()?, address))
 }
 
 /// Address of this computer's Bluetooth adapter (the first
 /// `org.bluez.Adapter1` that BlueZ lists).
 pub fn adapter_address() -> Result<String> {
-    let conn = zbus::blocking::Connection::system().context("cannot reach the D-Bus system bus")?;
-    let reply = conn
-        .call_method(
-            Some("org.bluez"),
-            "/",
-            Some("org.freedesktop.DBus.ObjectManager"),
-            "GetManagedObjects",
-            &(),
-        )
-        .context("cannot query BlueZ (is bluetoothd running?)")?;
-    let objects: ManagedObjects = reply
-        .body()
-        .deserialize()
-        .context("unexpected GetManagedObjects reply")?;
-    let mut adapters: Vec<_> = objects
+    let mut adapters: Vec<_> = managed_objects()?
         .iter()
         .filter_map(|(path, ifaces)| {
             let props = ifaces.get("org.bluez.Adapter1")?;
@@ -64,6 +36,29 @@ pub fn adapter_address() -> Result<String> {
         .next()
         .map(|(_, address)| address)
         .context("BlueZ lists no Bluetooth adapter")
+}
+
+/// One `GetManagedObjects` call on `org.bluez` over the system bus.
+fn managed_objects() -> Result<ManagedObjects> {
+    zbus::block_on(async {
+        let conn = zbus::Connection::system()
+            .await
+            .context("cannot reach the D-Bus system bus")?;
+        let reply = conn
+            .call_method(
+                Some("org.bluez"),
+                "/",
+                Some("org.freedesktop.DBus.ObjectManager"),
+                "GetManagedObjects",
+                &(),
+            )
+            .await
+            .context("cannot query BlueZ (is bluetoothd running?)")?;
+        reply
+            .body()
+            .deserialize()
+            .context("unexpected GetManagedObjects reply")
+    })
 }
 
 fn classify(objects: &ManagedObjects, address: &str) -> AudioState {
@@ -102,11 +97,11 @@ fn classify(objects: &ManagedObjects, address: &str) -> AudioState {
     AudioState::classify(Some(connected), product, &transports)
 }
 
-fn string(value: &OwnedValue) -> Option<String> {
+fn string(value: &OwnedVariant) -> Option<String> {
     String::try_from(value.try_clone().ok()?).ok()
 }
 
-fn boolean(value: &OwnedValue) -> Option<bool> {
+fn boolean(value: &OwnedVariant) -> Option<bool> {
     bool::try_from(value).ok()
 }
 
