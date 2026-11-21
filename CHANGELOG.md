@@ -6,6 +6,12 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Changed
+
+* CLI: reads BlueZ through zbus 6 (#117).
+* Build: drops the unused `nix` dependency and the crates' `homepage`
+  field, which repeated `repository`, so Rust 1.100's new lints pass.
+
 ## [0.6.0][] - 2026-11-05
 
 ### Changed

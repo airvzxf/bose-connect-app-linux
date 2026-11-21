@@ -964,7 +964,7 @@ fn do_paired_devices(device: &mut BoseDevice) -> Result<()> {
     })?;
     println!("\tConnected: {}", count);
 
-    for i in 0..pd.num_devices {
+    for (i, &address) in pd.addresses.iter().take(pd.num_devices).enumerate() {
         // Retry the per-device query up to PER_DEVICE_RETRIES
         // times. We log to stderr so the operator can see why
         // the second/third attempt fired.
@@ -972,7 +972,7 @@ fn do_paired_devices(device: &mut BoseDevice) -> Result<()> {
             let mut last_err: Option<bose_connect::BoseError> = None;
             let mut result: Option<bose_connect::DeviceInfo> = None;
             for attempt in 1..=PER_DEVICE_RETRIES {
-                match device.device_info(pd.addresses[i]) {
+                match device.device_info(address) {
                     Ok(info) => {
                         result = Some(info);
                         break;

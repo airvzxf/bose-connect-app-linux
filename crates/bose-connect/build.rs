@@ -22,7 +22,7 @@ fn main() {
 
     // Probe libbluetooth so consumers who build the FFI crate get a
     // helpful error if the BlueZ headers are missing. We do not link
-    // against libbluetooth ourselves — `nix` covers the POSIX surface
+    // against libbluetooth ourselves — the sockets go through `libc`
     // and `AF_BLUETOOTH`/`BTPROTO_RFCOMM` are defined by libc — but
     // the headers are still required at *compile time* of any
     // downstream C/C++ project that `#include`s the generated header
