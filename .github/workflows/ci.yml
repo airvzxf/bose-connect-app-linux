@@ -7,14 +7,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cancel previous runs on the same PR / branch when a new commit lands.
-# Saves minutes on iterative PRs (re-fix typo, re-push → previous
-# run killed). Mirrors the convention used by voxora's ci.yml in
-# this org's Rust workspace.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 # Minimum token permissions: only read repo contents. Each job may
 # further escalate (none currently do). Combined with the repo-level
 # Actions policy (`default_workflow_permissions: read`) this caps the
