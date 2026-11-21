@@ -13,12 +13,10 @@ on:
       tag:
         description: 'Tag to release (e.g. v0.5.0). Must exist on the remote.'
         required: true
+        # `workflow_dispatch` inputs have no `pattern` key; the
+        # validate-tag-input job below checks the tag shape, so a
+        # malformed tag fails fast instead of mid-build.
         type: string
-        # Constrains the manual path to the same shape the `push`
-        # tag filter enforces; a malformed tag string fails fast in
-        # the validate-tag-input job below instead of producing a
-        # confusing `git rev-parse` error mid-build.
-        pattern: '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
 
 # Releases need to write tags and create a GitHub Release page, but
 # only the `publish` job does — the `build-release` job only reads
