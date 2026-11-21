@@ -11,17 +11,6 @@ on:
     - cron: '32 14 * * 1'
   workflow_dispatch:
 
-# Serialize concurrent runs in FIFO order — do NOT cancel in-flight
-# or pending runs. Mirrors the convention from moagan's codeql.yml:
-# CodeQL itself makes no upstream API calls; the value is
-# audit-trail consistency (a burst of squash-merges no longer
-# renders 3–4 commits as cancelled/red on the commit page) plus
-# runner-quota backpressure.
-concurrency:
-  group: codeql-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
-  queue: max
-
 # CodeQL needs `security-events: write` to upload the SARIF bundle
 # to the repository's Code scanning tab. Everything else is
 # read-only.

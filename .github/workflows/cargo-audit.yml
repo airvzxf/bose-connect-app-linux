@@ -11,15 +11,6 @@ on:
     - cron: '37 5 * * *'
   workflow_dispatch:
 
-# Serialize concurrent runs in FIFO order — do NOT cancel in-flight
-# or pending runs. Mirrors the convention used by voxora /
-# moagan: cargo-audit makes no upstream API calls; the value is
-# backpressure against parallel scan storms.
-concurrency:
-  group: cargo-audit-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
-  queue: max
-
 # Read-only token. We only fetch public advisory data and read
 # Cargo.lock.
 permissions:
