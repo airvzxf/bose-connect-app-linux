@@ -6,6 +6,20 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Fixed
+
+* GUI: switching between the device page and "My Bose devices" is
+  immediate. It used to wait behind the device calls in progress; with
+  a device that had switched itself off, each one took up to 48 s.
+* GUI: a device that switches itself off or goes out of range shows
+  as "not answering" within a minute, instead of its last state, and
+  the window stops trying to reach it every minute. The window
+  connects again by itself two minutes after the device's Bluetooth
+  link is back (45 s when only the control connection closed).
+* GUI: after changing a setting, every control stays disabled under
+  "Waiting for the device…" until the device answers, as the party
+  mode controls already did.
+
 ## [0.6.1][] - 2026-11-25
 
 ### Fixed

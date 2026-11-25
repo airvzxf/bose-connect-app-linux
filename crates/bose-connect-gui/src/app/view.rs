@@ -157,8 +157,22 @@ fn build_render_handle(
 
 /// Render the page that the model says is active.
 pub fn render_active_page(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
-    match model.current_page {
+    let page = match model.current_page {
         Page::Overview => OverviewPage::render(model, sender),
         Page::MyBose => MyBosePage::render(model, sender),
+    };
+    if !model.device_busy {
+        return page;
     }
+    // A command is waiting for the device: say so, and keep every
+    // control disabled until the answer arrives.
+    let wrapper = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    let banner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    banner.set_halign(gtk::Align::Center);
+    banner.append(&adw::Spinner::new());
+    banner.append(&gtk::Label::new(Some(&crate::t!("device-busy"))));
+    wrapper.append(&banner);
+    page.set_sensitive(false);
+    wrapper.append(&page);
+    wrapper.upcast()
 }

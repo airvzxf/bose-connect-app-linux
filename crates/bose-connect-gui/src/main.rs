@@ -9,7 +9,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use once_cell::sync::OnceCell;
 
-use bose_connect_gui::app::model::{AppModel, AppMsg, ConnectionState, Page, TICK_INTERVAL_MS};
+use bose_connect_gui::app::model::{
+    AppModel, AppMsg, ConnectionState, LostDevice, Page, TICK_INTERVAL_MS,
+};
 use bose_connect_gui::app::view::{build_root, RenderHandle};
 use bose_connect_gui::services::bluetooth::PairedBose;
 use bose_connect_gui::services::device::{
@@ -368,26 +370,46 @@ fn activate(
     let render_state: std::rc::Rc<std::cell::RefCell<Option<RenderHandle>>> =
         std::rc::Rc::new(std::cell::RefCell::new(None));
 
-    // Widget pump — drains the `flume` channel into the model
-    // and re-renders the content area whenever `current_page`
-    // (or anything visible) is touched by the reducer.
+    // Widget pump — drains the `flume` channel into the model.
+    // Messages that only change the window (switching pages) are
+    // applied at once; messages that talk to the device go to the
+    // device queue below, so a slow device never delays a page
+    // switch.
+    let (device_tx, device_rx) = flume::unbounded::<AppMsg>();
+    let front_model = model_for_pump.clone();
+    let front_render = render_state.clone();
+    glib::MainContext::default().spawn_local(async move {
+        while let Ok(msg) = rx.recv_async().await {
+            if window_only(&msg) {
+                let prev = Shown::of(&front_model.borrow());
+                apply(&mut front_model.borrow_mut(), msg, Outcome::None);
+                if Shown::of(&front_model.borrow()) != prev {
+                    if let Some(handle) = front_render.borrow().as_ref() {
+                        handle.rebuild();
+                    }
+                }
+                continue;
+            }
+            // Show "connecting" or "waiting for the device" (and
+            // disable the controls) before the device call, which can
+            // wait behind another one.
+            if before_call(&mut front_model.borrow_mut(), &msg) {
+                if let Some(handle) = front_render.borrow().as_ref() {
+                    handle.rebuild();
+                }
+            }
+            let _ = device_tx.send(msg);
+        }
+    });
+
+    // Device queue — one message at a time, so device calls never
+    // interleave on the single connection.
     let pump_model = model_for_pump.clone();
     let pump_service = service_clone.clone();
     let pump_render = render_state.clone();
     let pump_tx = tx.clone();
     glib::MainContext::default().spawn_local(async move {
-        loop {
-            let msg = match rx.recv_async().await {
-                Ok(m) => m,
-                Err(_) => break,
-            };
-            // Show "connecting" (and drop the old device's data)
-            // before the blocking call, which can take seconds.
-            if before_call(&mut pump_model.borrow_mut(), &msg) {
-                if let Some(handle) = pump_render.borrow().as_ref() {
-                    handle.rebuild();
-                }
-            }
+        while let Ok(msg) = device_rx.recv_async().await {
             // Capture the state *before* applying the message so
             // we know whether what the window shows changed.
             let prev = Shown::of(&pump_model.borrow());
@@ -395,29 +417,51 @@ fn activate(
                 msg,
                 AppMsg::Connect(_) | AppMsg::Disconnect | AppMsg::Refresh
             );
-            // Messages are handled one at a time, so device calls
-            // never interleave on the single connection.
             let quiet_mode = pump_model.borrow().quiet_mode;
             let service = pump_service.clone();
-            let (msg, outcome) = match gtk::gio::spawn_blocking(move || {
+            let kind = msg_kind(&msg);
+            let started = std::time::Instant::now();
+            let (msg, outcome, open) = match gtk::gio::spawn_blocking(move || {
                 let outcome = call_service(&service, &msg, quiet_mode);
-                (msg, outcome)
+                (msg, outcome, service.is_open())
             })
             .await
             {
-                Ok(pair) => pair,
+                Ok(done) => done,
                 Err(_) => {
                     tracing::error!(target: "device", "device call panicked");
                     continue;
                 }
             };
+            let took = started.elapsed();
+            if took >= Duration::from_millis(500) {
+                tracing::info!(
+                    target: "pump",
+                    "{kind} took {} ms; {} more messages waiting",
+                    took.as_millis(),
+                    device_rx.len()
+                );
+            }
             // A failed setter leaves the snapshot as it was, but the
             // widget the user touched already shows the new value:
             // redraw to put it back.
             let device_failed = matches!(outcome, Outcome::Snapshot(Err(_)));
-            {
+            let reconnect = {
                 let mut guard = pump_model.borrow_mut();
+                let address = guard.active_address();
                 apply(&mut guard, msg, outcome);
+                // The command failed and closed the connection: the
+                // device switched itself off or went out of range.
+                if !open && guard.connection == ConnectionState::Connected {
+                    lose_device(&mut guard, address);
+                }
+                if device_rx.is_empty() {
+                    guard.device_busy = false;
+                }
+                reconnect_lost(&mut guard)
+            };
+            if let Some(address) = reconnect {
+                let _ = pump_tx.send(AppMsg::Connect(address));
             }
             let changed = Shown::of(&pump_model.borrow()) != prev;
             // A connection change can change which devices BlueZ
@@ -639,7 +683,8 @@ fn activate(
     let act_mybose = gtk::gio::SimpleAction::new("mybose", None);
     let tx_mybose = tx.clone();
     act_mybose.connect_activate(move |_, _| {
-        let _ = tx_mybose.send(AppMsg::NavigateTo(Page::MyBose));
+        use bose_connect_gui::app::widgets::SenderExt;
+        tx_mybose.send_app(AppMsg::NavigateTo(Page::MyBose));
     });
     window.add_action(&act_mybose);
 
@@ -855,8 +900,72 @@ fn before_call(model: &mut AppModel, msg: &AppMsg) -> bool {
             model.party_error = None;
             true
         }
+        // Settings the user changed: keep the controls disabled until
+        // the device answers. Not the volume slider (it sends while it
+        // moves) and not the media keys (nothing to wait for).
+        AppMsg::SetNoiseCancelling(_)
+        | AppMsg::SetAutoOff(_)
+        | AppMsg::SetLanguage { .. }
+        | AppMsg::SetVoicePrompts(_)
+        | AppMsg::SetPairing(_)
+        | AppMsg::SetName(_)
+        | AppMsg::SetSelfVoice(_)
+        | AppMsg::PairedConnect(_)
+        | AppMsg::PairedDisconnect(_)
+        | AppMsg::PairedRemove(_)
+        | AppMsg::ApplyProfile(_)
+        | AppMsg::ToggleQuietMode
+            if model.connection == ConnectionState::Connected =>
+        {
+            model.device_busy = true;
+            true
+        }
         _ => false,
     }
+}
+
+/// Messages that only change the window; they skip the device queue.
+fn window_only(msg: &AppMsg) -> bool {
+    matches!(msg, AppMsg::NavigateTo(_) | AppMsg::Acknowledge)
+}
+
+/// The connection to the device closed after a failed command: show
+/// the device as not answering instead of its last known state.
+fn lose_device(model: &mut AppModel, address: Option<String>) {
+    let Some(address) = address else { return };
+    let name = model.device_name(&address);
+    tracing::warn!(target: "device", "{address} stopped answering; connection closed");
+    model.log_error(format!(
+        "{name} stopped answering (switched off or out of range)"
+    ));
+    model.snapshot = None;
+    model.history.clear();
+    model.connection = ConnectionState::Lost(LostDevice::new(address));
+}
+
+/// Whether BlueZ's view of a lost device says it is time to open the
+/// control connection again; the address to connect to if so.
+fn reconnect_lost(model: &mut AppModel) -> Option<String> {
+    let connected = {
+        let ConnectionState::Lost(lost) = &model.connection else {
+            return None;
+        };
+        model
+            .host_devices
+            .iter()
+            .flatten()
+            .find(|d| d.address.eq_ignore_ascii_case(&lost.address))
+            .is_some_and(|d| d.connected)
+    };
+    let ConnectionState::Lost(lost) = &mut model.connection else {
+        return None;
+    };
+    let address = lost
+        .observe(connected, std::time::Instant::now())
+        .then(|| lost.address.clone())?;
+    tracing::info!(target: "device", "{address} is back; connecting again");
+    model.auto_reconnect = Some(address.clone());
+    Some(address)
 }
 
 /// What the window shows; a change triggers a full redraw.
@@ -868,6 +977,7 @@ struct Shown {
     devices: Option<Vec<PairedBose>>,
     party_busy: bool,
     party_error: Option<String>,
+    device_busy: bool,
 }
 
 impl Shown {
@@ -879,6 +989,7 @@ impl Shown {
             devices: model.host_devices.clone(),
             party_busy: model.party_busy,
             party_error: model.party_error.clone(),
+            device_busy: model.device_busy,
         }
     }
 }
@@ -952,6 +1063,13 @@ impl Outcome {
             }
         }
     }
+}
+
+/// Short name of a message for the pump's timing log.
+fn msg_kind(msg: &AppMsg) -> String {
+    let text = format!("{msg:?}");
+    let end = text.find(['(', ' ', '{']).unwrap_or(text.len());
+    text[..end].to_owned()
 }
 
 /// Run the device call behind `msg`. It blocks on socket I/O with
@@ -1059,6 +1177,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
                 model.log_success(format!("connected to {}", snap.name));
                 model.snapshot = Some(snap);
                 model.connection = ConnectionState::Connected;
+                model.auto_reconnect = None;
                 // The simulator must not replace the real device
                 // the next launch reconnects to.
                 if !model.simulator {
@@ -1070,7 +1189,14 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
                 tracing::warn!(target: "device", "connect {address}: {e}");
                 model.log_error(format!("connect {address}: {e}"));
                 model.snapshot = None;
-                model.connection = ConnectionState::Error(e.to_string());
+                model.connection = if model.auto_reconnect.take().as_deref() == Some(&address) {
+                    // Still not answering: wait for the link again.
+                    let mut lost = LostDevice::new(address);
+                    lost.link_dropped = true;
+                    ConnectionState::Lost(lost)
+                } else {
+                    ConnectionState::Error(e.to_string())
+                };
             }
         },
         M::Disconnect => {
@@ -1453,6 +1579,82 @@ mod tests {
             startup_device(Some("02:00:00:00:00:02"), &devices).as_deref(),
             Some("02:00:00:00:00:01")
         );
+    }
+
+    fn model() -> AppModel {
+        let service: Arc<dyn DeviceService> =
+            Arc::new(bose_connect_gui::services::RealService::new());
+        let mut model = AppModel::new(service);
+        model.persisted = Default::default();
+        model
+    }
+
+    const LOST: &str = "02:00:00:00:00:01";
+
+    #[test]
+    fn a_closed_connection_shows_the_device_as_lost() {
+        let mut m = model();
+        m.connection = ConnectionState::Connected;
+        lose_device(&mut m, Some(LOST.to_owned()));
+        assert!(m.snapshot.is_none());
+        assert!(matches!(&m.connection, ConnectionState::Lost(l) if l.address == LOST));
+        // A lost device is not "in use" anywhere in the window.
+        assert_eq!(m.active_address(), None);
+    }
+
+    #[test]
+    fn a_lost_device_reconnects_two_minutes_after_its_link_is_back() {
+        let mut m = model();
+        m.connection = ConnectionState::Lost(LostDevice::new(LOST.to_owned()));
+        // The link dropped: nothing to do while BlueZ says so.
+        m.host_devices = Some(vec![device(LOST, false)]);
+        assert_eq!(reconnect_lost(&mut m), None);
+        // Back, but only just.
+        m.host_devices = Some(vec![device(LOST, true)]);
+        assert_eq!(reconnect_lost(&mut m), None);
+        if let ConnectionState::Lost(l) = &mut m.connection {
+            l.link_back_since = Some(
+                std::time::Instant::now() - bose_connect_gui::app::model::RECONNECT_AFTER_LINK_BACK,
+            );
+        }
+        assert_eq!(reconnect_lost(&mut m).as_deref(), Some(LOST));
+        assert_eq!(m.auto_reconnect.as_deref(), Some(LOST));
+    }
+
+    #[test]
+    fn a_failed_reconnect_keeps_the_device_lost() {
+        let mut m = model();
+        m.auto_reconnect = Some(LOST.to_owned());
+        m.connection = ConnectionState::Connecting(LOST.to_owned());
+        apply(
+            &mut m,
+            AppMsg::Connect(LOST.to_owned()),
+            Outcome::Snapshot(Err(anyhow::anyhow!("Host is down"))),
+        );
+        assert!(matches!(&m.connection, ConnectionState::Lost(l) if l.link_dropped));
+        // A connection the user asked for shows the error instead.
+        m.connection = ConnectionState::Connecting(LOST.to_owned());
+        apply(
+            &mut m,
+            AppMsg::Connect(LOST.to_owned()),
+            Outcome::Snapshot(Err(anyhow::anyhow!("Host is down"))),
+        );
+        assert!(matches!(m.connection, ConnectionState::Error(_)));
+    }
+
+    #[test]
+    fn settings_wait_for_the_device_but_page_switches_do_not() {
+        let mut m = model();
+        m.connection = ConnectionState::Connected;
+        assert!(before_call(&mut m, &AppMsg::SetVoicePrompts(true)));
+        assert!(m.device_busy);
+        assert!(window_only(&AppMsg::NavigateTo(Page::MyBose)));
+        assert!(!window_only(&AppMsg::Refresh));
+        // The volume slider sends while it moves: never disabled.
+        let mut m = model();
+        m.connection = ConnectionState::Connected;
+        assert!(!before_call(&mut m, &AppMsg::SetVolume(10)));
+        assert!(!m.device_busy);
     }
 
     #[test]
