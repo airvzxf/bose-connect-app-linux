@@ -131,30 +131,6 @@ fn parse_cli() -> CliArgs {
 fn main() -> anyhow::Result<()> {
     let _rt = runtime();
 
-    // Install the desktop file + icon SVGs into ~/.local/share/.
-    // The first iteration of this branch shipped a libnotify call
-    // with all four standard hints (DesktopEntry, ImagePath,
-    // Category, Urgency), but until the .desktop file is on
-    // $XDG_DATA_HOME/applications and the SVG is on
-    // $XDG_DATA_HOME/icons/hicolor KDE Plasma 6 silently treats
-    // the notification as an unknown-app transient overlay. The
-    // install is idempotent: a content-hash check decides whether
-    // a rewrite is needed, so subsequent launches are O(1).
-    match bose_connect_gui::services::assets::install_all() {
-        Ok(true) => tracing::info!(
-            target: "assets",
-            "installed/refreshed desktop + icon assets under $XDG_DATA_HOME",
-        ),
-        Ok(false) => tracing::debug!(
-            target: "assets",
-            "desktop + icon assets already in place; no rewrite",
-        ),
-        Err(err) => tracing::warn!(
-            target: "assets",
-            "could not install desktop + icon assets: {err}; KDE integration may be incomplete",
-        ),
-    }
-
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -162,6 +138,20 @@ fn main() -> anyhow::Result<()> {
         )
         .with_writer(std::io::stderr)
         .try_init();
+
+    // Versions up to 0.6.0 wrote a `hicolor/index.theme` into the
+    // user's data directory that hid other applications' icons.
+    match bose_connect_gui::services::assets::remove_legacy_icon_index() {
+        Ok(true) => tracing::info!(
+            target: "assets",
+            "removed the icon-theme index that older versions wrote under $XDG_DATA_HOME",
+        ),
+        Ok(false) => {}
+        Err(err) => tracing::warn!(
+            target: "assets",
+            "could not remove the old icon-theme index: {err}",
+        ),
+    }
 
     // Register the compiled GResource bundle (icons, CSS, GMenu)
     // with gio so `gtk::gio::resources_lookup_data(...)` resolves

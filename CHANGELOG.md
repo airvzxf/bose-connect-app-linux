@@ -6,6 +6,17 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Fixed
+
+* GUI: no longer installs a `.desktop` file, icons or a
+  `hicolor/index.theme` into `~/.local/share` at start (#126). The
+  index hid the system's `hicolor` index, so icons of other
+  applications stopped resolving. At start the GUI removes that index
+  (and the `icon-theme.cache` built from it) when it is byte-for-byte
+  the one older versions wrote. Notifications now carry the icon
+  themselves and name the application `com.airvzxf.bose-connect-gui`,
+  the `.desktop` file and icon name that the packages install.
+
 ### Changed
 
 * CLI: reads BlueZ through zbus 6 (#117).

@@ -4,10 +4,9 @@ Version=1.0
 Name=Bose Connect for Linux
 GenericName=Bluetooth Headphone Controller
 Comment=GTK4 + libadwaita front-end for the bose_connect RFCOMM library
-# Icon shipped as a GResource; load via the resource URI that the
-# binary registers. If the resource isn't reachable the desktop
-# environment falls back to a theme icon.
-Icon=bose-connect-gui
+# The packages install this file as com.airvzxf.bose-connect-gui.desktop
+# and the icon under the same name in the hicolor theme.
+Icon=com.airvzxf.bose-connect-gui
 Exec=bose-connect-gui
 Terminal=false
 Categories=AudioVideo;Settings;

@@ -79,6 +79,30 @@ let (device_id, index) = protocol::get_device_id(device.connection())?;
 let firmware = protocol::get_firmware_version(device.connection())?;
 ```
 
+### Desktop app (`bose-connect-gui`)
+
+Build from source (needs GTK 4.22 and libadwaita 1.9):
+
+```bash
+cargo install --path crates/bose-connect-gui
+```
+
+The app does not install anything into your home directory. Its
+notifications and tray icon carry their own icon; the launcher entry
+and the icon in the icon theme come from the packages. Without a
+package, you can add them by hand:
+
+```bash
+install -Dm644 packaging/linux/desktop/bose-connect-gui.desktop \
+    ~/.local/share/applications/com.airvzxf.bose-connect-gui.desktop
+install -Dm644 packaging/linux/icons/hicolor/scalable/apps/bose-connect-gui.svg \
+    ~/.local/share/icons/hicolor/scalable/apps/com.airvzxf.bose-connect-gui.svg
+```
+
+Versions up to 0.6.0 wrote `~/.local/share/icons/hicolor/index.theme`,
+which hid the icons of other applications. The app now removes that
+file at start when it is unchanged.
+
 ### CLI (`bose-connect-app-linux`)
 
 Build from source:

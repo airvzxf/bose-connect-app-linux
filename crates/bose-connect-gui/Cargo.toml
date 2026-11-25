@@ -34,7 +34,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 directories = "6"
 
 # Pure-Rust desktop notifications via D-Bus (libnotify).
-notify-rust = { version = "4", default-features = false, features = ["z", "z-with-tokio"] }
+notify-rust = { version = "4", default-features = false, features = ["z", "z-with-tokio", "images_no_default_features"] }
 
 # GUI core. We pin the stack together so `gtk4-sys` doesn't mismatch.
 gtk = { package = "gtk4", version = "0.11", features = ["v4_22", "gnome_50"] }
