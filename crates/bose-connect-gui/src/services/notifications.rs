@@ -7,30 +7,25 @@
 //! read from the same bus name, so this single pathway covers
 //! every standard Linux desktop.
 //!
-//! ## KDE Plasma 6 routing hints
+//! ## Icon and routing hints
 //!
-//! Plain `appname(...)` is not enough for KDE to integrate the
-//! notification with the bell (history) and to apply the
-//! auto-dismiss timeout configured for the application. KDE
-//! routes notifications by `desktop-entry` — the basename of
-//! the `.desktop` file under `$XDG_DATA_DIRS/applications/` —
-//! and without that hint it treats the notification as an
-//! unknown-app transient overlay. We set the four standard
-//! hints the rest of the freedesktop ecosystem uses:
+//! The notification carries the application icon itself as
+//! `image-data`, rendered from the binary's GResource bundle, so
+//! it shows the icon whether or not a package installed it into
+//! the icon theme. The GUI never installs desktop files or icons
+//! into the user's home directory (see `services::assets`).
 //!
-//! - `Hint::DesktopEntry(...)` — basename of our `.desktop`
-//!   file (matches `StartupWMClass=com.airvzxf.bose-connect-gui`
-//!   in `packaging/linux/bose-connect-gui.desktop`).
-//! - `Hint::ImagePath(...)` — the icon name KDE should resolve
-//!   from `hicolor`.
+//! - `app_icon` and `Hint::DesktopEntry(...)` name the
+//!   application id, which is what the packages install
+//!   (`com.airvzxf.bose-connect-gui.desktop` and the icon of the
+//!   same name). With a package installed, KDE Plasma 6 files the
+//!   notification under the application in the bell and applies
+//!   its per-application settings.
+//! - `Hint::ImageData(...)` — the icon pixels.
 //! - `Hint::Category(...)` — KDE buckets by category for the
 //!   per-app settings page.
-//! - `Hint::Resident(false)` — explicit "do not pin" so that
-//!   neither KDE Plasma's default KDE-stays-Critical behaviour
-//!   nor any per-app override can keep the row open in the bell.
-//! - `Hint::Transient(false)` — we DO want a history row, so
-//!   transient must be false; the explicit setting documents
-//!   the choice for the next reader.
+//! - `Hint::Resident(false)` — explicit "do not pin".
+//! - `Hint::Transient(false)` — we DO want a history row.
 //!
 //! ## Why every level uses `Urgency::Normal`
 //!
@@ -65,14 +60,32 @@
 use std::time::Duration;
 
 use anyhow::Result;
-use notify_rust::{Hint, Notification, Urgency};
+use notify_rust::{Hint, Image, Notification, Urgency};
 
-/// Filename (without extension) of the `.desktop` file we ship.
-/// KDE Plasma 6, GNOME Shell, and every other spec-compliant
-/// notification daemon key on this string to route the
-/// notification to the right bell and apply the per-app
+use crate::services::icon::{self, APP_ID};
+
+/// Filename (without extension) of the `.desktop` file the
+/// packages install. KDE Plasma 6, GNOME Shell, and every other
+/// spec-compliant notification daemon key on this string to route
+/// the notification to the right bell and apply the per-app
 /// preferences (sound, urgency, dismiss timeout).
-pub const DESKTOP_ENTRY: &str = "bose-connect-gui";
+pub const DESKTOP_ENTRY: &str = APP_ID;
+
+/// Side in pixels of the icon sent with each notification.
+const IMAGE_PX: i32 = 64;
+
+/// The application icon as notification `image-data`.
+///
+/// notify-rust picks the `image-data` hint name from the server's
+/// specification version, which it asks the server for the first
+/// time it converts an image. Doing that inside `show()` nests a
+/// blocking zbus call in another one and panics, so the version is
+/// read here, before `show()`.
+fn app_image() -> Result<Image> {
+    let _ = &*notify_rust::SPEC_VERSION;
+    let (w, h, data) = icon::render_rgba(IMAGE_PX)?;
+    Ok(Image::from_rgba(w, h, data)?)
+}
 
 #[derive(Debug, Clone)]
 pub enum NotificationLevel {
@@ -94,12 +107,8 @@ impl Notifications {
             // honors the timeout instead of going sticky.
             .timeout(Duration::from_secs(Self::auto_dismiss_secs(level)))
             .appname("Bose Connect for Linux")
-            .icon("bose-connect-gui")
-            // desktop-entry + image-path + category get the
-            // notification onto the bell and resolved to the
-            // right icon.
+            .icon(APP_ID)
             .hint(Hint::DesktopEntry(DESKTOP_ENTRY.to_string()))
-            .hint(Hint::ImagePath(DESKTOP_ENTRY.to_string()))
             .hint(Hint::Category("device.removed".to_string()))
             // resident=false: never pin this notification,
             // even if the user toggles a per-app "Persistent"
@@ -112,6 +121,15 @@ impl Notifications {
             // expire_timeout (Plasma ignores timeouts at the
             // Critical urgency level by default).
             .hint(Hint::Urgency(Urgency::Normal));
+        match app_image() {
+            Ok(image) => {
+                n.hint(Hint::ImageData(image));
+            }
+            Err(err) => tracing::warn!(
+                target: "notifications",
+                "could not render the notification icon: {err}",
+            ),
+        }
         n.show()?;
         Ok(())
     }
@@ -159,15 +177,24 @@ mod tests {
         assert!(c >= w && w >= i);
     }
 
-    /// The `.desktop` basename we claim in the hints must
-    /// match what `services::assets::DESKTOP_BASENAME`
-    /// actually writes — otherwise the `DesktopEntry` hint
-    /// resolves to nothing and KDE walks the bell heuristic
-    /// again.
+    /// The `DesktopEntry` hint and the icon name must be the
+    /// names the packages install, or KDE cannot match the
+    /// notification to the application.
     #[test]
-    fn desktop_entry_string_matches_assets_basename() {
-        assert_eq!(DESKTOP_ENTRY, crate::services::assets::DESKTOP_BASENAME);
-        assert_eq!(DESKTOP_ENTRY, crate::services::assets::ICON_NAME);
+    fn desktop_entry_matches_the_packaged_names() {
+        let desktop = include_str!("../../../../packaging/linux/desktop/bose-connect-gui.desktop");
+        assert!(desktop.lines().any(|l| l == format!("Icon={APP_ID}")));
+        let deb = include_str!("../../../../packaging/debian/cargo-deb.toml");
+        let aur = include_str!("../../../../packaging/aur/PKGBUILD");
+        for recipe in [deb, aur] {
+            assert!(recipe.contains(&format!("applications/{DESKTOP_ENTRY}.desktop")));
+            assert!(recipe.contains(&format!("scalable/apps/{APP_ID}.svg")));
+        }
+    }
+
+    #[test]
+    fn the_icon_renders_as_notification_image_data() {
+        app_image().expect("the notification icon must render");
     }
 
     /// The order of auto-dismiss windows is: Info < Warning <

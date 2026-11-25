@@ -36,6 +36,8 @@ history; the captures behind each protocol item are in
       built: both install the `.desktop`, metainfo and bash-completion
       files from paths that do not exist (they live under
       `packaging/linux/`). Fix the paths and build each package once.
+      Since #126 the GUI installs nothing at start, so the packages
+      are the only source of the launcher entry and the themed icon.
 - [ ] Make the app installable on more distributions. Nothing is
       published yet: `packaging/aur/PKGBUILD` (Arch, and derivatives
       such as CachyOS and Manjaro) is not on the AUR, and

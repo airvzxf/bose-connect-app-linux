@@ -430,11 +430,10 @@ pub fn status_for(snap: &TraySnapshot) -> SniStatus {
     SniStatus::Active
 }
 
-/// GResource path that the `gresource.xml` registered for the
-/// full-colour tray icon. Used as the data source for
-/// `IconPixmap` and `AttentionIconPixmap`.
-const TRAY_ICON_RESOURCE: &str =
-    "/com/airvzxf/bose-connect-gui/icons/hicolor/scalable/apps/bose-connect-gui.svg";
+/// GResource path of the full-colour icon used for `IconPixmap`
+/// and `AttentionIconPixmap`.
+#[cfg(test)]
+const TRAY_ICON_RESOURCE: &str = crate::services::icon::APP_ICON_RESOURCE;
 
 /// Pixel side the Plasma 6 system-tray applet allocates for an
 /// SNI by default. The watcher usually asks for the largest
@@ -442,58 +441,15 @@ const TRAY_ICON_RESOURCE: &str =
 /// for HiDPI displays.
 const ICON_PX: i32 = 22;
 
-/// Load the SVG icon from the GResource bundle, render it into
-/// an ARGB32 buffer at the requested scale, and return the
-/// `(width, height, bytes)` tuple the property handler ships
-/// to the watcher.
-///
-/// We render with `gdk_pixbuf::Pixbuf::from_resource_at_scale`
-/// so the renderer takes care of anti-aliasing — for a scalable
-/// SVG the bytes that hit Plasma 6 are clean even though the
-/// tray applet later stretches them again. We force `RGBA`
-/// (`has_alpha == true`); the per-pixel layout is then
-/// `R, G, B, A`. The SNI spec wants ARGB in **network byte
-/// order** (`A, R, G, B`), so we re-shuffle each quad before
-/// handing the buffer to the watcher.
+/// Render the application icon at the requested scale as the
+/// `(width, height, bytes)` tuple the property handler ships to
+/// the watcher. The SNI spec wants ARGB32 in **network byte
+/// order** (`A, R, G, B`), so each RGBA pixel is re-shuffled.
 fn load_pixmap(scale: i32) -> Result<(i32, i32, Vec<u8>), anyhow::Error> {
     let side = ICON_PX.max(1) * scale.max(1);
-    // The GResource bundle is registered by the binary at
-    // startup; tests don't go through `main`, so we have to
-    // register the same bundle here at first use. The
-    // registration is a cheap refcount bump when already
-    // registered, so doing this unconditionally costs nothing
-    // after the first call.
-    crate::register_resources();
-    let pixbuf = gdk_pixbuf::Pixbuf::from_resource_at_scale(TRAY_ICON_RESOURCE, side, side, true)
-        .map_err(|e| anyhow::anyhow!("load SVG icon: {e}"))?;
-    let w = pixbuf.width();
-    let h = pixbuf.height();
-    assert!(
-        pixbuf.n_channels() == 4 && pixbuf.has_alpha(),
-        "expected RGBA pixbuf (n_channels=4 + has_alpha)"
-    );
-    let stride = pixbuf.rowstride() as usize;
-    let bytes = pixbuf.read_pixel_bytes();
-    let src: &[u8] = &bytes;
-    let src_len = stride * h as usize;
-    assert_eq!(
-        src.len(),
-        src_len,
-        "gdk-pixbuf returned a pixel buffer of unexpected size"
-    );
-
-    // RGBA→ARGB (big-endian): swap R↔A on each pixel.
-    let mut data = Vec::with_capacity(src.len());
-    let width = w as usize;
-    for row in 0..h as usize {
-        let row_start = row * stride;
-        let row_end = row_start + width * 4;
-        for chunk in src[row_start..row_end].chunks_exact(4) {
-            data.push(chunk[3]); // A
-            data.push(chunk[0]); // R
-            data.push(chunk[1]); // G
-            data.push(chunk[2]); // B
-        }
+    let (w, h, mut data) = crate::services::icon::render_rgba(side)?;
+    for px in data.chunks_exact_mut(4) {
+        px.rotate_right(1); // R, G, B, A -> A, R, G, B
     }
     Ok((w, h, data))
 }
