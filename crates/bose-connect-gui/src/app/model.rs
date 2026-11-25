@@ -49,6 +49,61 @@ pub enum ConnectionState {
     Connected,
     /// Connection attempt failed; show the error inline.
     Error(String),
+    /// The connected device stopped answering (switched itself off,
+    /// went out of range) and the connection is closed.
+    Lost(LostDevice),
+}
+
+/// A device whose connection closed while the window showed it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LostDevice {
+    /// Its address, `AA:BB:CC:DD:EE:FF`.
+    pub address: String,
+    /// When the connection closed.
+    pub since: std::time::Instant,
+    /// BlueZ reported the device not connected at some point since
+    /// the connection closed.
+    pub link_dropped: bool,
+    /// Since when BlueZ reports it connected again after that.
+    pub link_back_since: Option<std::time::Instant>,
+}
+
+/// How long the Bluetooth link must be back before the window opens
+/// its control connection again. A SoundLink Color II locked up twice
+/// when the control connection opened less than a minute after its
+/// audio connected; two minutes after, it connected fine.
+pub const RECONNECT_AFTER_LINK_BACK: Duration = Duration::from_secs(120);
+
+/// How long to wait before opening the control connection again when
+/// only that connection closed and the Bluetooth link stayed up.
+pub const RECONNECT_AFTER_CLOSE: Duration = Duration::from_secs(45);
+
+impl LostDevice {
+    pub fn new(address: String) -> Self {
+        Self {
+            address,
+            since: std::time::Instant::now(),
+            link_dropped: false,
+            link_back_since: None,
+        }
+    }
+
+    /// Track BlueZ's view of the link; true when it is time to open
+    /// the control connection again.
+    pub fn observe(&mut self, connected: bool, now: std::time::Instant) -> bool {
+        if !connected {
+            self.link_dropped = true;
+            self.link_back_since = None;
+            return false;
+        }
+        if !self.link_dropped {
+            // Only the control connection closed so far; the link may
+            // still be going down, so give BlueZ time to notice.
+            return now.duration_since(self.since) >= RECONNECT_AFTER_CLOSE;
+        }
+        let since = *self.link_back_since.get_or_insert(now);
+        now.duration_since(since) >= RECONNECT_AFTER_LINK_BACK
+    }
 }
 
 /// Identifies which page of the main view the user is looking at.
@@ -113,6 +168,12 @@ pub struct AppModel {
     pub party_busy: bool,
     /// Why the last party-mode command failed, until the next one.
     pub party_error: Option<String>,
+    /// A command the user gave is waiting for the device's answer:
+    /// the controls stay disabled until it arrives.
+    pub device_busy: bool,
+    /// The window is opening the connection to a lost device again by
+    /// itself; if that fails, the device stays lost.
+    pub auto_reconnect: Option<String>,
     /// Activity log; newest first.
     pub log: Vec<LogEntry>,
     /// Whether the user has enabled Quiet Mode for the running session.
@@ -139,6 +200,8 @@ impl AppModel {
             in_flight: Vec::new(),
             party_busy: false,
             party_error: None,
+            device_busy: false,
+            auto_reconnect: None,
             log: vec![LogEntry {
                 timestamp: Utc::now(),
                 level: LogLevel::Info,
@@ -388,4 +451,31 @@ pub trait CloneableSend: Send + Sync {
 #[allow(dead_code)]
 fn _ensure_duration_compiles() -> Duration {
     Duration::from_millis(TICK_INTERVAL_MS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn a_lost_device_waits_for_its_link() {
+        let t0 = Instant::now();
+        let mut lost = LostDevice::new("02:00:00:00:00:01".to_owned());
+        lost.since = t0;
+        // The link is still up: wait before trying again.
+        assert!(!lost.observe(true, t0));
+        assert!(lost.observe(true, t0 + RECONNECT_AFTER_CLOSE));
+
+        let mut lost = LostDevice::new("02:00:00:00:00:01".to_owned());
+        lost.since = t0;
+        assert!(!lost.observe(false, t0 + Duration::from_secs(60)));
+        let back = t0 + Duration::from_secs(120);
+        assert!(!lost.observe(true, back));
+        assert!(!lost.observe(true, back + Duration::from_secs(60)));
+        assert!(lost.observe(true, back + RECONNECT_AFTER_LINK_BACK));
+        // Dropping again restarts the wait.
+        assert!(!lost.observe(false, back + Duration::from_secs(200)));
+        assert!(!lost.observe(true, back + Duration::from_secs(210)));
+    }
 }

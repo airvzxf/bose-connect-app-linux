@@ -29,6 +29,13 @@ pub trait SenderExt {
 
 impl SenderExt for flume::Sender<AppMsg> {
     fn send_app(&self, msg: AppMsg) {
+        if let AppMsg::NavigateTo(page) = &msg {
+            tracing::debug!(
+                target: "pump",
+                "navigation to {page:?} requested; {} messages ahead of it",
+                self.len()
+            );
+        }
         let _ = self.send(msg);
     }
 }
@@ -476,6 +483,11 @@ impl HeroCard {
                 address.clone(),
             ),
             (None, ConnectionState::Error(_)) => (-1, t!("hero-failed"), String::new()),
+            (None, ConnectionState::Lost(lost)) => (
+                -1,
+                t!("hero-lost", name = model.device_name(&lost.address)),
+                lost.address.clone(),
+            ),
             _ => (-1, t!("hero-none"), String::new()),
         };
 
@@ -485,7 +497,11 @@ impl HeroCard {
         icon_box.set_size_request(56, 56);
         icon_box.set_valign(gtk::Align::Center);
         icon_box.set_halign(gtk::Align::Center);
-        let speaker = model.active_address().is_some_and(|a| {
+        let shown = match &model.connection {
+            ConnectionState::Lost(lost) => Some(lost.address.clone()),
+            _ => model.active_address(),
+        };
+        let speaker = shown.is_some_and(|a| {
             model
                 .host_devices
                 .iter()
@@ -537,6 +553,7 @@ impl HeroCard {
             (Some(_), _) => t!("hero-via-mac", address = address_str.as_str()),
             (None, ConnectionState::Connecting(_)) => address_str.clone(),
             (None, ConnectionState::Error(e)) => e.clone(),
+            (None, ConnectionState::Lost(_)) => t!("hero-lost-detail"),
             _ => t!("hero-pick"),
         };
         let sub_label = Label::new(Some(&sub_text));

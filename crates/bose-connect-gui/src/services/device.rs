@@ -81,6 +81,12 @@ pub trait DeviceService: Send + Sync + 'static {
     /// client (a phone app, the CLI).
     fn disconnect(&self);
 
+    /// Whether the control connection is open. A failed command that
+    /// leaves it closed means the device went away.
+    fn is_open(&self) -> bool {
+        true
+    }
+
     /// The Bose devices paired with this computer.
     fn known_devices(&self) -> Result<Vec<PairedBose>>;
 
@@ -607,6 +613,10 @@ impl DeviceService for RealService {
 
     fn refresh(&self) -> Result<DeviceSnapshot> {
         self.read_snapshot()
+    }
+
+    fn is_open(&self) -> bool {
+        self.inner.lock().device.is_some()
     }
 
     fn disconnect(&self) {

@@ -45,6 +45,9 @@ forget-confirm = Olvidar
 ## Tarjeta del dispositivo
 
 hero-connecting = Conectando a { $name }…
+hero-lost = { $name } no responde
+hero-lost-detail = Está apagado o fuera de alcance. La ventana se vuelve a conectar cuando regrese.
+device-busy = Esperando al dispositivo…
 hero-failed = No se pudo conectar
 hero-none = Ningún dispositivo conectado
 hero-pick = Elige un dispositivo para controlarlo

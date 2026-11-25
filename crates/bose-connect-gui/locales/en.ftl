@@ -46,6 +46,9 @@ forget-confirm = Forget
 ## Device card
 
 hero-connecting = Connecting to { $name }…
+hero-lost = { $name } is not answering
+hero-lost-detail = Switched off or out of range. The window connects again once it is back.
+device-busy = Waiting for the device…
 hero-failed = Could not connect
 hero-none = No device connected
 hero-pick = Pick a device to control it

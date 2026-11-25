@@ -15,22 +15,7 @@ history; the captures behind each protocol item are in
 - [ ] A left/right swap: `04 0b 02 01 03` is accepted but changes
       nothing. Untested: join with the other speaker as the primary.
 
-## Priority 2: GUI bugs
-
-- [ ] A device that switches itself off (a SoundLink Color II after its
-      auto-off time) still shows as connected, also after "Refresh"
-      and on "My Bose devices"; the window does not tell whether it is
-      on. Notice the closed connection (the next request fails with
-      "Connection reset by peer") and BlueZ's `Connected` change, and
-      show the device as disconnected.
-- [ ] Switching between the device page and "My Bose devices" (the
-      menu entry, then the back arrow at the top left) takes from about
-      15 s to a minute, with no sign that anything is happening.
-      Measure where the time goes (probably a device call that blocks
-      the message pump), make the switch immediate, and show a
-      spinner while the device answers.
-
-## Priority 3: installers for more distributions
+## Priority 2: installers for more distributions
 
 - [ ] The Debian and AUR recipes in `packaging/` have never been
       built: both install the `.desktop`, metainfo and bash-completion
@@ -47,7 +32,7 @@ history; the captures behind each protocol item are in
       the GUI needs GTK 4.22 and libadwaita 1.9, which older releases
       of some distributions do not ship.
 
-## Priority 4: other features
+## Priority 3: other features
 
 - [ ] Music status and playback from the speaker: read `05 02`
       (playing or paused, title, artist) in the GUI and the CLI, make
@@ -59,9 +44,10 @@ history; the captures behind each protocol item are in
 - [ ] GUI: the battery bar under the level ("last 32 readings") is
       hard to read and only changes on a refresh. Make it clear and
       live, or remove it.
-- [ ] GUI: keep every control disabled until the device answers, as
-      the party-mode controls do, and show a failed command instead of
-      only putting the widget back.
+- [ ] GUI: show a failed command (a toast, say) instead of only
+      putting the widget back, and keep the value the user picked on
+      screen while "Waiting for the device…" is shown (it shows the
+      old value until the answer arrives).
 - [ ] QC Ultra: create and edit custom audio modes (`1f 06` SET).
 - [ ] QC Ultra: change the prompt language from the laptop. The CLI
       refuses it until it is tested there; the write now keeps the
