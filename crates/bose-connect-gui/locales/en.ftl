@@ -208,5 +208,6 @@ party-wait-checking = Checking the audio from this computer…
 party-wait-counting = Joining in { $seconds } s.
 party-wait-playing = This computer is playing audio to the speaker: pause it. The countdown starts again when it stops.
 party-wait-no-link = This computer has no audio link to the speaker. Connect it again, or cancel and pick another source.
+party-wait-paused = Paused on this computer: { $music }.
 party-wait-join-now = Join now
 party-wait-hint = The speakers locked up when they were joined while this computer sent audio, or less than a minute after it stopped. "Join now" skips the wait at that risk.
