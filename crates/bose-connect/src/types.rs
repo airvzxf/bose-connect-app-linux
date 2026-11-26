@@ -304,14 +304,10 @@ impl SelfVoice {
 /// `send_media_key` packet (`05 03 05 01 0n`).
 ///
 /// Named `Pause` because that's what the operator-facing CLI flag
-/// calls it, but on the wire it's a play/pause toggle: `0x01` flips
-/// between playing and paused depending on the current state.
-///
-/// Byte `0x02` is deliberately not exposed. On a SoundLink Color II
-/// (firmware 4.0.1) it pauses only when the source reports that it is
-/// playing: it paused an Android phone playing Spotify (2026-11-02),
-/// but a Linux laptop's player saw nothing, whether it was playing or
-/// paused.
+/// calls it. On the wire `0x01` is "play/pause": a computer's player
+/// toggles, but a SoundLink Color II (firmware 4.0.1) only resumes a
+/// paused phone with it and does nothing while the phone plays
+/// (2026-11-25). `0x02` ([`MediaKey::PauseOnly`]) is the pause there.
 ///
 /// Works on the SoundLink Color II (4.0.1) and the QC35 II (4.8.1).
 ///
@@ -329,6 +325,11 @@ pub enum MediaKey {
     /// Toggle play / pause (Bose wire byte 0x01). The CLI exposes
     /// this as `pause`; the actual effect is play↔pause.
     Pause = 0x01,
+    /// Pause (Bose wire byte 0x02). On a SoundLink Color II (4.0.1) it
+    /// paused a phone playing Spotify (2026-11-02 and 2026-11-25), but
+    /// a computer's player saw nothing unless the speaker knew it was
+    /// playing. Untested on a QC Ultra; refuse it there like `Pause`.
+    PauseOnly = 0x02,
     /// Skip to next track.
     Next = 0x03,
     /// Skip to previous track.
@@ -340,6 +341,7 @@ impl MediaKey {
     pub fn from_arg(s: &str) -> Option<Self> {
         Some(match s {
             "pause" => Self::Pause,
+            "pause-only" => Self::PauseOnly,
             "next" => Self::Next,
             "prev" | "previous" => Self::Previous,
             _ => return None,
@@ -697,4 +699,47 @@ mod tests {
         );
         assert_eq!(PromptLanguage::from_status_byte(0x25), None);
     }
+}
+
+/// Play state of the music source, from the device's `05 04` packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PlayState {
+    /// `00`: stopped, or the source tells the device nothing (a
+    /// computer without an AVRCP media player, for example).
+    #[default]
+    Stopped,
+    /// `01`.
+    Playing,
+    /// `02`.
+    Paused,
+    /// A value not seen on a device yet.
+    Other(u8),
+}
+
+impl From<u8> for PlayState {
+    fn from(raw: u8) -> Self {
+        match raw {
+            0x00 => Self::Stopped,
+            0x01 => Self::Playing,
+            0x02 => Self::Paused,
+            other => Self::Other(other),
+        }
+    }
+}
+
+/// What the music source plays now, as the device knows it
+/// ([`crate::protocol::get_music_status`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MusicStatus {
+    /// Playing, paused or stopped.
+    pub state: PlayState,
+    /// Seconds into the track when the device answered; `None` when
+    /// the source does not report it (`ffff`).
+    pub position: Option<u16>,
+    /// Track title, when the source sends metadata.
+    pub title: Option<String>,
+    /// Artist.
+    pub artist: Option<String>,
+    /// Album.
+    pub album: Option<String>,
 }

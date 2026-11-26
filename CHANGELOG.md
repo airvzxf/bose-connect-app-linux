@@ -6,6 +6,29 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Added
+
+* Music status (`05 02`), verified on a SoundLink Color II and a QC
+  Ultra: library `get_music_status` / `BoseDevice::music_status`
+  (`MusicStatus`, `PlayState`) and the CLI's `--music-status`: play
+  state, position and, when the source sends them, title, artist and
+  album.
+* `MediaKey::PauseOnly` (`05 03 05 01 02`, CLI `pause-only`): a
+  SoundLink Color II pauses a playing phone with it, while `Pause`
+  (`01`) only resumes there.
+* GUI: the playback row shows what plays (title, artist, album and
+  the time into the track, which advances every second while it plays;
+  the length too when this computer plays it) and a play/pause button
+  that matches it, re-read every 10 s on the device page. With this
+  computer as the source the row reads and controls its media player
+  (MPRIS) directly; otherwise it uses the device. On a QC Ultra the
+  play/pause key stays disabled for a phone source, since it locks the
+  headphones' media controls.
+
+### Removed
+
+* GUI: the battery bar ("last 32 readings") under the battery level.
+
 ### Fixed
 
 * GUI: switching between the device page and "My Bose devices" is

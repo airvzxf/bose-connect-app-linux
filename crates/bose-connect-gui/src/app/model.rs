@@ -18,7 +18,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::services::bluetooth::PairedBose;
-use crate::services::device::{Capability, DeviceService, DeviceSnapshot};
+use crate::services::device::{Capability, DeviceService, DeviceSnapshot, MusicSource, NowPlaying};
 use crate::services::state::{PersistedState, ProfileName};
 use crate::services::tray::TrayCommand;
 
@@ -174,11 +174,15 @@ pub struct AppModel {
     /// The window is opening the connection to a lost device again by
     /// itself; if that fails, the device stays lost.
     pub auto_reconnect: Option<String>,
+    /// What plays now, and when it was read (to advance the position
+    /// shown while it plays).
+    pub music: Option<NowPlaying>,
+    pub music_read_at: Option<std::time::Instant>,
     /// Activity log; newest first.
     pub log: Vec<LogEntry>,
     /// Whether the user has enabled Quiet Mode for the running session.
     pub quiet_mode: bool,
-    /// Battery history we keep around for the sparkline.
+    /// The last battery readings, for the low-battery notifications.
     pub history: Vec<u8>,
     /// The Bose devices paired with this computer (BlueZ); `None`
     /// until the first read, or when BlueZ is not reachable.
@@ -202,6 +206,8 @@ impl AppModel {
             party_error: None,
             device_busy: false,
             auto_reconnect: None,
+            music: None,
+            music_read_at: None,
             log: vec![LogEntry {
                 timestamp: Utc::now(),
                 level: LogLevel::Info,
@@ -338,6 +344,13 @@ pub enum AppMsg {
     SetName(String),
     SetVolume(u8),
     SendMediaKey(bose_connect::MediaKey),
+    /// Re-read what plays now.
+    RefreshMusic,
+    /// Play/pause, next or previous, sent to the music's source.
+    Playback {
+        source: MusicSource,
+        key: bose_connect::MediaKey,
+    },
 
     /// Party mode (SoundLink Color II): join the speaker `peer`, with
     /// `source` as the music source (`None`: this computer).

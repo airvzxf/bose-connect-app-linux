@@ -51,29 +51,6 @@ pub fn format_address(addr: bose_connect::BdAddr) -> String {
     )
 }
 
-fn build_sparkline(history: &[u8]) -> GtkBox {
-    let row = GtkBox::new(Orientation::Horizontal, 0);
-    row.add_css_class("sparkline");
-    row.set_homogeneous(true);
-    row.set_size_request(-1, 24);
-
-    let n = history.len().max(32);
-    for i in 0..n {
-        let bar = GtkBox::new(Orientation::Vertical, 0);
-        bar.add_css_class("sparkline-bar");
-        let h = match history.get(i) {
-            Some(&v) => ((v as i32) * 20 / 100).max(3),
-            None => 3,
-        };
-        bar.set_size_request(4, h);
-        if i >= history.len() {
-            bar.add_css_class("empty");
-        }
-        row.append(&bar);
-    }
-    row
-}
-
 pub fn segmented_control<F>(options: &[(&str, &str)], selected: &str, on_select: F) -> GtkBox
 where
     F: Fn(&str) + 'static + Clone,
@@ -615,14 +592,6 @@ impl HeroCard {
         bat_row.append(&bat_label);
         right.append(&bat_row);
 
-        let spark = build_sparkline(&model.history);
-        right.append(&spark);
-
-        let tip = Label::new(Some(&t!("hero-history")));
-        tip.add_css_class("row-desc");
-        tip.set_xalign(1.0);
-        right.append(&tip);
-
         card.append(&right);
 
         card.upcast::<gtk::Widget>()
@@ -662,6 +631,143 @@ fn bluez_audio_row(state: bose_connect::AudioState) -> adw::ActionRow {
 
 pub struct OverviewPage;
 
+/// "1:05", or "1:05 / 3:40" when the length is known.
+fn format_elapsed(position: u32, length: Option<u32>) -> String {
+    let clock = |s: u32| format!("{}:{:02}", s / 60, s % 60);
+    match length {
+        Some(length) => format!("{} / {}", clock(position.min(length)), clock(length)),
+        None => clock(position),
+    }
+}
+
+/// The playback row: what plays (title, artist, album, time) and the
+/// previous, play/pause and next buttons.
+fn media_row(
+    model: &AppModel,
+    snapshot: &crate::services::DeviceSnapshot,
+    sender: &flume::Sender<AppMsg>,
+) -> adw::ActionRow {
+    use crate::services::MusicSource;
+    use bose_connect::{MediaKey, PlayState};
+
+    let music = model.music.as_ref();
+    let state = music.map_or(PlayState::Stopped, |m| m.state);
+    let playing = state == PlayState::Playing;
+    let source = music.map_or(MusicSource::Device, |m| m.source.clone());
+
+    let row = adw::ActionRow::new();
+    let title = music.and_then(|m| m.title.clone());
+    row.set_title(&glib::markup_escape_text(
+        title.as_deref().unwrap_or(&t!("media-title")),
+    ));
+    let detail: Vec<String> = music
+        .map(|m| [m.artist.clone(), m.album.clone()])
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect();
+    let subtitle = if !detail.is_empty() {
+        detail.join(" — ")
+    } else {
+        match (state, title.is_some()) {
+            (PlayState::Playing, false) => t!("media-playing-unknown"),
+            (PlayState::Paused, false) => t!("media-paused"),
+            // A position but no state: wait for the next read.
+            (_, false) if music.is_some_and(|m| m.position.is_some()) => t!("media-unknown"),
+            (_, false) => t!("media-nothing"),
+            _ => String::new(),
+        }
+    };
+    row.set_subtitle(&glib::markup_escape_text(&subtitle));
+    row.add_prefix(&Image::from_icon_name(if playing {
+        "media-playback-start-symbolic"
+    } else {
+        "media-playback-pause-symbolic"
+    }));
+
+    // Time into the track; advanced here every second while it plays,
+    // so the device is not asked more often.
+    if let Some(position) = music.and_then(|m| m.position) {
+        let length = music.and_then(|m| m.length);
+        let read_at = model.music_read_at.unwrap_or_else(std::time::Instant::now);
+        let now = move || {
+            let extra = if playing {
+                u32::try_from(read_at.elapsed().as_secs()).unwrap_or(0)
+            } else {
+                0
+            };
+            format_elapsed(position.saturating_add(extra), length)
+        };
+        let time = Label::new(Some(&now()));
+        time.add_css_class("numeric");
+        time.add_css_class("row-desc");
+        time.set_valign(gtk::Align::Center);
+        if playing {
+            let weak = time.downgrade();
+            glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+                match weak.upgrade() {
+                    Some(label) => {
+                        label.set_text(&now());
+                        glib::ControlFlow::Continue
+                    }
+                    None => glib::ControlFlow::Break,
+                }
+            });
+        }
+        row.add_suffix(&time);
+    }
+
+    let btn_box = GtkBox::new(Orientation::Horizontal, 0);
+    btn_box.add_css_class("linked");
+    btn_box.set_valign(gtk::Align::Center);
+    let button = |icon: &str, tip: String, key: MediaKey| {
+        let b = Button::builder().icon_name(icon).tooltip_text(tip).build();
+        let s = sender.clone();
+        let source = source.clone();
+        b.connect_clicked(move |_| {
+            s.send_app(AppMsg::Playback {
+                source: source.clone(),
+                key,
+            });
+        });
+        b
+    };
+    btn_box.append(&button(
+        "media-skip-backward-symbolic",
+        t!("media-previous"),
+        MediaKey::Previous,
+    ));
+    // A SoundLink Color II treats the play/pause key only as "play";
+    // pause has its own key.
+    let play_pause = if playing {
+        button(
+            "media-playback-pause-symbolic",
+            t!("media-pause"),
+            MediaKey::PauseOnly,
+        )
+    } else {
+        button(
+            "media-playback-start-symbolic",
+            t!("media-play"),
+            MediaKey::Pause,
+        )
+    };
+    // The QC Ultra's play/pause key locks its media controls (and the
+    // phone's) until they reconnect: only this computer's player.
+    if source == MusicSource::Device && bose_connect::has_audio_modes(snapshot.device_id) {
+        play_pause.set_sensitive(false);
+        play_pause.set_tooltip_text(Some(&t!("media-play-pause-locked")));
+    }
+    btn_box.append(&play_pause);
+    btn_box.append(&button(
+        "media-skip-forward-symbolic",
+        t!("media-next"),
+        MediaKey::Next,
+    ));
+    row.add_suffix(&btn_box);
+    row
+}
+
 impl OverviewPage {
     pub fn render(model: &AppModel, sender: &flume::Sender<AppMsg>) -> gtk::Widget {
         let page = GtkBox::new(Orientation::Vertical, 20);
@@ -693,59 +799,8 @@ impl OverviewPage {
                 audio_group.add(&bluez_audio_row(state));
             }
 
-            // Fila 1: Control multimedia
-            let media_row = adw::ActionRow::new();
-            media_row.set_title(&t!("media-title"));
-            media_row.set_subtitle(&t!("media-subtitle"));
-            media_row.add_prefix(&Image::from_icon_name("media-playback-start-symbolic"));
-
-            let btn_box = GtkBox::new(Orientation::Horizontal, 0);
-            btn_box.add_css_class("linked");
-
-            let prev_btn = Button::builder()
-                .icon_name("media-skip-backward-symbolic")
-                .tooltip_text(t!("media-previous"))
-                .build();
-            let s_prev = sender.clone();
-            prev_btn.connect_clicked(move |_| {
-                s_prev.send_app(AppMsg::SendMediaKey(bose_connect::MediaKey::Previous));
-            });
-            btn_box.append(&prev_btn);
-
-            let pause_btn = Button::builder()
-                .icon_name("media-playback-start-symbolic")
-                .tooltip_text(t!("media-play"))
-                .build();
-            let is_playing = Rc::new(Cell::new(false));
-            let is_playing_clone = is_playing.clone();
-            let pause_btn_clone = pause_btn.clone();
-            let s_pause = sender.clone();
-            pause_btn.connect_clicked(move |_| {
-                let playing = !is_playing_clone.get();
-                is_playing_clone.set(playing);
-                if playing {
-                    pause_btn_clone.set_icon_name("media-playback-pause-symbolic");
-                    pause_btn_clone.set_tooltip_text(Some(&t!("media-pause")));
-                } else {
-                    pause_btn_clone.set_icon_name("media-playback-start-symbolic");
-                    pause_btn_clone.set_tooltip_text(Some(&t!("media-play")));
-                }
-                s_pause.send_app(AppMsg::SendMediaKey(bose_connect::MediaKey::Pause));
-            });
-            btn_box.append(&pause_btn);
-
-            let next_btn = Button::builder()
-                .icon_name("media-skip-forward-symbolic")
-                .tooltip_text(t!("media-next"))
-                .build();
-            let s_next = sender.clone();
-            next_btn.connect_clicked(move |_| {
-                s_next.send_app(AppMsg::SendMediaKey(bose_connect::MediaKey::Next));
-            });
-            btn_box.append(&next_btn);
-
-            media_row.add_suffix(&btn_box);
-            audio_group.add(&media_row);
+            // Fila 1: lo que suena y sus controles.
+            audio_group.add(&media_row(model, snapshot, sender));
 
             // Fila 2: Volumen del auricular (0 a 75)
             if let Some(vol) = snapshot.volume {

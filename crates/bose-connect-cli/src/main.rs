@@ -179,7 +179,7 @@ struct Cli {
     )]
     set_volume: Option<u8>,
 
-    /// Send a media key. key: pause (play/pause), next, prev
+    /// Send a media key. key: pause (play/pause), pause-only, next, prev
     #[arg(
         help_heading = "Playback",
         long = "send-media-key",
@@ -191,6 +191,10 @@ struct Cli {
     /// Print the active audio source's BT address.
     #[arg(help_heading = "Playback", long = "active-device", group = "command")]
     active_device: bool,
+
+    /// Print what the music source plays: state, position, title, artist, album
+    #[arg(help_heading = "Playback", long = "music-status", group = "command")]
+    music_status: bool,
 
     /// Change the device name.
     #[arg(
@@ -584,7 +588,7 @@ fn dispatch(cli: Cli) -> Result<()> {
         println!("Volume: {} (device scale max {})", level, max);
     } else if let Some(key) = cli.send_media_key.as_deref() {
         let parsed = parse_media_key(key)?;
-        if parsed == MediaKey::Pause {
+        if matches!(parsed, MediaKey::Pause | MediaKey::PauseOnly) {
             let (device_id, _) = device.device_id()?;
             if bose_connect::has_audio_modes(device_id) {
                 bail!(
@@ -599,6 +603,8 @@ fn dispatch(cli: Cli) -> Result<()> {
     } else if cli.active_device {
         let addr = device.active_device()?;
         println!("Active device: {}", format_address(&addr));
+    } else if cli.music_status {
+        print!("{}", describe_music(&device.music_status()?));
     } else if cli.device_bd_addr {
         let addr = device.device_bd_addr()?;
         println!("Device BD addr: {}", format_address(&addr));
@@ -1373,8 +1379,48 @@ fn _silence_unused_for_fuzz_targets(s: &str) {
     let _ = parse_hex_packet(s);
 }
 
+/// The `--music-status` report, one field per line.
+fn describe_music(status: &bose_connect::MusicStatus) -> String {
+    use bose_connect::PlayState;
+    let state = match status.state {
+        PlayState::Playing => "playing".to_owned(),
+        PlayState::Paused => "paused".to_owned(),
+        PlayState::Stopped => "stopped (or the source reports nothing)".to_owned(),
+        PlayState::Other(raw) => format!("unknown (0x{raw:02x})"),
+    };
+    let mut out = format!("Music: {state}\n");
+    if let Some(seconds) = status.position {
+        out += &format!("\tPosition: {}:{:02}\n", seconds / 60, seconds % 60);
+    }
+    for (label, value) in [
+        ("Title", &status.title),
+        ("Artist", &status.artist),
+        ("Album", &status.album),
+    ] {
+        if let Some(value) = value {
+            out += &format!("\t{label}: {value}\n");
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn music_status_report() {
+        let status = bose_connect::MusicStatus {
+            state: bose_connect::PlayState::Paused,
+            position: Some(115),
+            title: Some("Tio Alberto".into()),
+            artist: Some("Joan Manuel Serrat".into()),
+            album: None,
+        };
+        assert_eq!(
+            super::describe_music(&status),
+            "Music: paused\n\tPosition: 1:55\n\tTitle: Tio Alberto\n\tArtist: Joan Manuel Serrat\n"
+        );
+    }
+
     use super::*;
     use clap::CommandFactory;
 

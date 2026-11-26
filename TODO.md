@@ -34,16 +34,10 @@ history; the captures behind each protocol item are in
 
 ## Priority 3: other features
 
-- [ ] Music status and playback from the speaker: read `05 02`
-      (playing or paused, title, artist) in the GUI and the CLI, make
-      the play/pause button show what plays, and pause through the
-      speaker's media key (`05 03`), which reaches the source over
-      AVRCP (this computer or a phone). Then use it before a party
-      join instead of, or with, this computer's audio state. Needs
-      hardware tests on the SoundLink Color II.
-- [ ] GUI: the battery bar under the level ("last 32 readings") is
-      hard to read and only changes on a refresh. Make it clear and
-      live, or remove it.
+- [ ] Party mode: before a join from this computer, use the music
+      status (`05 02`, or this computer's player) to pause the music
+      and to tell the user what plays, with or instead of the audio
+      state.
 - [ ] GUI: show a failed command (a toast, say) instead of only
       putting the widget back, and keep the value the user picked on
       screen while "Waiting for the device…" is shown (it shows the

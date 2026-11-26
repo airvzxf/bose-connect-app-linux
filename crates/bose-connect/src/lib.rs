@@ -70,26 +70,27 @@ pub use crate::protocol::{
     enable_notifications, get_active_device, get_audio_mode, get_audio_mode_name, get_audio_modes,
     get_auto_answer_calls, get_auto_play_pause, get_battery_level, get_battery_prompt,
     get_device_bd_addr, get_device_id, get_device_info, get_device_status, get_equalizer,
-    get_firmware_version, get_immersive_audio, get_motion_auto_off, get_noise_cancelling_favorites,
-    get_noise_cancelling_steps, get_paired_device, get_paired_devices, get_party_mode,
-    get_remember_audio_mode, get_remember_noise_cancelling, get_serial_number, get_shortcut,
-    has_audio_modes, has_auto_answer, has_auto_play_pause, has_battery_prompt, has_equalizer,
-    has_immersive_audio, has_legacy_settings, has_nc_settings, has_noise_cancelling,
-    has_noise_cancelling_steps, has_pairing_toggle, has_party_mode, has_self_voice, has_shortcut,
-    join_party, read_notification, send_media_key, set_audio_mode, set_auto_answer_calls,
-    set_auto_off, set_auto_play_pause, set_battery_prompt, set_equalizer_band, set_immersive_audio,
-    set_motion_auto_off, set_name, set_noise_cancelling, set_noise_cancelling_favorites,
-    set_noise_cancelling_level, set_pairing, set_party_mode, set_prompt_language,
-    set_remember_audio_mode, set_remember_noise_cancelling, set_self_voice, set_shortcut,
-    set_shortcut_event, set_voice_prompts, set_volume, shortcut_event, DeviceStatusReport,
-    PairedDevice, PairedDevices,
+    get_firmware_version, get_immersive_audio, get_motion_auto_off, get_music_status,
+    get_noise_cancelling_favorites, get_noise_cancelling_steps, get_paired_device,
+    get_paired_devices, get_party_mode, get_remember_audio_mode, get_remember_noise_cancelling,
+    get_serial_number, get_shortcut, has_audio_modes, has_auto_answer, has_auto_play_pause,
+    has_battery_prompt, has_equalizer, has_immersive_audio, has_legacy_settings, has_nc_settings,
+    has_noise_cancelling, has_noise_cancelling_steps, has_pairing_toggle, has_party_mode,
+    has_self_voice, has_shortcut, join_party, read_notification, send_media_key, set_audio_mode,
+    set_auto_answer_calls, set_auto_off, set_auto_play_pause, set_battery_prompt,
+    set_equalizer_band, set_immersive_audio, set_motion_auto_off, set_name, set_noise_cancelling,
+    set_noise_cancelling_favorites, set_noise_cancelling_level, set_pairing, set_party_mode,
+    set_prompt_language, set_remember_audio_mode, set_remember_noise_cancelling, set_self_voice,
+    set_shortcut, set_shortcut_event, set_voice_prompts, set_volume, shortcut_event,
+    DeviceStatusReport, PairedDevice, PairedDevices,
 };
 pub use crate::types::{
     AutoOff, BdAddr, Device as DeviceInfo, DeviceStatus, DevicesConnected, EqBand, EqualizerBand,
-    ImmersiveAudio, MediaKey, NoiseCancelling, NoiseCancellingFavorites, NoiseCancellingSteps,
-    Notification, Pairing, PartyMode, PromptLanguage, SelfVoice, ShortcutAction, BOSE_CHANNEL,
-    BOSE_FALLBACK_CHANNELS, LANGUAGE_CODE_MASK, MAX_AUDIO_MODES, MAX_BT_PACK_LEN, MAX_NAME_LEN,
-    MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT, VP_MASK,
+    ImmersiveAudio, MediaKey, MusicStatus, NoiseCancelling, NoiseCancellingFavorites,
+    NoiseCancellingSteps, Notification, Pairing, PartyMode, PlayState, PromptLanguage, SelfVoice,
+    ShortcutAction, BOSE_CHANNEL, BOSE_FALLBACK_CHANNELS, LANGUAGE_CODE_MASK, MAX_AUDIO_MODES,
+    MAX_BT_PACK_LEN, MAX_NAME_LEN, MAX_NUM_DEVICES, MAX_SERIAL_SIZE, VER_STR_LEN, VP_ENABLE_BIT,
+    VP_MASK,
 };
 
 /// High-level driver: owns a `Connection` and exposes every
@@ -276,6 +277,13 @@ impl BoseDevice {
     /// variant is a play↔pause toggle on the Bose wire.
     pub fn send_media_key(&mut self, key: MediaKey) -> BoseResult<()> {
         send_media_key(&mut self.conn, key)
+    }
+
+    /// What the music source plays now: play state, position and,
+    /// when the source sends them, title, artist and album. See
+    /// [`get_music_status`].
+    pub fn music_status(&mut self) -> BoseResult<MusicStatus> {
+        get_music_status(&mut self.conn)
     }
 
     /// Fetch the BT address of the device currently feeding audio to
