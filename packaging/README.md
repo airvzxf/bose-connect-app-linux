@@ -1,83 +1,65 @@
 # Packaging
 
-Two distros are supported out of the box: Debian / Ubuntu (via
-`cargo deb`) and Arch Linux (via the `PKGBUILD`). KDE Plasma 6
-discovers the application through the `desktop` and
-`metainfo` files in `linux/`.
+The GUI needs GTK 4.22, libadwaita 1.9 and GLib 2.88 or newer. Arch
+Linux (and CachyOS, Manjaro), Ubuntu 26.04 and Fedora 44 ship them;
+Debian 13 does not.
 
-## Debian / Ubuntu (`.deb`)
+Both packages install:
 
-The configuration lives in `packaging/debian/cargo-deb.toml`.
-To produce a working `.deb`:
-
-```bash
-# 1. Install cargo-deb if you don't have it already.
-cargo install cargo-deb
-
-# 2. Build and pack. The output lands in target/debian/.
-cargo deb --workspace --no-build
-# → target/debian/bose-connect-gui_0.7.0_amd64.deb
-```
-
-Install locally for testing:
-
-```bash
-sudo dpkg -i target/debian/bose-connect-gui_0.7.0_amd64.deb
-bose-connect-gui   # should appear in the Plasma launcher
-```
-
-The `.deb` declares the runtime dependencies the binary needs
-(`libgtk-4-1t64`, `libadwaita-1-0t64`, `libnotify4`,
-`libglib2.0-0t64`) so a fresh Ubuntu or KDE Neon install will
-pull them in via `apt`.
-
-## Arch / Manjaro (`.pkg.tar.zst`)
-
-The recipe lives in `packaging/aur/PKGBUILD`. To build:
-
-```bash
-# 1. From a clean checkout at the v0.7.0 tag:
-git clone https://github.com/airvzxf/bose-connect-app-linux.git
-cd bose-connect-app-linux
-git checkout v0.7.0
-
-# 2. Drop the PKGBUILD into the source tree at packaging/aur/
-#    and the .SRCINFO next to it. Then from the source root:
-cp packaging/aur/PKGBUILD .
-cp packaging/aur/.SRCINFO .
-
-# 3. Build + install. The .pkg.tar.zst lives in the same directory.
-makepkg -si
-```
-
-To publish to AUR:
-
-```bash
-git clone ssh://aur@aur.archlinux.org/bose-connect-gui.git
-cp packaging/aur/PKGBUILD .
-cp packaging/aur/.SRCINFO .
-makepkg --printsrcinfo > .SRCINFO
-git add PKGBUILD .SRCINFO
-git commit -m "upgpkg 0.7.0"
-git push
-```
-
-## What the package installs
-
-* the GTK4 + libadwaita GUI: `/usr/bin/bose-connect-gui`
-* the original CLI driver: `/usr/bin/bose-connect-app-linux`
-* the sanity-probe binary: `/usr/bin/bose-connect-probe`
-* the C ABI library: `/usr/lib/libbose_connect.so`
+* the window: `/usr/bin/bose-connect-gui`
+* the command line tool: `/usr/bin/bose-connect-app-linux`
 * launcher entry:
   `/usr/share/applications/com.airvzxf.bose-connect-gui.desktop`
 * AppStream metadata:
   `/usr/share/metainfo/com.airvzxf.bose-connect-gui.metainfo.xml`
-* the main app icon:
+* the icon:
   `/usr/share/icons/hicolor/scalable/apps/com.airvzxf.bose-connect-gui.svg`
-* the symbolic icon (KDE / GNOME tray):
+* the symbolic icon:
   `/usr/share/icons/hicolor/symbolic/apps/com.airvzxf.bose-connect-gui-symbolic.svg`
-* tab-completion:
+* tab completion for the window:
   `/usr/share/bash-completion/completions/bose-connect-gui`
 
-The screenshot artefacts in `screenshots/` and the metadata in
-`linux/` are the same files that the packagers bundle.
+The C library (`libbose_connect.so`, `bose_connect.h`) stays a
+release asset for developers; the packages do not install it.
+
+The desktop file, the metainfo and the icons live in `linux/`. The
+names matter: the window's application id and its notifications use
+`com.airvzxf.bose-connect-gui`, and KDE Plasma finds the
+notification's icon and name only through a desktop file of that
+name.
+
+## Arch Linux (`aur/PKGBUILD`)
+
+The recipe builds the release tarball of the tag `v<pkgver>`. From
+`packaging/aur/`:
+
+```bash
+makepkg -si
+```
+
+After a version change, update `pkgver`, `sha256sums` (`makepkg -g`)
+and `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`).
+
+## Debian and Ubuntu (`cargo deb`)
+
+The configuration is the `[package.metadata.deb]` table of
+`crates/bose-connect-gui/Cargo.toml`. Build both binaries, then pack:
+
+```bash
+cargo install cargo-deb
+cargo build --release --locked -p bose-connect-gui -p bose-connect-cli
+cargo deb -p bose-connect-gui --no-build
+# → target/debian/bose-connect_<version>-1_amd64.deb
+sudo apt install ./target/debian/bose-connect_*.deb
+```
+
+Build it on the oldest release it should install on (Ubuntu 26.04):
+`$auto` takes the library versions from the build system.
+
+## Check the metadata
+
+```bash
+appstreamcli validate --no-net \
+    packaging/linux/metainfo/com.airvzxf.bose-connect-gui.metainfo.xml
+desktop-file-validate packaging/linux/desktop/bose-connect-gui.desktop
+```
