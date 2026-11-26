@@ -6,6 +6,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+## [0.7.0][] - 2026-11-25
+
 ### Added
 
 * Music status (`05 02`), verified on a SoundLink Color II and a QC
@@ -42,6 +44,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 * GUI: after changing a setting, every control stays disabled under
   "Waiting for the device…" until the device answers, as the party
   mode controls already did.
+
+### Breaking changes (library API)
+
+* `MediaKey` gains `PauseOnly`; exhaustive matches need a new arm.
 
 ## [0.6.1][] - 2026-11-25
 
@@ -381,7 +387,8 @@ First Rust release: a port of the original C implementation, with the
 `bose-connect` library, the `bose-connect-app-linux` CLI and a C FFI
 (`bose_connect.h`).
 
-[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.4.0...v0.5.0
