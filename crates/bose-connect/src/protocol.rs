@@ -32,11 +32,11 @@ use crate::error::{unconfirmed, BoseError, BoseResult};
 use crate::io::BoseIo;
 use crate::types::{
     AutoOff, BdAddr, Device, DeviceStatus, DevicesConnected, EqBand, EqualizerBand, ImmersiveAudio,
-    MediaKey, NoiseCancelling, NoiseCancellingFavorites, NoiseCancellingSteps, Notification,
-    Pairing, PartyMode, PromptLanguage, SelfVoice, ShortcutAction, MAX_AUDIO_MODES,
-    MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NC700_HEADPHONES, NOISE_CANCELLING_0C,
-    NOISE_CANCELLING_14, NOISE_CANCELLING_20, QC45_HEADPHONES, QC_ULTRA_HEADPHONES,
-    SOUNDLINK_COLOR_II, VP_ENABLE_BIT,
+    MediaKey, MusicStatus, NoiseCancelling, NoiseCancellingFavorites, NoiseCancellingSteps,
+    Notification, Pairing, PartyMode, PlayState, PromptLanguage, SelfVoice, ShortcutAction,
+    MAX_AUDIO_MODES, MAX_NAME_PACK_LEN_HELPER, MAX_NUM_DEVICES, NC700_HEADPHONES,
+    NOISE_CANCELLING_0C, NOISE_CANCELLING_14, NOISE_CANCELLING_20, QC45_HEADPHONES,
+    QC_ULTRA_HEADPHONES, SOUNDLINK_COLOR_II, VP_ENABLE_BIT,
 };
 
 // Re-export the helper that wraps CN_BASE_PACK_LEN + MAX_NAME_LEN - 1
@@ -165,6 +165,22 @@ const SEND_MEDIA_KEY_SEND_PREFIX: [u8; 4] = [0x05, 0x03, 0x05, 0x01];
 /// `[0x00, 0x02, 0x01, addr_0..addr_5]` on the live capture: an
 /// unknown status triple, then the MSB-first BT address of the source.
 const GET_ACTIVE_DEVICE_SEND: [u8; 4] = [0x05, 0x01, 0x01, 0x00];
+
+/// Music status: block 0x05, function 0x02, START (0x05), length
+/// 0x00. The device answers with a burst framed by `05 02 07 00` and
+/// `05 02 06 00`; see [`get_music_status`].
+const GET_MUSIC_STATUS_SEND: [u8; 4] = [0x05, 0x02, 0x05, 0x00];
+
+/// Function of the play-state packet (`05 04 03 03 <state> <pos:2>`).
+const MUSIC_PLAY_STATE: u8 = 0x04;
+/// Function of the track-metadata packets (`05 06 03 <len> <kind> <text>`).
+const MUSIC_METADATA: u8 = 0x06;
+/// Error code of `05 02` when the device knows nothing about the music.
+const MUSIC_UNKNOWN_ERROR: u8 = 0x0c;
+/// Most packets a music-status burst may hold before we give up.
+const MAX_MUSIC_STATUS_PACKETS: usize = 64;
+/// How long the burst may take to end.
+const MUSIC_STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Payload length of the `get_active_device` reply.
 const ACTIVE_DEVICE_PAYLOAD_LEN: usize = 9;
@@ -594,6 +610,70 @@ pub fn get_active_device<I: BoseIo>(io: &mut I) -> BoseResult<BdAddr> {
         return Err(BoseError::AckMismatch);
     }
     bd_addr(&payload[ACTIVE_DEVICE_PAYLOAD_LEN - BT_ADDR_LEN..])
+}
+
+/// No C counterpart. What the music source plays now, as the device
+/// knows it from AVRCP.
+///
+/// `> 05 02 05 00` starts a burst: `05 02 07 00`, then packets of other
+/// block-05 functions, among them the play state
+/// `05 04 03 03 <state> <pos:2>` and the track metadata
+/// `05 06 03 <len> <kind> <utf-8 text>` (kind 0 title, 1 artist,
+/// 2 album), and finally `05 02 06 00`. Verified on a SoundLink Color
+/// II, firmware 4.0.1, with a phone (Spotify) and this computer as the
+/// source, and on a QC Ultra Headphones, firmware 1.6.7, which sends
+/// no metadata. A device that knows nothing about the music answers
+/// `05 02 04 01 0c`; that is returned as [`PlayState::Stopped`] with
+/// nothing else.
+pub fn get_music_status<I: BoseIo>(io: &mut I) -> BoseResult<MusicStatus> {
+    io.bose_send(&GET_MUSIC_STATUS_SEND)?;
+    let block = GET_MUSIC_STATUS_SEND[0];
+    let deadline = Instant::now() + MUSIC_STATUS_TIMEOUT;
+    let mut status = MusicStatus::default();
+    for _ in 0..MAX_MUSIC_STATUS_PACKETS {
+        let (header, payload) = read_packet_before(io, deadline)?;
+        if header[0] != block || header[BYTES_POSITION_2] != OP_STATUS {
+            if header[0] == block && header[1] == GET_MUSIC_STATUS_SEND[1] {
+                match header[BYTES_POSITION_2] {
+                    OP_RESULT => return Ok(status),
+                    OP_ERROR if payload.first() == Some(&MUSIC_UNKNOWN_ERROR) => {
+                        return Ok(MusicStatus::default())
+                    }
+                    OP_ERROR => {
+                        return Err(BoseError::DeviceError {
+                            block,
+                            function: header[1],
+                            code: payload.first().copied().unwrap_or(0),
+                        })
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        match header[1] {
+            MUSIC_PLAY_STATE => {
+                if let [state, hi, lo, ..] = payload[..] {
+                    status.state = PlayState::from(state);
+                    let position = u16::from_be_bytes([hi, lo]);
+                    status.position = (position != u16::MAX).then_some(position);
+                }
+            }
+            MUSIC_METADATA => {
+                if let Some((&kind, text)) = payload.split_first() {
+                    let text = String::from_utf8_lossy(text).into_owned();
+                    match kind {
+                        0 => status.title = Some(text),
+                        1 => status.artist = Some(text),
+                        2 => status.album = Some(text),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(BoseError::AckMismatch)
 }
 
 /// No C counterpart (see the packet-constant comment above). Returns the speaker's

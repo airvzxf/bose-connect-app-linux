@@ -143,8 +143,9 @@ Sound:
 
 Playback:
       --set-volume <LEVEL>    Set the volume. The range is device-specific (e.g. 0..=25 on a QC35 II)
-      --send-media-key <KEY>  Send a media key. key: pause (play/pause), next, prev
+      --send-media-key <KEY>  Send a media key. key: pause (play/pause), pause-only, next, prev
       --active-device         Print the active audio source's BT address
+      --music-status          Print what the music source plays: state, position, title, artist, album
 
 Settings:
   -n, --name <NAME>               Change the device name

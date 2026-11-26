@@ -92,6 +92,7 @@ captured by a contributor on the Bose Noise Cancelling Headphones
 | `set_volume`                     | `05 05 02 01 xx`                 | `docs/protocol.md`, capture          |
 | `send_media_key`                 | `05 03 05 01 xx`                 | `docs/protocol.md`, capture          |
 | `get_active_device`              | `05 01 01 00`                    | `docs/protocol.md`, capture          |
+| `get_music_status`               | `05 02 05 00`                    | `docs/protocol.md`, capture          |
 | `join_party`                     | `04 01 05 0d 90 <peer> <source>` | `docs/protocol.md`, capture          |
 | `get_party_mode`                 | `04 0b 01 00`                    | `docs/protocol.md`, capture          |
 | `set_party_mode`                 | `04 0b 02 01 xx`                 | `docs/protocol.md`, capture          |

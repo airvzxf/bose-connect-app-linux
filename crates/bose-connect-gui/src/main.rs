@@ -22,6 +22,11 @@ use bose_connect_gui::transport;
 
 /// How often the GUI re-reads a real device.
 const REAL_REFRESH_MS: u64 = 60_000;
+/// How often the device page re-reads what plays.
+const MUSIC_REFRESH: Duration = Duration::from_secs(10);
+/// Wait after a playback key before reading the music again: the
+/// source takes a moment to act on it.
+const MUSIC_AFTER_KEY: Duration = Duration::from_millis(1500);
 
 /// Set to `1` (or `connected`, `disconnected`, `no-devices`) to run
 /// against the simulated device instead of a real one, in that
@@ -417,6 +422,8 @@ fn activate(
                 msg,
                 AppMsg::Connect(_) | AppMsg::Disconnect | AppMsg::Refresh
             );
+            let playback_after = matches!(msg, AppMsg::Playback { .. } | AppMsg::SendMediaKey(_));
+            let connect_after = matches!(msg, AppMsg::Connect(_));
             let quiet_mode = pump_model.borrow().quiet_mode;
             let service = pump_service.clone();
             let kind = msg_kind(&msg);
@@ -468,6 +475,17 @@ fn activate(
             // reports as connected.
             if reload_after {
                 let _ = pump_tx.send(AppMsg::ReloadDevices);
+            }
+            // Read the music again once the source has acted on a key,
+            // and right after connecting.
+            if playback_after {
+                let tx = pump_tx.clone();
+                glib::timeout_add_local_once(MUSIC_AFTER_KEY, move || {
+                    let _ = tx.send(AppMsg::RefreshMusic);
+                });
+            } else if connect_after && pump_model.borrow().connection == ConnectionState::Connected
+            {
+                let _ = pump_tx.send(AppMsg::RefreshMusic);
             }
             // Redraw only when what the page shows changed: rebuilding
             // the page after every device answer made it flicker (the
@@ -545,8 +563,7 @@ fn activate(
         glib::ControlFlow::Continue
     });
 
-    // Periodic battery tick — drives the sparkline redraws AND
-    // fires desktop notifications when the battery crosses low /
+    // Periodic battery tick — fires desktop notifications when the battery crosses low /
     // critical thresholds (the KDE Plasma info-bar via libnotify).
     let tick_model = model_holder.clone();
     let tick_tx = tx.clone();
@@ -555,7 +572,7 @@ fn activate(
     // shuts the binary down. The default 4 s cadence is right
     // for an interactive session; the mock drains at 250 ms in
     // the smoke path, so the GUI needs to sample at least that
-    // often to keep the sparkline live.
+    // often to see each threshold crossing.
     let tick_period_ms: u64 = if cli.low_battery_test {
         250
     } else {
@@ -661,6 +678,19 @@ fn activate(
                 AppMsg::ReloadDevices
             };
             let _ = refresh_tx.send(msg);
+            glib::ControlFlow::Continue
+        });
+    }
+
+    // Re-read what plays while the device page is open.
+    {
+        let music_model = model_holder.clone();
+        let music_tx = tx.clone();
+        glib::timeout_add_local(MUSIC_REFRESH, move || {
+            let m = music_model.borrow();
+            if m.connection == ConnectionState::Connected && m.current_page == Page::Overview {
+                let _ = music_tx.send(AppMsg::RefreshMusic);
+            }
             glib::ControlFlow::Continue
         });
     }
@@ -940,6 +970,7 @@ fn lose_device(model: &mut AppModel, address: Option<String>) {
     ));
     model.snapshot = None;
     model.history.clear();
+    model.music = None;
     model.connection = ConnectionState::Lost(LostDevice::new(address));
 }
 
@@ -978,6 +1009,9 @@ struct Shown {
     party_busy: bool,
     party_error: Option<String>,
     device_busy: bool,
+    /// What plays, without the position: the window advances that by
+    /// itself, so a new position alone does not redraw the page.
+    music: Option<bose_connect_gui::services::NowPlaying>,
 }
 
 impl Shown {
@@ -990,6 +1024,10 @@ impl Shown {
             party_busy: model.party_busy,
             party_error: model.party_error.clone(),
             device_busy: model.device_busy,
+            music: model.music.clone().map(|mut m| {
+                m.position = None;
+                m
+            }),
         }
     }
 }
@@ -1029,6 +1067,12 @@ fn dump_widget_tree(widget: &gtk::Widget, depth: usize, out: &mut String) {
 enum Outcome {
     /// The message does not talk to the device.
     None,
+    /// What plays, and when it was asked for: the position is from
+    /// about then, not from when the answer arrived.
+    Music(
+        std::time::Instant,
+        anyhow::Result<Option<bose_connect_gui::services::NowPlaying>>,
+    ),
     Snapshot(anyhow::Result<Box<DeviceSnapshot>>),
     Unit(anyhow::Result<()>),
     Devices(anyhow::Result<Vec<PairedBose>>),
@@ -1047,6 +1091,7 @@ impl Outcome {
             Outcome::Snapshot(r) => r.map(|b| *b),
             Outcome::Unit(r) => r.and_then(|()| anyhow::bail!("no snapshot returned")),
             Outcome::Party { result, .. } => result.map(|b| *b),
+            Outcome::Music(_, r) => r.and_then(|_| anyhow::bail!("no snapshot returned")),
             Outcome::Devices(_) | Outcome::Text(_) | Outcome::None => {
                 anyhow::bail!("no device call was made")
             }
@@ -1058,11 +1103,35 @@ impl Outcome {
             Outcome::Snapshot(r) => r.map(|_| ()),
             Outcome::Unit(r) => r,
             Outcome::Party { result, .. } => result.map(|_| ()),
+            Outcome::Music(_, r) => r.map(|_| ()),
             Outcome::Devices(_) | Outcome::Text(_) | Outcome::None => {
                 anyhow::bail!("no device call was made")
             }
         }
     }
+}
+
+/// A device can report "stopped" while the music plays (a QC Ultra
+/// did, right after connecting, until the phone reported a change),
+/// but its position still moves: playing when it advanced since the
+/// last read, paused when it did not.
+fn infer_play_state(
+    now: &mut bose_connect_gui::services::NowPlaying,
+    before: Option<&bose_connect_gui::services::NowPlaying>,
+) {
+    use bose_connect::PlayState;
+    use bose_connect_gui::services::MusicSource;
+    if now.state != PlayState::Stopped || now.source != MusicSource::Device {
+        return;
+    }
+    let (Some(position), Some(previous)) = (now.position, before.and_then(|b| b.position)) else {
+        return;
+    };
+    now.state = if position == previous {
+        PlayState::Paused
+    } else {
+        PlayState::Playing
+    };
 }
 
 /// Short name of a message for the pump's timing log.
@@ -1097,6 +1166,8 @@ fn call_service(service: &Arc<dyn DeviceService>, msg: &AppMsg, quiet_mode: bool
         M::SetName(name) => snap(service.set_name(name)),
         M::SetVolume(level) => snap(service.set_volume(*level)),
         M::SendMediaKey(key) => Outcome::Unit(service.send_media_key(*key)),
+        M::RefreshMusic => Outcome::Music(std::time::Instant::now(), service.now_playing()),
+        M::Playback { source, key } => Outcome::Unit(service.playback(source, *key)),
         M::SetSelfVoice(level) => snap(service.set_self_voice(*level)),
         M::PairedConnect(addr) => snap(service.connect_device(*addr)),
         M::PairedDisconnect(addr) => snap(service.disconnect_device(*addr)),
@@ -1205,6 +1276,7 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
                 model.log_info(format!("disconnected from {}", snap.name));
             }
             model.history.clear();
+            model.music = None;
             model.connection = ConnectionState::NotStarted;
         }
         M::ReloadDevices => {
@@ -1289,6 +1361,29 @@ fn apply(model: &mut AppModel, msg: AppMsg, outcome: Outcome) {
             }
             Err(e) => model.log_error(format!("media key: {e}")),
         },
+        M::RefreshMusic => {
+            if let Outcome::Music(asked_at, result) = outcome {
+                match result {
+                    Ok(mut music) => {
+                        tracing::debug!(target: "music", "{music:?}");
+                        if let Some(now) = music.as_mut() {
+                            infer_play_state(now, model.music.as_ref());
+                        }
+                        model.music = music;
+                        model.music_read_at = Some(asked_at);
+                    }
+                    Err(e) => {
+                        tracing::debug!(target: "music", "music status: {e}");
+                        model.music = None;
+                    }
+                }
+            }
+        }
+        M::Playback { key, .. } => {
+            if let Err(e) = outcome.unit() {
+                model.log_error(format!("{key:?}: {e}"));
+            }
+        }
         M::SetSelfVoice(_) => match outcome.snapshot() {
             Ok(snap) => {
                 model.log_success("set self-voice");
@@ -1655,6 +1750,31 @@ mod tests {
         m.connection = ConnectionState::Connected;
         assert!(!before_call(&mut m, &AppMsg::SetVolume(10)));
         assert!(!m.device_busy);
+    }
+
+    #[test]
+    fn a_moving_position_means_playing() {
+        use bose_connect::PlayState;
+        use bose_connect_gui::services::{MusicSource, NowPlaying};
+        let at = |position| NowPlaying {
+            source: MusicSource::Device,
+            state: PlayState::Stopped,
+            position: Some(position),
+            length: None,
+            title: None,
+            artist: None,
+            album: None,
+        };
+        let mut now = at(66);
+        infer_play_state(&mut now, Some(&at(58)));
+        assert_eq!(now.state, PlayState::Playing);
+        let mut now = at(66);
+        infer_play_state(&mut now, Some(&at(66)));
+        assert_eq!(now.state, PlayState::Paused);
+        // The first read stays as the device said.
+        let mut now = at(66);
+        infer_play_state(&mut now, None);
+        assert_eq!(now.state, PlayState::Stopped);
     }
 
     #[test]

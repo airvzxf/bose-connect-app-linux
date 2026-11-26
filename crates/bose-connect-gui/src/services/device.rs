@@ -70,6 +70,70 @@ pub struct DeviceSnapshot {
 /// Concrete boxed service.
 pub type DynDeviceService = Arc<dyn DeviceService>;
 
+/// Where the music the device plays comes from, for the playback
+/// controls.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MusicSource {
+    /// A media player on this computer, by MPRIS bus name.
+    Computer(String),
+    /// Another source (a phone): known and controlled through the
+    /// device.
+    Device,
+}
+
+/// What plays now, from the device (`05 02`) or from this computer's
+/// media player.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NowPlaying {
+    pub source: MusicSource,
+    pub state: bose_connect::PlayState,
+    /// Seconds into the track when it was read.
+    pub position: Option<u32>,
+    /// Track length in seconds (this computer's players only).
+    pub length: Option<u32>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+}
+
+impl NowPlaying {
+    fn from_device(status: bose_connect::MusicStatus) -> Self {
+        Self {
+            source: MusicSource::Device,
+            state: status.state,
+            position: status.position.map(u32::from),
+            length: None,
+            title: status.title,
+            artist: status.artist,
+            album: status.album,
+        }
+    }
+
+    fn from_player(player: crate::services::mpris::PlayerStatus) -> Self {
+        use bose_connect::PlayState;
+        Self {
+            state: if player.playing {
+                PlayState::Playing
+            } else if player.paused {
+                PlayState::Paused
+            } else {
+                PlayState::Stopped
+            },
+            source: MusicSource::Computer(player.bus_name),
+            position: player.position,
+            length: player.length,
+            title: player.title,
+            artist: player.artist,
+            album: player.album,
+        }
+    }
+
+    /// The device knows nothing about the music.
+    fn is_blank(&self) -> bool {
+        self.state == bose_connect::PlayState::Stopped && self.title.is_none()
+    }
+}
+
 pub trait DeviceService: Send + Sync + 'static {
     /// Open / wake the device.
     fn connect(&self, address: &str) -> Result<DeviceSnapshot>;
@@ -103,6 +167,28 @@ pub trait DeviceService: Send + Sync + 'static {
     fn remove_device(&self, addr: BdAddr) -> Result<DeviceSnapshot>;
     fn set_volume(&self, level: u8) -> Result<DeviceSnapshot>;
     fn send_media_key(&self, key: bose_connect::MediaKey) -> Result<()>;
+
+    /// What plays now; `None` when the device cannot tell.
+    fn now_playing(&self) -> Result<Option<NowPlaying>>;
+
+    /// Play/pause (`MediaKey::Pause`), pause (`PauseOnly`), next or
+    /// previous, sent to the
+    /// music's source: this computer's player directly, otherwise the
+    /// device's media key.
+    fn playback(&self, source: &MusicSource, key: bose_connect::MediaKey) -> Result<()> {
+        match source {
+            MusicSource::Computer(bus_name) => crate::services::mpris::command(
+                bus_name,
+                match key {
+                    bose_connect::MediaKey::Pause => "PlayPause",
+                    bose_connect::MediaKey::PauseOnly => "Pause",
+                    bose_connect::MediaKey::Next => "Next",
+                    bose_connect::MediaKey::Previous => "Previous",
+                },
+            ),
+            MusicSource::Device => self.send_media_key(key),
+        }
+    }
 
     /// Join the speaker `peer` to this one (party mode). `source` is
     /// the music source; `None` means this computer.
@@ -347,6 +433,18 @@ impl DeviceService for MockService {
 
     fn send_media_key(&self, _key: bose_connect::MediaKey) -> Result<()> {
         Ok(())
+    }
+
+    fn now_playing(&self) -> Result<Option<NowPlaying>> {
+        Ok(Some(NowPlaying {
+            source: MusicSource::Device,
+            state: bose_connect::PlayState::Playing,
+            position: Some(75),
+            length: None,
+            title: Some("Mediterráneo".to_owned()),
+            artist: Some("Joan Manuel Serrat".to_owned()),
+            album: Some("Mediterráneo".to_owned()),
+        }))
     }
 
     fn join_party(&self, peer: BdAddr, _source: Option<BdAddr>) -> Result<DeviceSnapshot> {
@@ -690,9 +788,39 @@ impl DeviceService for RealService {
         Ok(snap)
     }
 
+    fn now_playing(&self) -> Result<Option<NowPlaying>> {
+        use bose_connect::AudioState;
+        let address = self.inner.lock().address.clone().unwrap_or_default();
+        let audio = crate::services::bluetooth::audio_state(&address);
+        // This computer streams to the device: its player is the source.
+        let player = || {
+            crate::services::mpris::current_player()
+                .ok()
+                .flatten()
+                .map(NowPlaying::from_player)
+        };
+        if audio == Some(AudioState::Playing) {
+            if let Some(music) = player() {
+                return Ok(Some(music));
+            }
+        }
+        let music = NowPlaying::from_device(self.with_device(|dev| dev.music_status())?);
+        // The device knows nothing, but this computer is connected
+        // for audio: a paused player here is the likely source.
+        if music.is_blank() && audio == Some(AudioState::Idle) {
+            if let Some(local) = player() {
+                return Ok(Some(local));
+            }
+        }
+        Ok(Some(music))
+    }
+
     fn send_media_key(&self, key: bose_connect::MediaKey) -> Result<()> {
         self.with_device(|dev| {
-            if key == bose_connect::MediaKey::Pause {
+            if matches!(
+                key,
+                bose_connect::MediaKey::Pause | bose_connect::MediaKey::PauseOnly
+            ) {
                 let (device_id, _) = dev.device_id()?;
                 if bose_connect::has_audio_modes(device_id) {
                     // Same guard as the CLI: on a QC Ultra, pause never

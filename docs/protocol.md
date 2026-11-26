@@ -730,21 +730,51 @@ named below. None of them exists in the C code.
 The meaning of `00 02 01` is unknown; it was the same on every capture
 on the SoundLink Color II and the QC35 II; the QC Ultra sends `00 0f 01`.
 
-### `05 02` music status (not implemented)
+### `05 02` music status — `music_status()`
 
 ```text
 > 05 02 05 00
-< 05 02 07 00 05 03 03 02 01 fe 05 04 03 03 xx yy yy
-  05 05 03 02 19 0b zz 06 07 00 xx = 02
-# Paused xx = 01
-# Playing xx = 00
-# Unknown yyyy
-# Elapsed time of music (may be ffff for unknown?)
-# 00 <= zz <= 18: volume
-
-< 05 02 04 01 0c
-# Sent if unknown music
+< 05 02 07 00                      # PROCESSING
+< 05 03 03 02 01 fe                # (SoundLink Color II; QC Ultra: 05 03 03 01 1f)
+< 05 04 03 03 ss pp pp             # play state, position in seconds
+< 05 05 03 02 mm vv                # volume vv of mm
+< 05 06 07 00                      # metadata follows (when the source sends it)
+< 05 06 03 ll kk <utf-8 text>      # kk: 00 title, 01 artist, 02 album
+< 05 06 06 00
+< 05 02 06 00                      # RESULT
+# ss: 00 stopped or unknown, 01 playing, 02 paused; pppp = ffff: unknown
+< 05 02 04 01 0c                   # instead, when the device knows nothing
 ```
+
+Verified on a SoundLink Color II, firmware 4.0.1, on 2026-11-25:
+
+* Phone (Spotify) playing: `05 04 03 03 01 00 34` (playing at 52 s),
+  then title "Hey, Soul Sister", artist "Train" and the album.
+* Phone paused: `05 04 03 03 02 00 32`, with the metadata.
+* This computer as the source, without an AVRCP media player
+  registered with BlueZ: `05 04 03 03 00 ff ff` and no metadata. With
+  `mpris-proxy` (BlueZ's MPRIS bridge) running, the title, artist and
+  album of the player on this computer arrive, UTF-8 encoded.
+* The volume is kept per source: `64 2e` (46 of 100) with the phone,
+  `64 0c` and later `64 2f` with this computer.
+* The speaker also sends `05 04` and `05 06` by itself when the source
+  pauses, plays or changes track, without any request; the position in
+  those is not updated on a track change (115 s, then 115 s again on
+  the next track).
+
+QC Ultra Headphones, firmware 1.6.7, phone (YouTube Music) playing:
+the burst also carries `05 00 03 05 "1.1.0"`, the active source
+(`05 01`), `05 07`, `05 0d`, `05 0f`, `05 10` and a 98-byte `05 11`,
+and no metadata. Nothing is sent by itself; asking every 3 s showed the
+pause, the play and the next track, with the position moving. Once,
+right after the window connected, it reported `00` (stopped) while the
+phone played, with the position moving; it reported `01` after the
+phone's next play.
+
+While the SoundLink Color II streams from the phone it answers new
+connections slowly: the control connection took 20.9 s once and then
+failed twice with "Host is down"; with the music paused it opened in
+4.8 s.
 
 ### `05 03` media keys — `send_media_key(key)`
 
@@ -771,7 +801,14 @@ With an Android phone playing Spotify (2026-11-02), `02` paused it and
 
 With the laptop as the source (an earlier test), `02` was acknowledged
 the same way but the player saw nothing, whether it was playing or
-paused. The library does not expose `02`.
+paused.
+
+Verified again on 2026-11-25 (SoundLink Color II, 4.0.1): with the
+phone (YouTube Music) playing, `01` did nothing; `02` paused it and `01`
+resumed it. On this speaker `01` is "play", not a toggle; the library
+exposes `02` as `MediaKey::PauseOnly`. With this computer as the source
+and no AVRCP media player registered, `01` paused Spotify through the
+desktop's media-key handling and `02` did nothing.
 
 QC Ultra (1.6.7, 2026-10-07), with multipoint on, the phone playing
 and the laptop connected on channel 1:
