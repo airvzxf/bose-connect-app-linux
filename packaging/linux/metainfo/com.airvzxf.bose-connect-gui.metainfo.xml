@@ -56,6 +56,11 @@
     <binary>bose-connect-gui</binary>
   </provides>
   <releases>
+    <release version="0.7.0" date="2026-11-25" urgency="medium">
+      <description>
+        <p>The playback row shows what plays (title, artist, album and the time into the track) with a play/pause button that matches it, read from this computer's media player or from the device. Switching pages no longer waits for the device, and a device that switched itself off or went out of range shows as not answering within a minute. The battery history bar is removed.</p>
+      </description>
+    </release>
     <release version="0.6.1" date="2026-11-25" urgency="high">
       <description>
         <p>The app no longer installs files into the home directory at start. Older versions created an icon-theme index there that hid the icons of other applications; the app now removes it when it is unchanged. Notifications carry their own icon.</p>
