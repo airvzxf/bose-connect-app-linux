@@ -322,6 +322,14 @@ fn rate_row(rate: u32, sender: &flume::Sender<AppMsg>) -> adw::ActionRow {
     row
 }
 
+thread_local! {
+    /// Whether the "Join another speaker" dialog is open. A second
+    /// click (or one on the button of a rebuilt page) must not stack
+    /// another dialog under the first: answering the first would
+    /// leave the second on screen, still offering a join.
+    static JOIN_DIALOG_OPEN: Cell<bool> = const { Cell::new(false) };
+}
+
 /// "Join another speaker": pick the speaker and the music source.
 fn open_join_dialog(
     parent: &Button,
@@ -330,6 +338,9 @@ fn open_join_dialog(
     address: &str,
     sender: &flume::Sender<AppMsg>,
 ) {
+    if JOIN_DIALOG_OPEN.replace(true) {
+        return;
+    }
     let root = parent.root().and_then(|r| r.downcast::<gtk::Window>().ok());
     let body = if peers.is_empty() {
         t!("party-join-no-peer")
@@ -374,6 +385,7 @@ fn open_join_dialog(
     let s = sender.clone();
     let parent = parent.clone();
     dialog.choose(root.as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
+        JOIN_DIALOG_OPEN.set(false);
         if r != "join" {
             return;
         }
@@ -428,7 +440,12 @@ fn open_countdown_dialog(
     let hint = Label::new(Some(&t!("party-wait-hint")));
     hint.set_wrap(true);
     hint.add_css_class("dim-label");
+    // What was playing and got paused, once the players answer.
+    let paused_label = Label::new(None);
+    paused_label.set_wrap(true);
+    paused_label.set_visible(false);
     let extra = GtkBox::new(Orientation::Vertical, 12);
+    extra.append(&paused_label);
     extra.append(&level);
     extra.append(&hint);
     dialog.set_extra_child(Some(&extra));
@@ -450,13 +467,21 @@ fn open_countdown_dialog(
             });
     }
 
-    // Pause the players once; the countdown waits for any that
-    // did not pause.
-    glib::MainContext::default().spawn_local(async {
-        let paused = gtk::gio::spawn_blocking(crate::services::audio::pause_media_players)
-            .await
-            .unwrap_or(0);
+    // Pause the players once and say what was playing; the
+    // countdown waits for any that did not pause.
+    glib::MainContext::default().spawn_local(async move {
+        let (playing, paused) = gtk::gio::spawn_blocking(|| {
+            let playing = crate::services::mpris::playing_players();
+            (playing, crate::services::audio::pause_media_players())
+        })
+        .await
+        .unwrap_or_default();
         tracing::info!(target: "party", "paused {paused} media players before the join");
+        if !playing.is_empty() {
+            let what: Vec<String> = playing.iter().map(|p| p.describe()).collect();
+            paused_label.set_text(&t!("party-wait-paused", music = what.join(", ")));
+            paused_label.set_visible(true);
+        }
     });
 
     let address = address.to_owned();

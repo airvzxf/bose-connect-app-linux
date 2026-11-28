@@ -34,10 +34,6 @@ history; the captures behind each protocol item are in
 
 ## Priority 3: other features
 
-- [ ] Party mode: before a join from this computer, use the music
-      status (`05 02`, or this computer's player) to pause the music
-      and to tell the user what plays, with or instead of the audio
-      state.
 - [ ] GUI: show a failed command (a toast, say) instead of only
       putting the widget back, and keep the value the user picked on
       screen while "Waiting for the device…" is shown (it shows the

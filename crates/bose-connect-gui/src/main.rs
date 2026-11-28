@@ -27,6 +27,9 @@ const MUSIC_REFRESH: Duration = Duration::from_secs(10);
 /// Wait after a playback key before reading the music again: the
 /// source takes a moment to act on it.
 const MUSIC_AFTER_KEY: Duration = Duration::from_millis(1500);
+/// How long after a player's signal the music is read again: long
+/// enough to read once for the burst a track change sends.
+const MUSIC_AFTER_PLAYER_SIGNAL: Duration = Duration::from_millis(300);
 
 /// Set to `1` (or `connected`, `disconnected`, `no-devices`) to run
 /// against the simulated device instead of a real one, in that
@@ -695,12 +698,51 @@ fn activate(
         });
     }
 
+    // Read it again as soon as this computer's player pauses, plays
+    // or changes track (Spotify's own buttons, say), instead of on
+    // the next 10 s read. Only while that player is what the page
+    // shows: a phone's music is read from the device.
+    let player_watch = std::cell::RefCell::new(if real_device {
+        let watch_model = model_holder.clone();
+        let watch_tx = tx.clone();
+        let pending = std::rc::Rc::new(std::cell::Cell::new(false));
+        bose_connect_gui::services::mpris::watch_players(move || {
+            use bose_connect_gui::services::MusicSource;
+            let m = watch_model.borrow();
+            let shows_player = m
+                .music
+                .as_ref()
+                .is_none_or(|music| matches!(music.source, MusicSource::Computer(_)));
+            if pending.get()
+                || !shows_player
+                || m.connection != ConnectionState::Connected
+                || m.current_page != Page::Overview
+            {
+                return;
+            }
+            // A track change sends several signals: read once.
+            pending.set(true);
+            let pending = pending.clone();
+            let tx = watch_tx.clone();
+            glib::timeout_add_local_once(MUSIC_AFTER_PLAYER_SIGNAL, move || {
+                pending.set(false);
+                let _ = tx.send(AppMsg::RefreshMusic);
+            });
+        })
+        .inspect_err(|e| tracing::debug!(target: "music", "no MPRIS watch: {e:#}"))
+        .ok()
+    } else {
+        None
+    });
+
     let window = adw::ApplicationWindow::builder()
         .application(app)
         .title("Bose Connect")
         .default_width(780)
         .default_height(840)
         .build();
+    // The watch lasts as long as the window.
+    window.connect_destroy(move |_| drop(player_watch.borrow_mut().take()));
 
     // Register window actions for header bar and kebab menu
     let act_refresh = gtk::gio::SimpleAction::new("refresh", None);

@@ -6,6 +6,22 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+### Added
+
+* GUI: the playback row follows this computer's media player as it
+  changes (MPRIS `PropertiesChanged` and `Seeked`), so a pause or a
+  new track in the player shows at once instead of on the next 10 s
+  read.
+* GUI: before a party-mode join with this computer as the source, the
+  wait dialog says which music it paused (title and artist, from the
+  player).
+
+### Fixed
+
+* GUI: a double click on "Join with…" opened two join dialogs;
+  answering the first left the second on screen, still offering a
+  join with the default source. Only one opens now.
+
 ## [0.7.0][] - 2026-11-25
 
 ### Added

@@ -207,5 +207,6 @@ party-wait-checking = Revisando el audio de este equipo…
 party-wait-counting = Uniendo en { $seconds } s.
 party-wait-playing = Este equipo está enviando audio a la bocina: páusalo. La cuenta regresiva vuelve a empezar cuando se detenga.
 party-wait-no-link = Este equipo no tiene enlace de audio con la bocina. Vuelve a conectarla, o cancela y elige otra fuente.
+party-wait-paused = En pausa en este equipo: { $music }.
 party-wait-join-now = Unir ya
 party-wait-hint = Las bocinas se bloquearon al unirlas mientras este equipo enviaba audio, o menos de un minuto después de que se detuvo. "Unir ya" se salta la espera con ese riesgo.
