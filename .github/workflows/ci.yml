@@ -126,6 +126,23 @@ jobs:
             target/release/libbose_connect.a
           if-no-files-found: warn
 
+  msrv:
+    name: 'T2 · minimum Rust versions (library 1.85, CLI 1.89)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Keeps each crate's `rust-version` honest. The GUI's (1.95) is
+    # not checked here: its GTK stack only builds in the `gui` job.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: '1.85'
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: '1.89'
+      - run: cargo +1.85 test -p bose-connect --all-targets --locked
+      - run: cargo +1.89 check -p bose-connect-cli --all-targets --locked
+
   gui:
     name: 'T2 · gui (Arch Linux: GTK 4.22, libadwaita 1.9)'
     runs-on: ubuntu-latest

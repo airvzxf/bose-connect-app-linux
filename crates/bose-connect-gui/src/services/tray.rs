@@ -448,7 +448,7 @@ const ICON_PX: i32 = 22;
 fn load_pixmap(scale: i32) -> Result<(i32, i32, Vec<u8>), anyhow::Error> {
     let side = ICON_PX.max(1) * scale.max(1);
     let (w, h, mut data) = crate::services::icon::render_rgba(side)?;
-    for px in data.chunks_exact_mut(4) {
+    for px in data.as_chunks_mut::<4>().0 {
         px.rotate_right(1); // R, G, B, A -> A, R, G, B
     }
     Ok((w, h, data))
@@ -696,14 +696,19 @@ mod tests {
         // strictly 0xFF / 0x00 because the SVG has soft edges,
         // but the buffer must at least stay parseable as ARGB
         // (no stray channels, no zero-length slice).
-        for chunk in data.chunks_exact(4) {
+        for chunk in data.as_chunks::<4>().0 {
             // Crude sanity: none of the four bytes is a malformed
             // sentinel (they can be anything 0–255 from gdk-pixbuf).
             let _ = [chunk[0], chunk[1], chunk[2], chunk[3]];
         }
         // The pixmap must not be entirely transparent; an empty
         // icon would slide through KDE's icon rendering silently.
-        let fully_opaque_count = data.chunks_exact(4).filter(|c| c[0] == 0xFF).count();
+        let fully_opaque_count = data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|c| c[0] == 0xFF)
+            .count();
         assert!(
             fully_opaque_count > (data.len() / 8),
             "icon must have at least 12.5 % opaque pixels; got {fully_opaque_count}",
