@@ -1,7 +1,7 @@
 # Maintainer: Israel Roldan <israel.alberto.rv@gmail.com>
 #
 # Builds the release tarball of the tag v${pkgver} and installs the
-# window; the command line tool comes from bose-connect-cli:
+# window (the command line tool is the bose-connect-cli package):
 #   - /usr/bin/bose-connect-gui (the GTK 4 + libadwaita window)
 #   - /usr/share/applications/com.airvzxf.bose-connect-gui.desktop
 #   - /usr/share/metainfo/com.airvzxf.bose-connect-gui.metainfo.xml
@@ -28,7 +28,6 @@ depends=(
 )
 makedepends=('cargo')
 optdepends=(
-    'bose-connect-cli: the command line tool, bose-connect-app-linux'
     'libpulse: restart the audio stream after a party-mode change (pactl)'
     'wireplumber: 44.1 kHz for Bluetooth speakers in party mode'
 )

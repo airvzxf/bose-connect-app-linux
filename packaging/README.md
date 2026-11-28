@@ -34,8 +34,8 @@ name.
 Two recipes, one per AUR package; both build the release tarball of
 the tag `v<pkgver>`:
 
-* `aur/bose-connect-gui/PKGBUILD`: the window. It lists
-  `bose-connect-cli` as an optional dependency.
+* `aur/bose-connect-gui/PKGBUILD`: the window. It does not use the
+  command line tool and does not depend on it.
 * `aur/bose-connect-cli/PKGBUILD`: the command line tool alone,
   `/usr/bin/bose-connect-app-linux`. It needs neither GTK nor
   libadwaita.

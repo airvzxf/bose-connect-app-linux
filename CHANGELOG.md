@@ -20,9 +20,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 * Packaging: an Arch recipe for the command line tool alone,
   `packaging/aur/bose-connect-cli/PKGBUILD`, which builds without
   GTK. The window's recipe moved to
-  `packaging/aur/bose-connect-gui/PKGBUILD`; it no longer installs
-  the command line tool and lists `bose-connect-cli` as an optional
-  dependency.
+  `packaging/aur/bose-connect-gui/PKGBUILD` and no longer installs
+  the command line tool, which the window does not use.
 
 ### Fixed
 
