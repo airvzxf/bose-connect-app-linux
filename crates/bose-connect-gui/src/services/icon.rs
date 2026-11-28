@@ -53,7 +53,12 @@ mod tests {
         let (w, h, data) = render_rgba(64).expect("SVG must render");
         assert_eq!((w, h), (64, 64));
         assert_eq!(data.len(), 64 * 64 * 4);
-        let opaque = data.chunks_exact(4).filter(|p| p[3] == 0xFF).count();
+        let opaque = data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] == 0xFF)
+            .count();
         assert!(opaque > 64 * 64 / 8, "icon must not be mostly transparent");
     }
 }

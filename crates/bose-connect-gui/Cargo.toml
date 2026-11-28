@@ -2,7 +2,8 @@
 name = "bose-connect-gui"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# parking_lot 0.13 needs 1.95.
+rust-version = "1.95"
 # Not published to crates.io; only the `bose-connect` library is.
 publish = false
 license.workspace = true

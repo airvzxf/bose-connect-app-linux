@@ -1356,7 +1356,7 @@ fn parse_address(s: &str) -> Result<BdAddr> {
 
 fn parse_hex_packet(s: &str) -> Result<Vec<u8>> {
     let s = s.trim();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         bail!("hex packet length {} is odd", s.len());
     }
     let bytes_str = s.as_bytes();

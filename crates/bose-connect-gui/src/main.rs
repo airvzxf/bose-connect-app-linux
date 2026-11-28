@@ -1649,7 +1649,7 @@ fn capture_widget_ppm(widget: &gtk::Widget, path: &std::path::Path) {
     let row_pixels = row_bytes;
     let mut buf: Vec<u8> = Vec::with_capacity(width as usize * 3 * height as usize);
     for chunk in raw_pixels.chunks_exact(row_pixels).take(height as usize) {
-        for px in chunk.chunks_exact(4) {
+        for px in chunk.as_chunks::<4>().0 {
             let b = px[0];
             let g = px[1];
             let r = px[2];

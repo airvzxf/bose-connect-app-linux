@@ -21,6 +21,10 @@ the project uses [Semantic Versioning](https://semver.org/).
 * GUI: a double click on "Join with…" opened two join dialogs;
   answering the first left the second on screen, still offering a
   join with the default source. Only one opens now.
+* Build: the minimum Rust version was 1.85 for the whole workspace,
+  but only the library builds with it. The command line tool now
+  declares 1.89 and the window 1.95, the versions their
+  dependencies need; CI builds the library and the tool with them.
 
 ## [0.7.0][] - 2026-11-25
 

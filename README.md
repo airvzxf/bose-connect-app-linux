@@ -207,7 +207,8 @@ cargo build --release -p bose-connect \
 
 ### Dependencies
 
-* Rust toolchain (1.85 or newer; tested on stable)
+* Rust toolchain: 1.85 or newer for the library, 1.89 for the
+  command line tool, 1.95 for the window (tested on stable)
 * `pkg-config`
 * BlueZ headers
     * `bluez-libs` on Arch Linux

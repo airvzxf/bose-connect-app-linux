@@ -2,7 +2,8 @@
 name = "bose-connect-cli"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# uuid 1.29 and zbus 6.5 need 1.89.
+rust-version = "1.89"
 # Not published to crates.io; only the `bose-connect` library is.
 publish = false
 license.workspace = true
