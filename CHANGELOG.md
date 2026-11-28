@@ -32,6 +32,10 @@ the project uses [Semantic Versioning](https://semver.org/).
   the bash completion from their real paths, and require GTK 4.22
   and libadwaita 1.9. The desktop file lost two actions whose
   options the window does not have.
+* Packaging: every release attaches a Debian / Ubuntu package
+  (`bose-connect_<version>-1_amd64.deb`, built on Ubuntu 26.04 by
+  `packaging/debian/build-deb.sh`); CI builds and installs it on
+  every pull request.
 
 ## [0.7.0][] - 2026-11-25
 

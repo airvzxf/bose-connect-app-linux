@@ -43,15 +43,18 @@ and `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`).
 ## Debian and Ubuntu (`cargo deb`)
 
 The configuration is the `[package.metadata.deb]` table of
-`crates/bose-connect-gui/Cargo.toml`. Build both binaries, then pack:
+`crates/bose-connect-gui/Cargo.toml`. Build it with:
 
 ```bash
-cargo install cargo-deb
-cargo build --release --locked -p bose-connect-gui -p bose-connect-cli
-cargo deb -p bose-connect-gui --no-build
+packaging/debian/build-deb.sh
 # → target/debian/bose-connect_<version>-1_amd64.deb
 sudo apt install ./target/debian/bose-connect_*.deb
 ```
+
+The script installs the pinned `cargo-deb` if needed, builds both
+binaries and packs them. CI builds the package on every pull request
+(job `deb`), and the release workflow attaches it to the GitHub
+Release.
 
 Build it on the oldest release it should install on (Ubuntu 26.04):
 `$auto` takes the library versions from the build system.
