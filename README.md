@@ -205,6 +205,28 @@ cargo build --release -p bose-connect \
 
 ## Build and Installation
 
+### Packages
+
+On Arch Linux, install from the Arch User Repository (AUR) with an
+AUR helper such as `yay`:
+
+```bash
+yay -S bose-connect-gui   # the GTK 4 window
+yay -S bose-connect-cli   # the command line tool
+```
+
+On Debian and Ubuntu, download the `.deb` from the [latest
+release][latest-release] and install it; it holds both the window
+and the command line tool:
+
+```bash
+sudo apt install ./bose-connect_*.deb
+```
+
+The recipes live in `packaging/`; see `packaging/README.md`.
+
+[latest-release]: https://github.com/airvzxf/bose-connect-app-linux/releases/latest
+
 ### Dependencies
 
 * Rust toolchain: 1.85 or newer for the library, 1.89 for the
