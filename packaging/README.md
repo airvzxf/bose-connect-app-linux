@@ -70,6 +70,41 @@ Release.
 Build it on the oldest release it should install on (Ubuntu 26.04):
 `$auto` takes the library versions from the build system.
 
+## Fedora (`rpm/`)
+
+One spec, `rpm/bose-connect.spec`, builds the release tarball of the
+tag `v<Version>` into two packages, split like the AUR ones:
+
+* `bose-connect-gui`: the window, with the files listed above.
+* `bose-connect-cli`: the command line tool alone.
+
+Fedora 44 is the first release with the GTK and libadwaita the window
+needs. Cargo downloads the crates while building, so the build needs
+network access. Build it in a Fedora 44 container:
+
+```bash
+podman run --rm -it -v "$PWD/packaging/rpm:/work:Z" \
+    registry.fedoraproject.org/fedora:44 bash
+dnf -y install rpm-build rpmdevtools dnf-plugins-core
+cd /work && rpmdev-setuptree
+spectool -g -R bose-connect.spec
+dnf -y builddep bose-connect.spec
+rpmbuild -ba bose-connect.spec
+# → ~/rpmbuild/RPMS/x86_64/bose-connect-{gui,cli}-<version>-1.fc44.x86_64.rpm
+```
+
+On COPR, the project needs "Enable internet access during builds",
+and a new build takes the raw URL of the spec on `main`, which COPR
+downloads together with the tarball it names:
+
+```bash
+copr-cli build bose-connect \
+    https://raw.githubusercontent.com/airvzxf/bose-connect-app-linux/main/packaging/rpm/bose-connect.spec
+```
+
+On each release, set `Version`, reset `Release` to 1 and add a
+`%changelog` entry.
+
 ## Check the metadata
 
 ```bash
