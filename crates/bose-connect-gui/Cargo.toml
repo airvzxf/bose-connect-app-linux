@@ -68,3 +68,34 @@ path = "src/lib.rs"
 [[bin]]
 name = "bose-connect-gui"
 path = "src/main.rs"
+
+# `cargo deb -p bose-connect-gui` (https://github.com/kornelski/cargo-deb)
+# builds the Debian / Ubuntu package. Build both binaries first, then
+# pack without building: see packaging/README.md.
+[package.metadata.deb]
+name = "bose-connect"
+maintainer = "Israel Roldan <israel.alberto.rv@gmail.com>"
+license-file = ["../../LICENSE", "0"]
+extended-description = """\
+Controls Bose Bluetooth headphones and speakers over the same RFCOMM \
+protocol as the Bose apps: battery, noise cancelling and audio modes, \
+paired sources, media keys, and party and stereo mode for two \
+speakers. Ships a GTK 4 and libadwaita window (bose-connect-gui) and \
+a command line tool (bose-connect-app-linux). It needs GTK 4.22 and \
+libadwaita 1.9 or newer."""
+section = "sound"
+priority = "optional"
+# `$auto` reads the libraries the binaries link (dpkg-shlibdeps).
+depends = "$auto, libgtk-4-1 (>= 4.22), libadwaita-1-0 (>= 1.9), bluez"
+recommends = "pulseaudio-utils | pipewire-pulse"
+assets = [
+    ["target/release/bose-connect-gui", "usr/bin/", "755"],
+    ["target/release/bose-connect-app-linux", "usr/bin/", "755"],
+    ["../../packaging/linux/desktop/bose-connect-gui.desktop", "usr/share/applications/com.airvzxf.bose-connect-gui.desktop", "644"],
+    ["../../packaging/linux/metainfo/com.airvzxf.bose-connect-gui.metainfo.xml", "usr/share/metainfo/", "644"],
+    ["../../packaging/linux/icons/hicolor/scalable/apps/bose-connect-gui.svg", "usr/share/icons/hicolor/scalable/apps/com.airvzxf.bose-connect-gui.svg", "644"],
+    ["../../packaging/linux/icons/hicolor/symbolic/apps/bose-connect-gui.svg", "usr/share/icons/hicolor/symbolic/apps/com.airvzxf.bose-connect-gui-symbolic.svg", "644"],
+    ["../../packaging/linux/bash-completion/bose-connect-gui", "usr/share/bash-completion/completions/", "644"],
+    ["../../README.md", "usr/share/doc/bose-connect/", "644"],
+    ["../../CHANGELOG.md", "usr/share/doc/bose-connect/", "644"],
+]

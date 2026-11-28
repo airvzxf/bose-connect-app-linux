@@ -111,11 +111,43 @@ jobs:
 
   # Build + publish to crates.io + attach binaries to the GitHub
   # release page. Runs after both validation gates have passed.
+  deb:
+    name: 'Build · Debian package (Ubuntu 26.04)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [validate-tag-input, verify-tag-reachability]
+    # Built on the oldest Ubuntu the package installs on: cargo-deb's
+    # `$auto` takes the library versions from the build system.
+    container:
+      image: ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
+    steps:
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config dpkg-dev \
+            libgtk-4-dev libadwaita-1-dev libbluetooth-dev
+      - name: Checkout at tag SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - run: packaging/debian/build-deb.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb
+          path: target/debian/bose-connect_*.deb
+          if-no-files-found: error
+
   publish:
     name: 'Publish · crates.io + GitHub Release + binaries'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [validate-tag-input, verify-tag-reachability]
+    needs: [validate-tag-input, verify-tag-reachability, deb]
     # Deployment rules on the `release` environment only allow `v*`
     # tags and `main` (workflow_dispatch). crates.io's trusted
     # publisher for bose-connect is bound to this workflow file and
@@ -173,6 +205,12 @@ jobs:
                  target/release/libbose_connect.so \
                  target/release/libbose_connect.a
 
+      - name: Download the Debian package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deb
+          path: deb
+
       - name: Stage release artefacts
         run: |
           set -euo pipefail
@@ -183,6 +221,7 @@ jobs:
           # build.rs writes the cbindgen header next to the crate when
           # building inside the git checkout.
           cp crates/bose-connect/bose_connect.h release/
+          cp deb/bose-connect_*.deb release/
           (cd release && sha256sum -b -- * > SHA256SUMS)
 
       - name: Authenticate with crates.io (trusted publishing)
@@ -231,4 +270,5 @@ jobs:
             release/libbose_connect.so
             release/libbose_connect.a
             release/bose_connect.h
+            release/bose-connect_*.deb
             release/SHA256SUMS

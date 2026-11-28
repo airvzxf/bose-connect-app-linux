@@ -25,6 +25,17 @@ the project uses [Semantic Versioning](https://semver.org/).
   but only the library builds with it. The command line tool now
   declares 1.89 and the window 1.95, the versions their
   dependencies need; CI builds the library and the tool with them.
+* Packaging: the Arch recipe (`packaging/aur/PKGBUILD`) and the
+  Debian package (`cargo deb -p bose-connect-gui`, configured in the
+  GUI's `Cargo.toml`) build again. Both install the window, the
+  command line tool, the desktop file, the metainfo, the icons and
+  the bash completion from their real paths, and require GTK 4.22
+  and libadwaita 1.9. The desktop file lost two actions whose
+  options the window does not have.
+* Packaging: every release attaches a Debian / Ubuntu package
+  (`bose-connect_<version>-1_amd64.deb`, built on Ubuntu 26.04 by
+  `packaging/debian/build-deb.sh`); CI builds and installs it on
+  every pull request.
 
 ## [0.7.0][] - 2026-11-25
 

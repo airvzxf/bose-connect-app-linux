@@ -184,7 +184,7 @@ mod tests {
     fn desktop_entry_matches_the_packaged_names() {
         let desktop = include_str!("../../../../packaging/linux/desktop/bose-connect-gui.desktop");
         assert!(desktop.lines().any(|l| l == format!("Icon={APP_ID}")));
-        let deb = include_str!("../../../../packaging/debian/cargo-deb.toml");
+        let deb = include_str!("../../Cargo.toml");
         let aur = include_str!("../../../../packaging/aur/PKGBUILD");
         for recipe in [deb, aur] {
             assert!(recipe.contains(&format!("applications/{DESKTOP_ENTRY}.desktop")));

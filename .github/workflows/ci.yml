@@ -143,6 +143,34 @@ jobs:
       - run: cargo +1.85 test -p bose-connect --all-targets --locked
       - run: cargo +1.89 check -p bose-connect-cli --all-targets --locked
 
+  deb:
+    name: 'T2 · Debian package (Ubuntu 26.04)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The release workflow builds the same package; this job catches
+    # a broken one before a tag does.
+    container:
+      image: ubuntu:26.04@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
+    steps:
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config dpkg-dev \
+            libgtk-4-dev libadwaita-1-dev libbluetooth-dev
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - run: packaging/debian/build-deb.sh
+      - name: Install the package
+        run: |
+          apt-get install -y -qq ./target/debian/bose-connect_*.deb
+          bose-connect-app-linux --help >/dev/null
+          if ldd /usr/bin/bose-connect-gui | grep 'not found'; then exit 1; fi
+
   gui:
     name: 'T2 · gui (Arch Linux: GTK 4.22, libadwaita 1.9)'
     runs-on: ubuntu-latest
