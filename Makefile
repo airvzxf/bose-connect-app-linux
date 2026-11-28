@@ -276,7 +276,7 @@ deb: build ## Build a Debian package (requires cargo-deb)
 
 .PHONY: arch
 arch: ## Build an Arch package (requires cargo-aur)
-	@echo "Use the existing PKGBUILD in packaging/aur/ — `cd packaging/aur && makepkg`"
+	@echo "Use the existing PKGBUILD in packaging/aur/<package>/ — `cd packaging/aur/bose-connect-gui && makepkg`"
 
 # ----------------------------------------------------------------------------
 # Cleaning

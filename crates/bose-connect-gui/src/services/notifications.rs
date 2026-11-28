@@ -185,7 +185,7 @@ mod tests {
         let desktop = include_str!("../../../../packaging/linux/desktop/bose-connect-gui.desktop");
         assert!(desktop.lines().any(|l| l == format!("Icon={APP_ID}")));
         let deb = include_str!("../../Cargo.toml");
-        let aur = include_str!("../../../../packaging/aur/PKGBUILD");
+        let aur = include_str!("../../../../packaging/aur/bose-connect-gui/PKGBUILD");
         for recipe in [deb, aur] {
             assert!(recipe.contains(&format!("applications/{DESKTOP_ENTRY}.desktop")));
             assert!(recipe.contains(&format!("scalable/apps/{APP_ID}.svg")));

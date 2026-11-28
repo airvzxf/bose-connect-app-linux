@@ -4,10 +4,11 @@ The GUI needs GTK 4.22, libadwaita 1.9 and GLib 2.88 or newer. Arch
 Linux (and CachyOS, Manjaro), Ubuntu 26.04 and Fedora 44 ship them;
 Debian 13 does not.
 
-Both packages install:
+The Debian package and the Arch package `bose-connect-gui` install:
 
 * the window: `/usr/bin/bose-connect-gui`
-* the command line tool: `/usr/bin/bose-connect-app-linux`
+* the command line tool: `/usr/bin/bose-connect-app-linux` (Debian
+  only; on Arch it is the `bose-connect-cli` package)
 * launcher entry:
   `/usr/share/applications/com.airvzxf.bose-connect-gui.desktop`
 * AppStream metadata:
@@ -28,17 +29,27 @@ names matter: the window's application id and its notifications use
 notification's icon and name only through a desktop file of that
 name.
 
-## Arch Linux (`aur/PKGBUILD`)
+## Arch Linux (`aur/`)
 
-The recipe builds the release tarball of the tag `v<pkgver>`. From
-`packaging/aur/`:
+Two recipes, one per AUR package; both build the release tarball of
+the tag `v<pkgver>`:
+
+* `aur/bose-connect-gui/PKGBUILD`: the window. It lists
+  `bose-connect-cli` as an optional dependency.
+* `aur/bose-connect-cli/PKGBUILD`: the command line tool alone,
+  `/usr/bin/bose-connect-app-linux`. It needs neither GTK nor
+  libadwaita.
+
+From the recipe's folder:
 
 ```bash
 makepkg -si
 ```
 
-After a version change, update `pkgver`, `sha256sums` (`makepkg -g`)
-and `.SRCINFO` (`makepkg --printsrcinfo > .SRCINFO`).
+The release PR sets `pkgver` and `sha256sums=('SKIP')`, because the
+tarball exists only after the tag. Once the tag is pushed, run
+`updpkgsums` and `makepkg --printsrcinfo > .SRCINFO` in each folder
+and commit the result before the AUR upload.
 
 ## Debian and Ubuntu (`cargo deb`)
 
