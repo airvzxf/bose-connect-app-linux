@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 # The library's minimum; the CLI (1.89) and the GUI (1.95) set their own
 # because their dependencies need newer compilers.
@@ -29,7 +29,7 @@ clap = { version = "4", features = ["derive"] }
 cbindgen = "0.29"
 
 # Crate-specific paths
-bose-connect = { path = "crates/bose-connect", version = "0.7.0" }
+bose-connect = { path = "crates/bose-connect", version = "0.8.0" }
 
 [profile.release]
 opt-level = 3

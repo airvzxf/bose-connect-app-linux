@@ -6,6 +6,8 @@ the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased][]
 
+## [0.8.0][] - 2026-11-28
+
 ### Added
 
 * GUI: the playback row follows this computer's media player as it
@@ -15,6 +17,11 @@ the project uses [Semantic Versioning](https://semver.org/).
 * GUI: before a party-mode join with this computer as the source, the
   wait dialog says which music it paused (title and artist, from the
   player).
+* Packaging: an Arch recipe for the command line tool alone,
+  `packaging/aur/bose-connect-cli/PKGBUILD`, which builds without
+  GTK. The window's recipe moved to
+  `packaging/aur/bose-connect-gui/PKGBUILD` and no longer installs
+  the command line tool, which the window does not use.
 
 ### Fixed
 
@@ -25,13 +32,13 @@ the project uses [Semantic Versioning](https://semver.org/).
   but only the library builds with it. The command line tool now
   declares 1.89 and the window 1.95, the versions their
   dependencies need; CI builds the library and the tool with them.
-* Packaging: the Arch recipe (`packaging/aur/PKGBUILD`) and the
-  Debian package (`cargo deb -p bose-connect-gui`, configured in the
-  GUI's `Cargo.toml`) build again. Both install the window, the
-  command line tool, the desktop file, the metainfo, the icons and
-  the bash completion from their real paths, and require GTK 4.22
-  and libadwaita 1.9. The desktop file lost two actions whose
-  options the window does not have.
+* Packaging: the Arch recipe of the window and the Debian package
+  (`cargo deb -p bose-connect-gui`, configured in the GUI's
+  `Cargo.toml`) build again. Both install the window, the desktop
+  file, the metainfo, the icons and the bash completion from their
+  real paths, and require GTK 4.22 and libadwaita 1.9; the Debian
+  package also installs the command line tool. The desktop file
+  lost two actions whose options the window does not have.
 * Packaging: every release attaches a Debian / Ubuntu package
   (`bose-connect_<version>-1_amd64.deb`, built on Ubuntu 26.04 by
   `packaging/debian/build-deb.sh`); CI builds and installs it on
@@ -418,7 +425,8 @@ First Rust release: a port of the original C implementation, with the
 `bose-connect` library, the `bose-connect-app-linux` CLI and a C FFI
 (`bose_connect.h`).
 
-[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/airvzxf/bose-connect-app-linux/compare/v0.5.0...v0.6.0

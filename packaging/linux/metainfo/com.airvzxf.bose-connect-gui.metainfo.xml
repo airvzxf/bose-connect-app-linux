@@ -56,6 +56,11 @@
     <binary>bose-connect-gui</binary>
   </provides>
   <releases>
+    <release version="0.8.0" date="2026-11-28" urgency="medium">
+      <description>
+        <p>The playback row follows this computer's media player as it changes, and before a party-mode join the wait dialog says which music it paused. A double click on "Join with…" no longer opens two dialogs. Every release now comes with a Debian and Ubuntu package.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-11-25" urgency="medium">
       <description>
         <p>The playback row shows what plays (title, artist, album and the time into the track) with a play/pause button that matches it, read from this computer's media player or from the device. Switching pages no longer waits for the device, and a device that switched itself off or went out of range shows as not answering within a minute. The battery history bar is removed.</p>
