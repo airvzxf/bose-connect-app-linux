@@ -19,10 +19,10 @@ history; the captures behind each protocol item are in
 
 - [ ] Make the app installable on more distributions. Nothing is
       published yet: `packaging/aur/PKGBUILD` (Arch, and derivatives
-      such as CachyOS and Manjaro) is not on the AUR, and the `.deb`
-      (`cargo deb -p bose-connect-gui`, Ubuntu 26.04 and Debian
-      testing) is not built by `release.yml`. Publish the AUR package, attach the `.deb` to
-      each release, and look at Fedora (RPM), Flatpak and AppImage;
+      such as CachyOS and Manjaro) is not on the AUR. The `.deb`
+      (Ubuntu 26.04 and Debian testing) is built by `release.yml`
+      and attached to each release from the next one on. Publish the
+      AUR package, and look at Fedora (RPM), Flatpak and AppImage;
       the GUI needs GTK 4.22 and libadwaita 1.9, which older releases
       of some distributions do not ship.
 
