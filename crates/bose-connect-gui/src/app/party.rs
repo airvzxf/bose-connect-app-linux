@@ -322,6 +322,14 @@ fn rate_row(rate: u32, sender: &flume::Sender<AppMsg>) -> adw::ActionRow {
     row
 }
 
+thread_local! {
+    /// Whether the "Join another speaker" dialog is open. A second
+    /// click (or one on the button of a rebuilt page) must not stack
+    /// another dialog under the first: answering the first would
+    /// leave the second on screen, still offering a join.
+    static JOIN_DIALOG_OPEN: Cell<bool> = const { Cell::new(false) };
+}
+
 /// "Join another speaker": pick the speaker and the music source.
 fn open_join_dialog(
     parent: &Button,
@@ -330,6 +338,9 @@ fn open_join_dialog(
     address: &str,
     sender: &flume::Sender<AppMsg>,
 ) {
+    if JOIN_DIALOG_OPEN.replace(true) {
+        return;
+    }
     let root = parent.root().and_then(|r| r.downcast::<gtk::Window>().ok());
     let body = if peers.is_empty() {
         t!("party-join-no-peer")
@@ -374,6 +385,7 @@ fn open_join_dialog(
     let s = sender.clone();
     let parent = parent.clone();
     dialog.choose(root.as_ref(), None::<&gtk::gio::Cancellable>, move |r| {
+        JOIN_DIALOG_OPEN.set(false);
         if r != "join" {
             return;
         }

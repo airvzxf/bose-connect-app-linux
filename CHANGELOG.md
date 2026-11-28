@@ -16,6 +16,12 @@ the project uses [Semantic Versioning](https://semver.org/).
   wait dialog says which music it paused (title and artist, from the
   player).
 
+### Fixed
+
+* GUI: a double click on "Join with…" opened two join dialogs;
+  answering the first left the second on screen, still offering a
+  join with the default source. Only one opens now.
+
 ## [0.7.0][] - 2026-11-25
 
 ### Added
